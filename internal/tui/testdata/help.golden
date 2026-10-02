@@ -6,7 +6,12 @@ Keys
   2           Config
   ?           this list; Esc closes it
   q, Ctrl-C   quit (a run in progress keeps running)
-  s           the setup checklist (from the Dashboard)
+
+Dashboard
+
+  r           start a run: market, dry run or live, a maximum
+  x           stop the run in progress, whoever started it
+  s           the setup checklist
 
 Setup checklist
 
@@ -20,11 +25,6 @@ Config
   ↑ ↓, k j    move; PgUp PgDn, g G jump
   Enter       edit the setting or secret, then Enter saves
   Esc         cancel the edit
-
-
-
-
-
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 esc closes the list · q quit

@@ -25,7 +25,7 @@ var OpenBrowser browser.Opener = browser.Open
 
 func (a *App) runCmd() *cobra.Command {
 	var opts run.Options
-	var terms, market string
+	var terms, market, origin string
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Search LinkedIn and apply to Easy Apply jobs in your own Chrome",
@@ -55,6 +55,14 @@ else on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			from := run.OriginTerminal
+			switch origin {
+			case "":
+			case "tui":
+				from = run.OriginTUI
+			default:
+				return fmt.Errorf("unknown --origin %q", origin)
+			}
 			l, err := config.Load(a.paths, a.Env, marketFlag(market))
 			a.openLog(logLevel(l)) // before the notifier, which logs its warnings through it
 			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
@@ -62,7 +70,9 @@ else on stdout.`,
 			// the environment, so they are there even when the config file is broken.
 			secrets := a.secrets(l)
 			telegram := notify.New(secrets.TelegramBotToken, secrets.TelegramChatID, a.logger)
+			// In the log too: a run started from the TUI has no terminal to print to.
 			cannotStart := func(err error) error {
+				a.logger.Error(run.StartFailedMsg, "error", err.Error())
 				run.ReportStartFailure(ctx, telegram, err)
 				return err
 			}
@@ -102,7 +112,7 @@ else on stdout.`,
 				a.note(run.EventWarn, "resume", plan.ResumeNote)
 			}
 
-			opened, err := plan.Open(ctx, opts, launch.Deps{Origin: run.OriginTerminal, Paths: a.paths, Store: st, Logger: a.logger,
+			opened, err := plan.Open(ctx, opts, launch.Deps{Origin: from, Paths: a.paths, Store: st, Logger: a.logger,
 				Notifier: telegram, Events: a.report, OpenBrowser: OpenBrowser,
 				Helper:       &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout},
 				AfterFilters: a.filterPause(defaultHelpTimeout)})
@@ -122,6 +132,8 @@ else on stdout.`,
 	f.StringVar(&terms, "terms", "", "search terms for this run, comma-separated (overrides the config)")
 	f.StringVar(&opts.Location, "location", "", "search location for this run (overrides the config)")
 	f.StringVar(&market, "market", "", "market for this run: brasil or internacional")
+	f.StringVar(&origin, "origin", "", "who starts the run: tui (the TUI's own runs)")
+	_ = f.MarkHidden("origin")
 	f.BoolVar(&a.eventsAsJSON, "json", false, "print events and summaries as JSON lines (implies --unattended)")
 	return cmd
 }

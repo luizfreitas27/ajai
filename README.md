@@ -126,6 +126,16 @@ The **Dashboard** refreshes every second. It shows:
 - whether the daemon runs;
 - today's log as it grows. A run the daemon started is followed in the daemon's log.
 
+`r` on the Dashboard starts a run. You choose the market (the config's, brasil or
+internacional), dry run (the default) or live, and a maximum of applications. It runs
+`aja run --unattended` in a process of its own, so closing the TUI never ends it, and
+questions nothing can answer go to the review queue. If a run is already in progress, Start
+says which one and starts nothing; if the new run cannot start (a config problem, Chrome
+missing or in use), the TUI says why. `x` stops the run in progress, whoever started it
+(the terminal, the schedule, Telegram or the TUI), after asking: it ends once the job in hand
+is done, recorded as "stopped from the TUI". When a run ends while the TUI is open, a line
+says how it went.
+
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
 - a setting with fixed values is picked from a list (several, with Space, for a list such
@@ -157,8 +167,8 @@ only the checklist and the Config tab (for the secrets) open.
 
 Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
-`NO_COLOR`, and writes paths under your home as `~/…`. More tabs (answers, schedule, jobs),
-and starting and stopping runs from it, are coming (issue #36).
+`NO_COLOR`, and writes paths under your home as `~/…`. More tabs (answers, schedule, jobs)
+are coming (issue #36).
 
 ## Everyday commands
 

@@ -42,6 +42,8 @@ type harness struct {
 	session bool
 	ran     [][]string
 	onRun   func(args []string)
+	started [][]string // the runs Start was asked for
+	exit    chan error // the last one's end, sent by the test
 	quit    bool
 }
 
@@ -105,6 +107,15 @@ func (h *harness) InTerminal(args []string, done func(error) tea.Msg) tea.Cmd {
 		}
 		return done(nil)
 	}
+}
+
+// Start is the fake launcher's run process: recorded; it ends when the test
+// says so on h.exit. Its pid is the test's own, the pid run.AcquireLock
+// records when the test takes the run lock in its place.
+func (h *harness) Start(args []string) (int, <-chan error, error) {
+	h.started = append(h.started, args)
+	h.exit = make(chan error, 1)
+	return os.Getpid(), h.exit, nil
 }
 
 func (h *harness) probe() doctor.Probe {

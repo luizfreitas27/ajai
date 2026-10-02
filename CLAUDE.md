@@ -64,6 +64,15 @@ to the tag before tagging and the workflow publishes that section as the release
   runs' log while another run does, and keeps the last one while no run does. What the
   run in progress is doing comes from `run.ReadActivity`, shared with `aja status` and
   Telegram's `/status`; never re-derive it from the lock and state file.
+  Runs started from the TUI (`runControl`, `r`/`x` on the Dashboard) are
+  `aja run --unattended --origin tui` through `Deps.Launcher.Start`: a process in a session
+  of its own (`Setsid`, null standard streams, the environment inherited), never a
+  goroutine of the TUI. The hidden `--origin tui` makes the holder `run.OriginTUI` ("the
+  TUI"). Whether it started is read from the run lock (its pid holds it) or, if the
+  process ended first, from the run log's `run.StartFailedMsg` line, which `aja run` now
+  writes for every start failure (its stderr goes nowhere). The Dashboard refresh polls
+  the process's end without blocking, so the refresh chain stays serial. Stop is a
+  `run.RequestStop` with "stopped from the TUI", for any run.
   Tests drive the model synchronously (`harness_test.go`: keys, sizes, explicit ticks,
   a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
   with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them; the

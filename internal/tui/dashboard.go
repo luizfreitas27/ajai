@@ -65,6 +65,7 @@ type refreshedMsg struct {
 	daemonLog bool // the daemon's log is followed, not the terminal runs' one
 	switched  bool // another log is followed now: drop the old lines
 	log       []byte
+	startExit *startExit // a run the TUI started ended before holding the run lock
 }
 
 // dashboard is the Dashboard tab: the run in progress, the last runs and a
@@ -79,11 +80,13 @@ type dashboard struct {
 	log       logLines
 }
 
-// refresh reads a snapshot and the followed log. The tail is used by one
-// refresh at a time (Model.Update chains them).
-func (dash dashboard) refresh(d Deps) tea.Cmd {
+// refresh reads a snapshot and the followed log, and whether watch, a run the
+// TUI started, ended. The tail is used by one refresh at a time (Model.Update
+// chains them).
+func (dash dashboard) refresh(d Deps, watch *startedRun) tea.Cmd {
 	tail, daemonLog := dash.tail, dash.daemonLog
 	return func() tea.Msg {
+		exit := watchStart(d, watch) // before the snapshot: a run that ended has let the lock go
 		now := d.Now()
 		snap := readSnapshot(d)
 		act := snap.activity
@@ -100,7 +103,7 @@ func (dash dashboard) refresh(d Deps) tea.Cmd {
 		if err != nil {
 			snap.problems = append(snap.problems, "log: "+err.Error())
 		}
-		return refreshedMsg{snap: snap, tail: tail, daemonLog: daemonLog, switched: switched, log: data}
+		return refreshedMsg{snap: snap, tail: tail, daemonLog: daemonLog, switched: switched, log: data, startExit: exit}
 	}
 }
 

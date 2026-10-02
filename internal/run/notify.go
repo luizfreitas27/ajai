@@ -50,6 +50,10 @@ func (r *Runner) notifyEnd(sum Summary, err error) {
 	}
 }
 
+// StartFailedMsg is the log line of a run that could not start; the TUI reads
+// its error to say why a run it started did not.
+const StartFailedMsg = "run could not start"
+
 // ReportStartFailure tells the user a run could not start (configuration,
 // Chrome, AI settings), unless the user cancelled it themselves.
 func ReportStartFailure(ctx context.Context, n Notifier, err error) {

@@ -22,6 +22,7 @@ const (
 	OriginTerminal Origin = "terminal"
 	OriginSchedule Origin = "schedule"
 	OriginTelegram Origin = "telegram"
+	OriginTUI      Origin = "TUI" // a run the TUI started, in a process of its own
 )
 
 // Holder is who holds the run lock.
