@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/luizfreitas27/aja/internal/config"
 )
@@ -17,7 +18,8 @@ import (
 type harness struct {
 	home  string
 	env   map[string]string
-	stdin string // typed into the next command
+	stdin string    // typed into the next command
+	now   time.Time // the clock commands see; zero: the real one
 	t     *testing.T
 }
 
@@ -35,6 +37,9 @@ func (h *harness) run(args ...string) (int, string, string) {
 	}
 	var out, errb bytes.Buffer
 	app := &App{Version: "test", Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(h.stdin), Env: config.MapEnv(env)}
+	if !h.now.IsZero() {
+		app.Now = func() time.Time { return h.now }
+	}
 	h.stdin = ""
 	code := app.Execute(context.Background(), args)
 	return code, out.String(), errb.String()

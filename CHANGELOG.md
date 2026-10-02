@@ -23,3 +23,5 @@ no such section the notes are the commit list.
 - One run at a time on the machine: a second `aja run` refuses and names the run in
   progress; `aja status` shows who started it.
 - `aja doctor` names the Chrome profile and whether LinkedIn is signed in there.
+- `aja schedule add/list/rm/enable/disable`: schedule windows (weekdays, hours, optional
+  market and dry run); `aja status` shows the next opening.

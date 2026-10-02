@@ -97,7 +97,13 @@ to the tag before tagging and the workflow publishes that section as the release
   terminal (`run.ResolveUnattended`).
 - `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
   `selectors_test.go`. Update both together when LinkedIn changes.
-- `internal/schedule` (F2): schedule windows and the scheduler.
+- `internal/schedule`: the pure window rules. `Window` (weekdays, `Clock` start/end in local
+  wall-clock minutes, optional market and dry run), `Validate` (no crossing midnight, no
+  overlap with another enabled window on the same weekday), and with an injected time
+  `Current` (decided on the wall clock, as the Python bot did, so DST days behave), `Due`
+  (current and not yet handled) and `Next`. The store keeps the windows
+  (`schedule_windows`) and each handled opening, keyed by window and local date
+  (`schedule_openings`); `aja schedule` manages them. The scheduler loop is the daemon's.
 - aja is a CLI and targets Linux only for now: no web panel, no Windows or macOS code paths
   in new work (the few OS branches from phase 1 stay), releases for linux/amd64 and arm64.
 

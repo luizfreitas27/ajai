@@ -270,6 +270,13 @@ func (a *App) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			windows, err := st.ListWindows()
+			if err != nil {
+				return err
+			}
+			if len(windows) > 0 {
+				a.printNextOpening(windows)
+			}
 			runs, err := st.ListRuns(10)
 			if err != nil {
 				return err

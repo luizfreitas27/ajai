@@ -124,6 +124,7 @@ it leaves the window open, as before.
 | `aja config show` / `get` / `set` / `validate` | The configuration, secrets masked |
 | `aja doctor` | Everything a run needs, and every path |
 | `aja login` | Sign in to LinkedIn once in the profile aja uses |
+| `aja schedule add/list/rm/enable/disable` | Schedule windows (see below) |
 
 Only one run happens on a machine at a time: a second `aja run` refuses and says which run
 is in progress. `aja stop` asks that run to end: the job in progress is finished or
@@ -164,6 +165,25 @@ recorded and reported on its own; `aja status` shows when the next one starts.
 With `search.pause_after_filters: true` (the default) and you at the terminal, aja stops
 after applying each term's filters so you can check or adjust them in Chrome; press Enter
 to go on, or type `off` to stop pausing for the session.
+
+## Schedule windows
+
+A schedule window is a span of local time on chosen weekdays, optionally with its own market
+and dry run:
+
+```bash
+aja schedule add --days mon-fri --start 09:00 --end 11:00 --market brasil
+aja schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run
+aja schedule list            # every window, and the next opening
+aja schedule disable 2       # enable, rm work the same way
+```
+
+When a window opens, one unattended run starts (a non-stop session with
+`settings.run_non_stop`); when it closes, the run is stopped. A run that ends early is not
+restarted in the same window, and a window that opens while another run is in progress is
+skipped. Windows never cross midnight: split one in two (`22:00`-`24:00` and `00:00`-`02:00`
+the next day). `aja status` shows the next opening. Nothing starts on a window until
+`aja daemon` runs.
 
 ## Markets
 
