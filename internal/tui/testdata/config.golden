@@ -1,7 +1,7 @@
 aja   1 Dashboard   2 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-Config  $AJA_HOME/config.yaml
-secrets, kept in $AJA_HOME/.env
+Config  ~/config.yaml
+secrets, kept in ~/.env
   AJA_AI_API_KEY                     set (your environment)
   AJA_TELEGRAM_BOT_TOKEN             not set
   AJA_TELEGRAM_CHAT_ID               not set

@@ -74,6 +74,13 @@ to the tag before tagging and the workflow publishes that section as the release
   (single-quoted values, refusing quotes, backslashes and line breaks; 0600, atomic) and
   their values are never rendered or logged, nor is godotenv's error text (it quotes the
   file). What the daemon reads only at start is `readAtDaemonStart`.
+  The setup checklist runs `doctor.Run` (with `Deps.Probe`) as a command when the TUI
+  opens and after every fix, opens by itself once when a check fails, and blocks every
+  tab but Config while there is no config file. Fixes run aja subcommands through
+  `Deps.Launcher.InTerminal`: in production `/bin/sh` runs aja then waits for Enter
+  (`cli.afterwards`, so the subcommand's last words can be read) under
+  `tea.ExecProcess`; tests record the arguments. `Deps.Home` shows paths as `~/…` (tests
+  set it to the temporary AJA_HOME, which keeps the golden screens stable).
 - Editing the config file: always `config.LoadFile`, then `SetChecked`, then `Write`
   (`aja config set`, `aja import`, the TUI). `config.Load(p, config.MapEnv(nil), nil)`
   still reads `.env` and applies its `AJA_CFG_` lines, which would then be written into

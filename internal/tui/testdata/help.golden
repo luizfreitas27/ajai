@@ -6,20 +6,20 @@ Keys
   2           Config
   ?           this list; Esc closes it
   q, Ctrl-C   quit (a run in progress keeps running)
+  s           the setup checklist (from the Dashboard)
+
+Setup checklist
+
+  Enter       fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab
+  i           import from the Python bot
+  r           check again
+  Esc         back to the tabs (once there is a config file)
 
 Config
 
   ↑ ↓, k j    move; PgUp PgDn, g G jump
   Enter       edit the setting or secret, then Enter saves
   Esc         cancel the edit
-
-
-
-
-
-
-
-
 
 
 

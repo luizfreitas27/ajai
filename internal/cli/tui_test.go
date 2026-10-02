@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,5 +69,31 @@ func TestBareAjaOpensTheTUIInATerminal(t *testing.T) {
 	}
 	if calls[2].deps.Paths.ConfigFile != other {
 		t.Errorf("--config reaches the TUI: %q", calls[2].deps.Paths.ConfigFile)
+	}
+}
+
+// TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter runs the
+// shell line the launcher hands to Bubble Tea, with echo and false for aja.
+func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.T) {
+	run := func(self string, args ...string) (string, int) {
+		t.Helper()
+		cmd := exec.Command("/bin/sh", append([]string{"-c", afterwards, self}, args...)...)
+		cmd.Stdin = strings.NewReader("\n")
+		out, err := cmd.Output()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return string(out), exit.ExitCode()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out), 0
+	}
+	out, code := run("/bin/echo", "import", "/home/ana/my bot; rm -rf x")
+	if code != 0 || !strings.HasPrefix(out, "import /home/ana/my bot; rm -rf x\n") || !strings.Contains(out, "[aja] Press Enter to go back to the TUI.") {
+		t.Errorf("%d %q", code, out)
+	}
+	if _, code := run("/bin/false"); code != 1 {
+		t.Errorf("aja's exit status is kept: %d", code)
 	}
 }

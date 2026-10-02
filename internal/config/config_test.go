@@ -313,6 +313,15 @@ func TestLoadFileIsTheFileAloneWithNoOverrideFromDotenv(t *testing.T) {
 	}
 }
 
+func TestABrokenDotenvIsReportedWithoutItsContent(t *testing.T) {
+	p := tmpPaths(t)
+	mustWrite(t, p.EnvFile, "AJA_AI_API_KEY='sk-SECRET\nAJA_TELEGRAM_BOT_TOKEN=123:ALSO\n")
+	_, err := Load(p, MapEnv(nil), nil)
+	if err == nil || strings.Contains(err.Error(), "SECRET") || strings.Contains(err.Error(), "ALSO") || !strings.Contains(err.Error(), "never shows its content") {
+		t.Errorf("%v", err)
+	}
+}
+
 func TestSecretsAreNotKeys(t *testing.T) {
 	for _, f := range Fields() {
 		if looksLikeSecret(f.Key) {

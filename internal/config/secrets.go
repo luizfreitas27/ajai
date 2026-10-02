@@ -1,6 +1,9 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -72,6 +75,16 @@ func MapEnv(m map[string]string) Env {
 
 // Getenv is Get with the signature paths.Resolve and friends expect.
 func (e Env) Getenv(key string) string { return e.Get(key) }
+
+// DotenvError reports a .env file that cannot be read. godotenv's parse errors
+// quote the file, secrets included, so only a file system error is kept.
+func DotenvError(path string, err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return err
+	}
+	return fmt.Errorf("%s cannot be read: fix it in an editor (aja never shows its content)", path)
+}
 
 // LoadDotenv reads a .env file into the environment's lower layer. A missing
 // file is not an error.

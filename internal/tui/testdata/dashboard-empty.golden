@@ -4,6 +4,7 @@ Run           No run in progress.
 Pending       none
 Schedule      no schedule windows
 Daemon        not running
+Setup         every check passes
 
 Last runs
   none yet
@@ -25,6 +26,5 @@ Today's log
 
 
 
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-? keys · q quit
+s setup · ? keys · q quit
