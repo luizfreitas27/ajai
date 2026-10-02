@@ -34,7 +34,7 @@ func TestParseClock(t *testing.T) {
 			t.Errorf("%q: %v %v", s, got, err)
 		}
 	}
-	for _, s := range []string{"", "9", "25:00", "24:01", "12:60", "12:5", "ab:cd", "-1:00"} {
+	for _, s := range []string{"", "9", "25:00", "24:01", "12:60", "12:5", "ab:cd", "-1:00", "-0:30", "+9:30", "009:30", "9:30:00"} {
 		if _, err := ParseClock(s); err == nil || !strings.Contains(err.Error(), "HH:MM") {
 			t.Errorf("%q must be refused: %v", s, err)
 		}
@@ -85,7 +85,9 @@ func TestValidate(t *testing.T) {
 		{"until midnight", w("sat", "22:00", "24:00", "internacional"), ""},
 		{"same hours another day", w("sat,sun", "09:00", "11:00", ""), ""},
 		{"overlap", w("fri,sat", "10:30", "12:00", ""), "overlaps window 1 (Mon-Fri 09:00-11:00) on Friday"},
-		{"crosses midnight", w("fri", "22:00", "02:00", ""), "crosses midnight: split it into two windows, e.g. 22:00-24:00 and 00:00-02:00"},
+		{"crosses midnight", w("fri", "22:00", "02:00", ""), "22:00-02:00 ends before it starts; a window cannot cross midnight, so split one that does in two: 22:00-24:00, and 00:00-02:00"},
+		{"a typo reads the same", w("fri", "10:00", "09:00", ""), "10:00-09:00 ends before it starts"},
+		{"midnight as 00:00", w("fri", "22:00", "00:00", ""), "22:00-00:00: write 24:00 for a window that ends at midnight"},
 		{"empty", w("mon", "09:00", "09:00", ""), "end 09:00 is not after start 09:00"},
 		{"unknown market", w("mon", "13:00", "14:00", "usa"), `unknown market "usa" (use brasil or internacional)`},
 		{"no days", Window{Start: 60, End: 120, Enabled: true}, "at least one weekday"},
@@ -165,16 +167,44 @@ func TestCurrentDueAndNext(t *testing.T) {
 	}
 }
 
-func TestOpeningsFollowTheWallClockAcrossDaylightSavingTime(t *testing.T) {
+func TestWindowsFollowTheWallClockAcrossDaylightSavingTime(t *testing.T) {
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Skip("no time zone data:", err)
 	}
-	w := Window{ID: 1, Days: []time.Weekday{time.Sunday}, Start: 9 * 60, End: 11 * 60, Enabled: true}
-	// 2026-11-01 is the Sunday clocks go back in New York.
-	next, ok := Next([]Window{w}, time.Date(2026, 10, 31, 12, 0, 0, 0, ny))
-	if !ok || next.Start.Hour() != 9 || next.End.Hour() != 11 || next.End.Sub(next.Start) != 2*time.Hour {
-		t.Errorf("%v-%v", next.Start, next.End)
+	sunday := []time.Weekday{time.Sunday}
+	at := func(y int, m time.Month, d, h, min int, offset int) time.Time {
+		return time.Date(y, m, d, h, min, 0, 0, time.FixedZone("", offset*3600)).In(ny)
+	}
+	// 2026-03-08: clocks jump from 02:00 EST to 03:00 EDT. A 02:30-03:30 window is
+	// open from 03:00 (the first minute its clock times are on the wall) to 03:30.
+	spring := []Window{{ID: 1, Days: sunday, Start: 150, End: 210, Enabled: true}}
+	for _, tc := range []struct {
+		now  time.Time
+		open bool
+	}{
+		{at(2026, 3, 8, 1, 59, -5), false}, // 01:59 EST
+		{at(2026, 3, 8, 3, 0, -4), true},   // 03:00 EDT, a minute later
+		{at(2026, 3, 8, 3, 29, -4), true},
+		{at(2026, 3, 8, 3, 30, -4), false},
+	} {
+		if _, ok := Current(spring, tc.now); ok != tc.open {
+			t.Errorf("spring %s: open %v", tc.now, ok)
+		}
+	}
+	// 2026-11-01: 01:00-02:00 happens twice; the window is open both times.
+	fall := []Window{{ID: 1, Days: sunday, Start: 60, End: 120, Enabled: true}}
+	for _, now := range []time.Time{at(2026, 11, 1, 1, 30, -4), at(2026, 11, 1, 1, 30, -5)} {
+		o, ok := Current(fall, now)
+		if !ok || o.Date != "2026-11-01" {
+			t.Errorf("fall %s: %v %+v", now, ok, o)
+		}
+	}
+	// An ordinary morning window is the same two hours either side of the change.
+	morning := []Window{{ID: 1, Days: sunday, Start: 9 * 60, End: 11 * 60, Enabled: true}}
+	next, ok := Next(morning, time.Date(2026, 10, 31, 12, 0, 0, 0, ny))
+	if !ok || next.Date != "2026-11-01" || next.Start.Hour() != 9 || next.End.Sub(next.Start) != 2*time.Hour {
+		t.Errorf("%+v", next)
 	}
 }
 

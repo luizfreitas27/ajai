@@ -26,6 +26,16 @@ progress is skipped. Nothing starts on a window until aja daemon runs.
 Windows never cross midnight: split one in two (22:00-24:00 and 00:00-02:00 the next day).`,
 	}
 	cmd.AddCommand(a.scheduleAddCmd(), a.scheduleListCmd(), a.scheduleRmCmd(), a.scheduleEnableCmd(true), a.scheduleEnableCmd(false))
+	// Changes to the schedule are logged, as `aja import` logs.
+	cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
+		if err := c.Root().PersistentPreRunE(c, args); err != nil {
+			return err
+		}
+		if c.Name() != "list" {
+			a.openLog(config.Defaults().Settings.LogLevel)
+		}
+		return nil
+	}
 	return cmd
 }
 
@@ -51,7 +61,7 @@ func (a *App) scheduleAddCmd() *cobra.Command {
 			w := schedule.Window{Market: market, DryRun: dryRun, Enabled: true}
 			var err error
 			if w.Days, err = schedule.ParseDays(days); err != nil {
-				return err
+				return fmt.Errorf("--days: %w", err)
 			}
 			if w.Start, err = schedule.ParseClock(start); err != nil {
 				return fmt.Errorf("--start: %w", err)
@@ -73,6 +83,7 @@ func (a *App) scheduleAddCmd() *cobra.Command {
 			if w.ID, err = st.AddWindow(w); err != nil {
 				return err
 			}
+			a.logger.Info("schedule window added", "id", w.ID, "window", w.String())
 			a.ui.OK("added", fmt.Sprintf("window %d: %s", w.ID, w))
 			a.printNextOpening(append(others, w))
 			return nil
@@ -130,22 +141,24 @@ func (a *App) scheduleRmCmd() *cobra.Command {
 		Short:   "Delete a schedule window",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, st, err := a.windowArg(args[0])
+			w, st, err := a.windowArg(args[0])
 			if err != nil {
 				return err
 			}
-			if _, err := st.DeleteWindow(id); err != nil {
+			if _, err := st.DeleteWindow(w.ID); err != nil {
 				return err
 			}
-			a.ui.OK("deleted", fmt.Sprintf("window %d", id))
+			a.logger.Info("schedule window deleted", "id", w.ID, "window", w.String())
+			a.ui.OK("deleted", fmt.Sprintf("window %d: %s", w.ID, w))
 			return nil
 		},
 	}
 }
 
-func (a *App) scheduleEnableCmd(enable bool) *cobra.Command {
+// scheduleEnableCmd builds `aja schedule enable` (on) and `aja schedule disable`.
+func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
 	use, short, verb := "disable <id>", "Turn a schedule window off, keeping it", "disabled"
-	if enable {
+	if on {
 		use, short, verb = "enable <id>", "Turn a schedule window back on", "enabled"
 	}
 	return &cobra.Command{
@@ -153,7 +166,7 @@ func (a *App) scheduleEnableCmd(enable bool) *cobra.Command {
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, st, err := a.windowArg(args[0])
+			w, st, err := a.windowArg(args[0])
 			if err != nil {
 				return err
 			}
@@ -161,23 +174,20 @@ func (a *App) scheduleEnableCmd(enable bool) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if enable {
-				w, err := st.GetWindow(id)
-				if err != nil {
-					return err
-				}
-				w.Enabled = true
+			w.Enabled = on
+			if on {
 				if err := schedule.Validate(*w, windows, marketNames()); err != nil {
-					return fmt.Errorf("cannot enable window %d: %w", id, err)
+					return fmt.Errorf("cannot enable window %d: %w", w.ID, err)
 				}
 			}
-			if _, err := st.SetWindowEnabled(id, enable); err != nil {
+			if _, err := st.SetWindowEnabled(w.ID, on); err != nil {
 				return err
 			}
-			a.ui.OK(verb, fmt.Sprintf("window %d", id))
+			a.logger.Info("schedule window "+verb, "id", w.ID, "window", w.String())
+			a.ui.OK(verb, fmt.Sprintf("window %d: %s", w.ID, w))
 			for i := range windows {
-				if windows[i].ID == id {
-					windows[i].Enabled = enable
+				if windows[i].ID == w.ID {
+					windows[i].Enabled = on
 				}
 			}
 			a.printNextOpening(windows)
@@ -186,31 +196,31 @@ func (a *App) scheduleEnableCmd(enable bool) *cobra.Command {
 	}
 }
 
-// windowArg reads a window id argument and checks the window exists.
-func (a *App) windowArg(arg string) (int64, *store.Store, error) {
+// windowArg reads a window id argument and returns that window and the store.
+func (a *App) windowArg(arg string) (*schedule.Window, *store.Store, error) {
 	id, err := strconv.ParseInt(arg, 10, 64)
 	if err != nil || id <= 0 {
-		return 0, nil, fmt.Errorf("%q is not a window id; see aja schedule list", arg)
+		return nil, nil, fmt.Errorf("%q is not a window id; see aja schedule list", arg)
 	}
 	st, err := a.openStore()
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	w, err := st.GetWindow(id)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	if w == nil {
-		return 0, nil, errors.New("no window " + arg + "; see aja schedule list")
+		return nil, nil, errors.New("no window " + arg + "; see aja schedule list")
 	}
-	return id, st, nil
+	return w, st, nil
 }
 
 // printNextOpening says which window is open now, or when the next one opens.
 func (a *App) printNextOpening(windows []schedule.Window) {
 	now := a.now()
 	if o, ok := schedule.Current(windows, now); ok {
-		a.ui.KV("open now", fmt.Sprintf("window %d until %s (%s)", o.Window.ID, o.End.Format("15:04"), o.Window))
+		a.ui.KV("open now", fmt.Sprintf("window %d until %s (%s)", o.Window.ID, o.Window.End, o.Window))
 	}
 	if o, ok := schedule.Next(windows, now); ok {
 		a.ui.KV("next opening", fmt.Sprintf("%s, window %d (%s)", o.Start.Format("Mon 02 Jan 15:04"), o.Window.ID, o.Window))

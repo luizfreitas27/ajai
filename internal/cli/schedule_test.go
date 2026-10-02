@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,10 @@ func TestScheduleAddListAndTheNextOpening(t *testing.T) {
 	if _, out, _ = h.run("status"); !strings.Contains(out, "open now") || !strings.Contains(out, "next opening") {
 		t.Errorf("status shows the schedule:\n%s", out)
 	}
+	logs, _ := os.ReadFile(filepath.Join(h.home, "logs", mustOnlyFile(t, filepath.Join(h.home, "logs"))))
+	if strings.Count(string(logs), "schedule window added") != 2 {
+		t.Errorf("changes to the schedule are logged:\n%s", logs)
+	}
 }
 
 func TestScheduleAddRefusesBadWindowsAndStoresNothing(t *testing.T) {
@@ -46,7 +52,7 @@ func TestScheduleAddRefusesBadWindowsAndStoresNothing(t *testing.T) {
 		{[]string{"--days", "funday", "--start", "09:00", "--end", "10:00"}, `unknown weekday "funday"`},
 		{[]string{"--days", "sat", "--start", "9h", "--end", "10:00"}, `--start: "9h" is not a time of day`},
 		{[]string{"--days", "sat", "--start", "10:00", "--end", "10:00"}, "end 10:00 is not after start 10:00"},
-		{[]string{"--days", "sat", "--start", "22:00", "--end", "02:00"}, "crosses midnight: split it into two windows"},
+		{[]string{"--days", "sat", "--start", "22:00", "--end", "02:00"}, "a window cannot cross midnight, so split one that does in two"},
 		{[]string{"--days", "sat", "--start", "09:00", "--end", "10:00", "--market", "usa"}, `unknown market "usa"`},
 		{[]string{"--days", "wed", "--start", "10:00", "--end", "12:00"}, "overlaps window 1 (Mon-Fri 09:00-11:00) on Wednesday"},
 		{[]string{"--days", "sat"}, `required flag(s) "end", "start" not set`},

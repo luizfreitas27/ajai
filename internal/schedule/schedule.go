@@ -11,6 +11,7 @@ package schedule
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,17 +25,23 @@ type Clock int
 // EndOfDay is "24:00", the end of a window that runs until midnight.
 const EndOfDay Clock = 24 * 60
 
+var clockRe = regexp.MustCompile(`^(\d{1,2}):(\d{2})$`)
+
 // ParseClock reads "HH:MM" (24-hour; "9:30" too). "24:00" is EndOfDay.
 func ParseClock(s string) (Clock, error) {
-	h, m, ok := strings.Cut(strings.TrimSpace(s), ":")
-	hh, err1 := strconv.Atoi(h)
-	mm, err2 := strconv.Atoi(m)
-	if !ok || err1 != nil || err2 != nil || len(m) != 2 || hh < 0 || mm < 0 || mm > 59 || hh > 24 || (hh == 24 && mm != 0) {
+	m := clockRe.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return 0, fmt.Errorf("%q is not a time of day (HH:MM, 24-hour)", s)
+	}
+	hh, _ := strconv.Atoi(m[1])
+	mm, _ := strconv.Atoi(m[2])
+	if mm > 59 || hh > 24 || (hh == 24 && mm != 0) {
 		return 0, fmt.Errorf("%q is not a time of day (HH:MM, 24-hour)", s)
 	}
 	return Clock(hh*60 + mm), nil
 }
 
+// String is "HH:MM"; EndOfDay is "24:00".
 func (c Clock) String() string { return fmt.Sprintf("%02d:%02d", int(c)/60, int(c)%60) }
 
 // on is the moment this clock time falls on date's day, in date's location.
@@ -54,7 +61,10 @@ type Window struct {
 	Enabled bool
 }
 
+// dayNames are the stored and typed names, indexed by time.Weekday.
 var dayNames = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
+
+var errNoDays = errors.New("a window needs at least one weekday")
 
 func parseDay(s string) (time.Weekday, bool) {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -104,7 +114,7 @@ func ParseDays(s string) ([]time.Weekday, error) {
 		}
 	}
 	if len(days) == 0 {
-		return nil, errors.New("a window needs at least one weekday")
+		return nil, errNoDays
 	}
 	slices.Sort(days)
 	return slices.Compact(days), nil
@@ -167,13 +177,15 @@ func (w Window) String() string {
 // valid market names.
 func Validate(w Window, others []Window, markets []string) error {
 	if len(w.Days) == 0 {
-		return errors.New("a window needs at least one weekday")
+		return errNoDays
 	}
 	switch {
 	case w.Start < 0 || w.Start >= EndOfDay:
 		return fmt.Errorf("start %s is not a time of day", w.Start)
+	case w.End == 0 && w.Start > 0:
+		return fmt.Errorf("%s-00:00: write 24:00 for a window that ends at midnight", w.Start)
 	case w.End < w.Start:
-		return fmt.Errorf("%s-%s crosses midnight: split it into two windows, e.g. %s-24:00 and 00:00-%s on the next day",
+		return fmt.Errorf("%s-%s ends before it starts; a window cannot cross midnight, so split one that does in two: %s-24:00, and 00:00-%s on the next day",
 			w.Start, w.End, w.Start, w.End)
 	case w.End == w.Start:
 		return fmt.Errorf("end %s is not after start %s", w.End, w.Start)
@@ -204,29 +216,33 @@ type Key struct {
 	Date     string
 }
 
-// Opening is one occurrence of a window.
+// Opening is one occurrence of a window: the window on one local date. Start
+// and End are the instants its clock times fall on that day, for display and
+// ordering; whether it is open is decided on the wall clock (Current).
 type Opening struct {
 	Window     Window
+	Date       string // "2006-01-02"
 	Start, End time.Time
 }
 
 // Key of this opening.
-func (o Opening) Key() Key { return Key{WindowID: o.Window.ID, Date: o.Start.Format(time.DateOnly)} }
+func (o Opening) Key() Key { return Key{WindowID: o.Window.ID, Date: o.Date} }
 
 func openingOn(w Window, date time.Time) Opening {
-	return Opening{Window: w, Start: w.Start.on(date), End: w.End.on(date)}
+	return Opening{Window: w, Date: date.Format(time.DateOnly), Start: w.Start.on(date), End: w.End.on(date)}
 }
 
-// Current returns the opening of an enabled window that contains now (start
-// included, end excluded), if any.
+// Current returns the opening of an enabled window that contains now, if any.
+// Windows are wall-clock time, as the Python bot had them: a window is open
+// while the local clock reads from its start (included) to its end (excluded),
+// so daylight-saving days hold no surprises beyond the clock's own (an hour
+// that never happens, or happens twice). A disabled or deleted window has no
+// current opening.
 func Current(windows []Window, now time.Time) (Opening, bool) {
+	minute := Clock(now.Hour()*60 + now.Minute())
 	for _, w := range windows {
-		if !w.Enabled || !slices.Contains(w.Days, now.Weekday()) {
-			continue
-		}
-		o := openingOn(w, now)
-		if !now.Before(o.Start) && now.Before(o.End) {
-			return o, true
+		if w.Enabled && slices.Contains(w.Days, now.Weekday()) && minute >= w.Start && minute < w.End {
+			return openingOn(w, now), true
 		}
 	}
 	return Opening{}, false
@@ -270,7 +286,7 @@ type Outcome string
 
 // The outcomes of an opening.
 const (
-	Started Outcome = "started" // its run started
-	Skipped Outcome = "skipped" // another run was in progress
-	Failed  Outcome = "failed"  // its run could not start
+	OutcomeStarted Outcome = "started" // its run started
+	OutcomeSkipped Outcome = "skipped" // another run was in progress
+	OutcomeFailed  Outcome = "failed"  // its run could not start
 )

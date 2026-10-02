@@ -17,7 +17,10 @@ func TestTheScheduleMigrationUpgradesAPhaseOneDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := migrations.ReadFile("migrations/0001_initial.sql")
+	body, err := migrations.ReadFile("migrations/0001_initial.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, q := range []string{`CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`, string(body),
 		`INSERT INTO schema_migrations VALUES ('migrations/0001_initial.sql', '2026-10-01T10:00:00Z')`,
 		`INSERT INTO runs (started_at, market) VALUES ('2026-10-01T10:00:00Z', 'brasil')`} {
@@ -69,13 +72,13 @@ func TestWindowsAndOpenings(t *testing.T) {
 	// Openings: one record per window and date, replaced when recorded again.
 	runID, _ := s.StartRun(context.Background(), "brasil", true)
 	k := schedule.Key{WindowID: id, Date: "2026-10-02"}
-	if err := s.RecordOpening(k, schedule.Skipped, "a terminal run was in progress", 0); err != nil {
+	if err := s.RecordOpening(k, schedule.OutcomeSkipped, "a terminal run was in progress", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordOpening(k, schedule.Started, "", runID); err != nil {
+	if err := s.RecordOpening(k, schedule.OutcomeStarted, "", runID); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordOpening(schedule.Key{WindowID: id, Date: "2026-09-25"}, schedule.Started, "", 0); err != nil {
+	if err := s.RecordOpening(schedule.Key{WindowID: id, Date: "2026-09-25"}, schedule.OutcomeStarted, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	handled, err := s.HandledOpenings("2026-10-01")

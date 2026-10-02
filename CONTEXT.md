@@ -110,6 +110,10 @@ _Avoid_: user info, context, persona
 A span of local time on chosen weekdays, optionally with its own market and dry run. When it opens the scheduler starts one unattended run (a non-stop session if `run_non_stop` is on); when it closes the run is stopped. A run that ends early is not restarted in the same window, and a window that opens while another run is in progress is skipped with a notice.
 _Avoid_: cron, timer, slot
 
+**Opening**:
+One occurrence of a schedule window: the window on one date. Each opening gets at most one run; once the scheduler has started its run, or skipped it because another run was in progress, the opening is handled.
+_Avoid_: slot, occurrence, instance
+
 **Scheduler**:
 The part of the daemon that watches the clock and starts and stops runs for the schedule windows.
 _Avoid_: cron job, timer, background worker
