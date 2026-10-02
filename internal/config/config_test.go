@@ -314,3 +314,33 @@ func mustWrite(t *testing.T, path, text string) {
 		t.Fatal(err)
 	}
 }
+
+func TestARetiredKeyStillLoadsWithAWarningAndSetDropsIt(t *testing.T) {
+	p := tmpPaths(t)
+	if err := Write(p.ConfigFile, valid()); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(p.ConfigFile)
+	old := strings.Replace(string(data), "settings:\n", "settings:\n  click_gap: 2\n", 1)
+	mustWrite(t, p.ConfigFile, old)
+	mustWrite(t, p.EnvFile, "AJA_CFG_SETTINGS_CLICK_GAP=3\n")
+	l, err := Load(p, MapEnv(nil), nil)
+	if err != nil {
+		t.Fatalf("an old file must keep loading: %v", err)
+	}
+	if len(l.Warnings) != 2 || !strings.Contains(l.Warnings[0], "settings.click_gap is no longer used") ||
+		!strings.Contains(l.Warnings[0], "pacing.between_actions") || !strings.Contains(l.Warnings[1], "environment override") {
+		t.Errorf("%q", l.Warnings)
+	}
+	if l.Config.Search.Terms[0] != "Software Engineer" {
+		t.Error("the rest of the file must load as before")
+	}
+	// Rewriting the file (what config set does) drops the retired key.
+	if err := Write(p.ConfigFile, l.Config); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(p.ConfigFile)
+	if strings.Contains(string(data), "click_gap") {
+		t.Error("the rewritten file still has the retired key")
+	}
+}

@@ -38,6 +38,8 @@ type App struct {
 	logger   *slog.Logger
 	cleanups []func() error // closed in reverse order when the command ends
 
+	eventsAsJSON bool // aja run --json
+
 	linesOnce   sync.Once   // starts the stdin reader (readLine)
 	lines       chan string // lines typed on stdin; closed at end of input
 	stdinClosed bool        // end of input was seen: nobody can answer anything any more

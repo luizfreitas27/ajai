@@ -370,8 +370,10 @@ func (a *Answerer) answerSelect(ctx context.Context, q Question, job Job) Decisi
 	case textmatch.Has(label, "email", "phone") && strings.TrimSpace(q.Current) != "":
 		// Phone country code and the like: LinkedIn's own value stands, even a placeholder.
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
-	case textmatch.Has(label, "gender", "sex", "sexual orientation", "gênero", "genero", "sexo"):
+	case textmatch.Has(label, genderTerms...):
 		answer = a.Cfg.Personals.Gender
+	case textmatch.Has(label, ethnicityTerms...):
+		answer = a.Cfg.Personals.Ethnicity
 	case textmatch.Has(label, disabilityTerms...):
 		answer = a.Cfg.Personals.Disability
 	case textmatch.Has(label, "proficiency", "proficiência", "proficiencia", "fluência", "fluencia"):
@@ -408,6 +410,10 @@ func (a *Answerer) answerRadio(ctx context.Context, q Question, job Job) Decisio
 		answer = a.Cfg.Personals.Veteran
 	case textmatch.Has(label, disabilityTerms...):
 		answer = a.Cfg.Personals.Disability
+	case textmatch.Has(label, genderTerms...):
+		answer = a.Cfg.Personals.Gender
+	case textmatch.Has(label, ethnicityTerms...):
+		answer = a.Cfg.Personals.Ethnicity
 	}
 	return a.chooseOption(ctx, q, answer, job)
 }

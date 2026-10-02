@@ -158,7 +158,7 @@ func runner(t *testing.T, site *fakeSite, cfg config.Config) (*Runner, *store.St
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	p := pacing.New(cfg.Pacing, true)
+	p := newPacer(cfg)
 	var events []Event
 	r := &Runner{Cfg: cfg, Market: markets.Resolve(cfg), Site: site, Applier: &fakeApplier{}, Store: st, Pacer: p,
 		Events:    func(e Event) { events = append(events, e) },
@@ -459,3 +459,5 @@ func TestTermAndLocationOverridesAndOurOwnHistory(t *testing.T) {
 		t.Error("the caller's slice must not be shuffled in place")
 	}
 }
+
+func newPacer(c config.Config) *pacing.Pacer { return pacing.New(c.Pacing, true) }

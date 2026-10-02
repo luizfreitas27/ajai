@@ -45,8 +45,18 @@ can check the answers before applying for real.
 With you at the terminal, a question nothing can answer pauses the job: aja shows it (and
 sends a Telegram message when configured), you fill it in Chrome and press Enter, and what
 you typed is remembered as an approved answer. The pause waits up to 15 minutes. With
---unattended, or when stdin or stdout is not a terminal, aja never pauses: the job is
-skipped and the question waits for you in "aja answers review".`,
+search.pause_after_filters, aja also stops after applying each term's filters so you can
+check them; type "off" there to stop pausing. With --unattended, --json, or when stdin or
+stdout is not a terminal, aja never pauses: the job is skipped and the question waits for
+you in "aja answers review".
+
+With settings.run_non_stop, a run that visited every search term (or hit the per-run cap)
+is followed, ten minutes later, by another, with the sort order and the date-posted filter
+changed as settings.alternate_sort_by and settings.cycle_date_posted say, until LinkedIn's
+daily limit, the hourly cap, --max, an error or Ctrl-C.
+
+--json prints one JSON object per line for every event and each run's summary, and nothing
+else on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := map[string]string{}
@@ -88,7 +98,8 @@ skipped and the question waits for you in "aja answers review".`,
 					}
 				}
 			}
-			opts.Unattended = run.ResolveUnattended(opts.Unattended, a.stdinIsTerminal(), a.stdoutIsTerminal())
+			// --json is for scripts: nobody answers a pause there.
+			opts.Unattended = run.ResolveUnattended(opts.Unattended || a.eventsAsJSON, a.stdinIsTerminal(), a.stdoutIsTerminal())
 			cfg := l.Config
 			st, err := a.openStore()
 			if err != nil {
@@ -99,10 +110,16 @@ skipped and the question waits for you in "aja answers review".`,
 			if err != nil {
 				return cannotStart(err)
 			}
-			a.ui.Banner(a.Version)
-			a.ui.KV("market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
-			a.ui.KV("mode", runMode(opts))
-			a.ui.KV("ai", aiMode(cfg, aiClient != nil))
+			pauseFilters := cfg.Search.PauseAfterFilters && !opts.Unattended
+			if !a.eventsAsJSON {
+				a.ui.Banner(a.Version)
+			}
+			a.note(run.EventStart, "market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
+			a.note(run.EventStart, "mode", runMode(opts, cfg.Settings.RunNonStop, pauseFilters))
+			a.note(run.EventStart, "ai", aiMode(cfg, aiClient != nil))
+			for _, w := range l.Warnings {
+				a.note(run.EventWarn, "config", w)
+			}
 
 			bin, err := chrome.Find(cfg.Settings.ChromeBinary)
 			if err != nil {
@@ -112,7 +129,8 @@ skipped and the question waits for you in "aja answers review".`,
 			if profile == "" {
 				profile = chrome.DefaultProfileDir()
 			}
-			br, err := OpenBrowser(ctx, browser.Options{Bin: bin, ProfileDir: profile, DisableExtensions: cfg.Settings.DisableExtensions, Logger: a.logger})
+			br, err := OpenBrowser(ctx, browser.Options{Bin: bin, ProfileDir: profile, DisableExtensions: cfg.Settings.DisableExtensions,
+				SmoothScroll: cfg.Settings.SmoothScroll, Logger: a.logger})
 			if err != nil {
 				return cannotStart(err)
 			}
@@ -132,19 +150,20 @@ skipped and the question waits for you in "aja answers review".`,
 			}
 			resume, note := run.ResolveResume(a.paths, resolved, cfg.Questions.Resume)
 			if note != "" {
-				a.ui.Warn("resume", note)
+				a.note(run.EventWarn, "resume", note)
 			}
 			events := func(e run.Event) {
-				a.printEvent(e)
+				a.report(e)
 				if e.Kind == run.EventLogin {
 					telegram.Send(ctx, "aja is waiting for you to sign in to LinkedIn in the Chrome window.")
 				}
 			}
 			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
 				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume, Notifier: telegram}
-
-			sum, runErr := runner.Run(ctx, opts)
-			a.printSummary(sum)
+			if pauseFilters {
+				runner.AfterFilters = a.filterPause(defaultHelpTimeout)
+			}
+			_, runErr := runner.Session(ctx, opts)
 			return runErr
 		},
 	}
@@ -156,6 +175,7 @@ skipped and the question waits for you in "aja answers review".`,
 	f.StringVar(&terms, "terms", "", "search terms for this run, comma-separated (overrides the config)")
 	f.StringVar(&opts.Location, "location", "", "search location for this run (overrides the config)")
 	f.StringVar(&market, "market", "", "market for this run: brasil or internacional")
+	f.BoolVar(&a.eventsAsJSON, "json", false, "print events and summaries as JSON lines (implies --unattended)")
 	return cmd
 }
 
@@ -166,7 +186,7 @@ func aiMode(c config.Config, on bool) string {
 	return c.AI.Provider + " " + c.AI.Model
 }
 
-func runMode(o run.Options) string {
+func runMode(o run.Options, nonStop, pauseFilters bool) string {
 	parts := []string{}
 	if o.DryRun {
 		parts = append(parts, "dry run")
@@ -179,53 +199,18 @@ func runMode(o run.Options) string {
 	if o.Fast {
 		parts = append(parts, "fast")
 	}
+	if nonStop {
+		parts = append(parts, "non-stop")
+	}
+	if pauseFilters {
+		parts = append(parts, "pause after filters")
+	}
 	return strings.Join(parts, ", ")
 }
 
 func (a *App) stdoutIsTerminal() bool {
 	f, ok := a.Stdout.(*os.File)
 	return ok && term.IsTerminal(f.Fd())
-}
-
-func (a *App) printEvent(e run.Event) {
-	title := ""
-	if e.Card != nil {
-		title = strings.TrimSpace(e.Card.Title + " | " + e.Card.Company)
-	}
-	switch e.Kind {
-	case run.EventLogin:
-		a.ui.Warn("login", e.Text)
-	case run.EventTerm:
-		a.ui.Println()
-		a.ui.Title("Searching: " + e.Text)
-	case run.EventWouldApply:
-		a.ui.OK("would apply", title)
-	case run.EventApplied:
-		a.ui.OK("applied", title)
-	case run.EventFailed:
-		a.ui.Fail("failed", title+"  ("+e.Text+")")
-	case run.EventExternal:
-		a.ui.OK("external", title)
-	case run.EventSkip:
-		a.ui.Hint("skip  " + title + "  (" + e.Text + ")")
-	case run.EventLimit:
-		a.ui.Warn("stop", e.Text)
-	case run.EventWarn:
-		a.ui.Warn("warn", e.Text)
-	default:
-		a.ui.Println(e.Text)
-	}
-}
-
-func (a *App) printSummary(s run.Summary) {
-	a.ui.Println()
-	a.ui.Title("Run summary")
-	for _, kv := range s.Fields() {
-		a.ui.KV(strings.ToLower(kv[0]), kv[1])
-	}
-	if s.PendingAnswers > 0 {
-		a.ui.Hint("Review them with `aja answers review`.")
-	}
 }
 
 // ------------------------------------------------------------------ status / logs

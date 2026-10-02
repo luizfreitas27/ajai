@@ -80,6 +80,11 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	default:
 		add("config", OK, p.ConfigFile)
 	}
+	if loaded != nil {
+		for _, w := range loaded.Warnings {
+			add("config", Warn, w)
+		}
+	}
 
 	var cfg config.Config
 	if loaded != nil {

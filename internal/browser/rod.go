@@ -25,6 +25,8 @@ type Options struct {
 	Bin               string // Chrome executable; "" lets rod look it up
 	ProfileDir        string // user-data directory to attach to
 	DisableExtensions bool
+	// SmoothScroll scrolls elements into view smoothly (settings.smooth_scroll).
+	SmoothScroll bool
 	// HeadlessForTests is honoured ONLY by the browser-tagged tests; the CLI never sets it
 	// and a run is never headless (ADR 0001).
 	HeadlessForTests bool
@@ -82,7 +84,7 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 		return nil, err
 	}
 	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.HeadlessForTests)
-	return &rodBrowser{b: b, main: &rodPage{p: main}, launcher: l, logger: opts.Logger, owned: opts.HeadlessForTests}, nil
+	return &rodBrowser{b: b, main: &rodPage{p: main, smooth: opts.SmoothScroll}, launcher: l, logger: opts.Logger, owned: opts.HeadlessForTests}, nil
 }
 
 // profileLocked reports whether a LIVE Chrome holds the profile's singleton
@@ -119,7 +121,7 @@ func (r *rodBrowser) Pages() ([]Page, error) {
 	out := []Page{r.main}
 	for _, p := range pages {
 		if p.TargetID != r.main.p.TargetID {
-			out = append(out, &rodPage{p: p})
+			out = append(out, &rodPage{p: p, smooth: r.main.smooth})
 		}
 	}
 	return out, nil
@@ -139,7 +141,10 @@ func (r *rodBrowser) Close() error {
 	return nil
 }
 
-type rodPage struct{ p *rod.Page }
+type rodPage struct {
+	p      *rod.Page
+	smooth bool
+}
 
 func (p *rodPage) Navigate(ctx context.Context, url string) error {
 	page := p.p.Context(ctx)
@@ -159,18 +164,18 @@ func (p *rodPage) URL() (string, error) {
 
 func (p *rodPage) Element(xpath string) (Element, error) {
 	els, err := p.p.ElementsX(xpath)
-	return first(els, err, xpath)
+	return first(els, err, xpath, p.smooth)
 }
 
 // first turns an ElementsX result into one element or ErrNotFound.
-func first(els rod.Elements, err error, xpath string) (Element, error) {
+func first(els rod.Elements, err error, xpath string, smooth bool) (Element, error) {
 	if err != nil {
 		return nil, err
 	}
 	if len(els) == 0 {
 		return nil, &ErrNotFound{XPath: xpath}
 	}
-	return &rodElement{el: els[0]}, nil
+	return &rodElement{el: els[0], smooth: smooth}, nil
 }
 
 func (p *rodPage) Elements(xpath string) ([]Element, error) {
@@ -178,7 +183,7 @@ func (p *rodPage) Elements(xpath string) ([]Element, error) {
 	if err != nil {
 		return nil, err
 	}
-	return wrap(els), nil
+	return wrap(els, p.smooth), nil
 }
 
 func (p *rodPage) WaitElement(ctx context.Context, xpath string, timeout time.Duration) (Element, error) {
@@ -190,7 +195,7 @@ func (p *rodPage) WaitElement(ctx context.Context, xpath string, timeout time.Du
 		if err == nil {
 			for _, el := range els {
 				if v, _ := el.Visible(); v {
-					return &rodElement{el: el.Context(context.Background())}, nil
+					return &rodElement{el: el.Context(context.Background()), smooth: p.smooth}, nil
 				}
 			}
 		}
@@ -230,15 +235,18 @@ var keys = map[string]input.Key{
 
 func (p *rodPage) Close() error { return p.p.Close() }
 
-func wrap(els rod.Elements) []Element {
+func wrap(els rod.Elements, smooth bool) []Element {
 	out := make([]Element, len(els))
 	for i, el := range els {
-		out[i] = &rodElement{el: el}
+		out[i] = &rodElement{el: el, smooth: smooth}
 	}
 	return out
 }
 
-type rodElement struct{ el *rod.Element }
+type rodElement struct {
+	el     *rod.Element
+	smooth bool
+}
 
 func (e *rodElement) Text() (string, error) { return e.el.Text() }
 
@@ -281,8 +289,52 @@ func (e *rodElement) Clear() error {
 	return e.el.Input("")
 }
 
-func (e *rodElement) Focus() error          { return e.el.Focus() }
-func (e *rodElement) ScrollIntoView() error { return e.el.ScrollIntoView() }
+func (e *rodElement) Focus() error { return e.el.Focus() }
+
+// ScrollIntoView brings the element to the middle of the viewport, smoothly when
+// settings.smooth_scroll is on (the Python bot's scroll_to_view), and waits for a
+// smooth scroll to settle so the next click lands where it should.
+func (e *rodElement) ScrollIntoView() error {
+	if _, err := e.el.Eval(ScrollScript(e.smooth)); err != nil {
+		return err
+	}
+	if e.smooth {
+		e.waitScrollSettle()
+	}
+	return nil
+}
+
+// smoothScrollLimit bounds the wait for a smooth scroll (a long one takes about a second).
+const smoothScrollLimit = 3 * time.Second
+
+// waitScrollSettle returns once the page has stopped scrolling: two readings of
+// the scroll position 100 ms apart agree (or the limit passes).
+func (e *rodElement) waitScrollSettle() {
+	deadline := time.Now().Add(smoothScrollLimit)
+	last := ""
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		v, err := e.el.Eval(`() => String(window.scrollX) + "," + String(window.scrollY)`)
+		if err != nil {
+			return
+		}
+		pos := v.Value.String()
+		if pos == last {
+			return
+		}
+		last = pos
+	}
+}
+
+// ScrollScript is the JavaScript that scrolls an element (this) into the middle
+// of the viewport.
+func ScrollScript(smooth bool) string {
+	behavior := "instant"
+	if smooth {
+		behavior = "smooth"
+	}
+	return `() => this.scrollIntoView({block: "center", behavior: "` + behavior + `"})`
+}
 
 func (e *rodElement) Visible() bool {
 	v, err := e.el.Visible()
@@ -291,7 +343,7 @@ func (e *rodElement) Visible() bool {
 
 func (e *rodElement) Element(xpath string) (Element, error) {
 	els, err := e.el.ElementsX(xpath)
-	return first(els, err, xpath)
+	return first(els, err, xpath, e.smooth)
 }
 
 func (e *rodElement) Elements(xpath string) ([]Element, error) {
@@ -299,7 +351,7 @@ func (e *rodElement) Elements(xpath string) ([]Element, error) {
 	if err != nil {
 		return nil, err
 	}
-	return wrap(els), nil
+	return wrap(els, e.smooth), nil
 }
 
 func (e *rodElement) SelectOption(text string) error {

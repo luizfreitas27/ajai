@@ -103,7 +103,6 @@ type Settings struct {
 	RunNonStop        bool   `yaml:"run_non_stop" doc:"Start a new run when one ends, until the daily limit or a pacing limit."`
 	AlternateSortBy   bool   `yaml:"alternate_sort_by" doc:"Alternate the sort filter between runs when running non-stop."`
 	CycleDatePosted   bool   `yaml:"cycle_date_posted" doc:"Cycle the date-posted filter between runs when running non-stop."`
-	ClickGap          int    `yaml:"click_gap" doc:"Base seconds between clicks; pacing adds jitter on top." min:"0"`
 	SmoothScroll      bool   `yaml:"smooth_scroll" doc:"Scroll smoothly instead of jumping."`
 	DisableExtensions bool   `yaml:"disable_extensions" doc:"Start Chrome with extensions disabled."`
 	LogLevel          string `yaml:"log_level" doc:"Level for the log file." opts:"DEBUG|INFO|WARN|ERROR"`
@@ -166,7 +165,7 @@ func Defaults() Config {
 				"cannot sponsor", "unable to sponsor", "no sponsorship", "without sponsorship", "not able to sponsor"},
 			DidMasters: false, CurrentExperience: -1,
 		},
-		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, ClickGap: 1, LogLevel: "INFO"},
+		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, LogLevel: "INFO"},
 		Markets: Markets{
 			Active:        string(MarketInternacional),
 			Brasil:        Market{Currency: "BRL", Location: "Brasil", Terms: []string{}},

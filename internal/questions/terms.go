@@ -48,6 +48,11 @@ var (
 	weekTerms   = []string{"week", "weeks", "weekly", "semana", "semanas", "semanal"}
 	annualTerms = []string{"year", "yearly", "annual", "annually", "per annum", "ano", "anual", "anuais", "por ano"}
 
+	// Gender and race/ethnicity questions are answered from the configured
+	// personals.gender / personals.ethnicity ("Decline" picks the decline option).
+	genderTerms    = []string{"gender", "sex", "sexual orientation", "gênero", "genero", "sexo"}
+	ethnicityTerms = []string{"ethnicity", "ethnic", "race", "racial", "raça", "raca", "etnia", "cor ou raça", "cor/raça"}
+
 	countryTerms = []string{"country", "país", "pais"}
 	stateTerms   = []string{"state", "province", "estado", "uf"}
 	cityTerms    = []string{"city", "cidade"}

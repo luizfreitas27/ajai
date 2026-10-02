@@ -92,31 +92,57 @@ const (
 	EventExternal   EventKind = "external"
 	EventLimit      EventKind = "limit"
 	EventWarn       EventKind = "warn"
+	EventRunEnd     EventKind = "run-end" // Summary is set
+	EventStart      EventKind = "start"   // the run's settings, before it begins
+	EventWait       EventKind = "wait"    // a non-stop session waits before the next run
 )
 
 // Event is something the user should see as it happens.
 type Event struct {
-	Kind EventKind
-	Text string
-	Card *linkedin.Card
+	Kind    EventKind
+	Text    string
+	Card    *linkedin.Card
+	Summary *Summary
 }
 
 // Summary is the run summary.
 type Summary struct {
-	RunID      int64
-	Market     string
-	DryRun     bool
-	Applied    int
-	External   int
-	Failed     int
-	Skipped    int
-	WouldApply int
+	RunID      int64  `json:"run_id"`
+	Market     string `json:"market"`
+	DryRun     bool   `json:"dry_run"`
+	Applied    int    `json:"applied"`
+	External   int    `json:"external"`
+	Failed     int    `json:"failed"`
+	Skipped    int    `json:"skipped"`
+	WouldApply int    `json:"would_apply"`
 	// Captured counts answers the user typed during help pauses and aja remembered.
-	Captured int
+	Captured int `json:"captured"`
 	// PendingAnswers is the review queue's size when the run ended.
-	PendingAnswers int
-	Reason         string
+	PendingAnswers int `json:"pending_answers"`
+	// Reason says, in words, why the run ended; End says it for code.
+	Reason string `json:"reason"`
+	End    End    `json:"end"`
 }
+
+// End classifies why a run ended.
+type End string
+
+// The ways a run ends.
+const (
+	EndAllTerms   End = "all-terms"   // every search term visited
+	EndPerRunCap  End = "per-run-cap" // pacing.max_per_run
+	EndHourlyCap  End = "hourly-cap"  // pacing.max_applications_per_hour
+	EndMax        End = "max"         // --max
+	EndDailyLimit End = "daily-limit" // LinkedIn's daily Easy Apply limit
+	EndStopped    End = "stopped"     // Ctrl-C
+	EndTimedOut   End = "timed-out"
+	EndError      End = "error"
+)
+
+// Continues reports whether a non-stop session starts another run after one
+// that ended this way: only after a complete pass or the per-run cap. LinkedIn's
+// daily limit, the hourly cap, --max, Ctrl-C and errors end the session.
+func (e End) Continues() bool { return e == EndAllTerms || e == EndPerRunCap }
 
 // Runner holds the wiring for one run.
 type Runner struct {
@@ -138,13 +164,28 @@ type Runner struct {
 	// Notifier, when set, gets exactly one message when the run ends: the summary,
 	// or the error with what was done until then.
 	Notifier Notifier
+	// AfterFilters, when set (an attended run with search.pause_after_filters), is
+	// called once a term's filters are applied, so the user can check them in Chrome.
+	// It returns false to stop pausing for the rest of the session.
+	AfterFilters func(ctx context.Context, term string) (keepPausing bool)
+	// NonStopWait is the pause between the runs of a non-stop session (default 10 minutes,
+	// as the Python bot waited).
+	NonStopWait time.Duration
+	// Sleep waits d or until ctx ends; time-based by default, replaced in tests.
+	Sleep func(ctx context.Context, d time.Duration) error
+
+	filtersPaused bool // the user typed "off" at a filter pause
 
 	started time.Time
 }
 
 func (r *Runner) emit(kind EventKind, text string, card *linkedin.Card) {
+	r.emitEvent(Event{Kind: kind, Text: text, Card: card})
+}
+
+func (r *Runner) emitEvent(e Event) {
 	if r.Events != nil {
-		r.Events(Event{Kind: kind, Text: text, Card: card})
+		r.Events(e)
 	}
 }
 
@@ -184,6 +225,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	if err != nil && sum.Reason == "" {
 		sum.Reason = "error: " + err.Error()
 	}
+	if err != nil && sum.End == "" {
+		sum.End = EndError
+	}
 	if sum.RunID == 0 {
 		if !errors.Is(err, errInvalidOptions) {
 			r.notifyEnd(sum, err)
@@ -199,6 +243,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 		RemoveState(r.StatePath)
 	}
 	r.notifyEnd(sum, err)
+	ended := sum
+	r.emitEvent(Event{Kind: EventRunEnd, Text: sum.Reason, Summary: &ended})
 	return sum, err
 }
 
@@ -231,7 +277,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		if ctx.Err() != nil {
 			return r.stop(&sum, ctx.Err())
 		}
-		sum.Reason = "login: " + err.Error()
+		sum.Reason, sum.End = "login: "+err.Error(), EndError
 		return sum, err
 	}
 
@@ -266,6 +312,14 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 			}
 			r.emit(EventWarn, "filters: "+err.Error(), nil)
 		}
+		if r.AfterFilters != nil && !r.filtersPaused {
+			if !r.AfterFilters(ctx, term) {
+				r.filtersPaused = true
+			}
+			if ctx.Err() != nil {
+				return r.stop(&sum, ctx.Err())
+			}
+		}
 		if err := r.Site.WaitForCards(ctx); err != nil {
 			if ctx.Err() != nil {
 				return r.stop(&sum, ctx.Err())
@@ -287,7 +341,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 				if index >= len(cards) {
 					break
 				}
-				if perTerm >= r.Cfg.Search.SwitchNumber || (opts.Max > 0 && r.Pacer.Applied() >= opts.Max) {
+				if perTerm >= r.Cfg.Search.SwitchNumber || (opts.Max > 0 && r.Pacer.Total() >= opts.Max) {
 					break pages
 				}
 				outcome, err := r.handleCard(ctx, &sum, opts, rules, cards[index], &state)
@@ -310,13 +364,13 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 				break
 			}
 		}
-		if opts.Max > 0 && r.Pacer.Applied() >= opts.Max {
-			sum.Reason = "--max reached"
+		if opts.Max > 0 && r.Pacer.Total() >= opts.Max {
+			sum.Reason, sum.End = "--max reached", EndMax
 			r.emit(EventLimit, sum.Reason, nil)
 			return sum, nil
 		}
 	}
-	sum.Reason = "all search terms visited"
+	sum.Reason, sum.End = "all search terms visited", EndAllTerms
 	return sum, nil
 }
 
@@ -376,7 +430,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	switch kind {
 	case linkedin.NoApplyButton:
 		if r.Site.DailyLimitReached() {
-			sum.Reason = "LinkedIn's daily Easy Apply limit reached"
+			sum.Reason, sum.End = "LinkedIn's daily Easy Apply limit reached", EndDailyLimit
 			_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
 			r.emit(EventLimit, sum.Reason, &c)
 			return cardEndsRun, nil
@@ -405,7 +459,11 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	r.Logger.Info("easy apply button found", "job", c.ID, "how", how)
 	if err := r.Pacer.Allow(); err != nil {
-		sum.Reason = err.Error()
+		sum.Reason, sum.End = err.Error(), EndHourlyCap
+		var le *pacing.LimitError
+		if errors.As(err, &le) && le.Cap == pacing.CapPerRun {
+			sum.End = EndPerRunCap
+		}
 		r.emit(EventLimit, sum.Reason, &c)
 		return cardEndsRun, nil
 	}
@@ -502,15 +560,15 @@ func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error 
 func (r *Runner) stop(sum *Summary, err error) (Summary, error) {
 	switch {
 	case errors.Is(err, context.Canceled):
-		sum.Reason = "stopped by user"
+		sum.Reason, sum.End = "stopped by user", EndStopped
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	case errors.Is(err, context.DeadlineExceeded):
-		sum.Reason = "timed out"
+		sum.Reason, sum.End = "timed out", EndTimedOut
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	}
-	sum.Reason = "error: " + err.Error()
+	sum.Reason, sum.End = "error: "+err.Error(), EndError
 	return *sum, err
 }
 
