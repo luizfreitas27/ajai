@@ -106,6 +106,10 @@ to the tag before tagging and the workflow publishes that section as the release
   the keyboard, and the reply arrives as key presses. To try it outside tests, run it in a
   pty that answers the OSC 11 query Bubble Tea's own init sends, or termenv eats the
   first keys.
+- Typed options: `questions.PickOption` (an option, or the beginning of exactly one, never a
+  guess) is the one rule for an answer a person types for a select or radio: Telegram
+  replies and the TUI's Answers tab. The Answers tab approves only the answer it showed
+  (re-read first), as `/pending`'s digest does.
 - Lock readers: `filelock.Held` takes the lock for an instant, so another reader can see it
   taken with no description; `filelock.ReadHeld` looks again a few times before believing
   an undescribed holder (otherwise a once-a-second reader like the TUI makes the daemon

@@ -42,8 +42,8 @@ func TestTheConfigTabListsTheSecretsAndEverySetting(t *testing.T) {
 	h.removeConfig()
 	h.env[config.EnvAIAPIKey] = "sk-from-the-environment"
 	h.open(100, 30)
-	h.press("2")
-	h.shows("2 Config", "There is no config file yet: run `aja init`. The secrets can be set already.",
+	h.press(tabKey(tabConfig))
+	h.shows(tabKey(tabConfig)+" Config", "There is no config file yet: run `aja init`. The secrets can be set already.",
 		"> AJA_AI_API_KEY", "set (your environment)", "AJA_TELEGRAM_BOT_TOKEN", "not set",
 		"The AI provider's API key", "Your environment sets it, and wins over .env.")
 	if strings.Contains(h.screen(), "sk-from-the-environment") {
@@ -52,7 +52,7 @@ func TestTheConfigTabListsTheSecretsAndEverySetting(t *testing.T) {
 	h.golden("config-missing")
 
 	h.writeConfig()
-	h.press("1", "2") // coming back reads the file again
+	h.press("1", tabKey(tabConfig)) // coming back reads the file again
 	h.shows("personals", "first_name", "Ana")
 	if strings.Contains(h.screen(), "problem") {
 		t.Errorf("a valid file:\n%s", h.screen())
@@ -66,7 +66,7 @@ func TestASettingIsSavedOnlyOnceValid(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 
 	h.moveTo("terms")
 	h.press("enter")
@@ -121,7 +121,7 @@ func TestAnEnvironmentOverrideIsMarkedAndNeverSaved(t *testing.T) {
 	h.env["AJA_CFG_SEARCH_LOCATION"] = "Lisboa"
 	location := h.fileValue("search.location")
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.moveTo("terms")
 	h.shows("Dev Python, QA  ← AJA_CFG_SEARCH_TERMS overrides it",
 		"AJA_CFG_SEARCH_TERMS in your environment wins over the file; an edit here changes the file.")
@@ -143,7 +143,7 @@ func TestSecretsAreTypedHiddenSavedInDotenvAndNeverShownOrLogged(t *testing.T) {
 	}
 	defer d.Release()
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 
 	h.moveTo("AJA_TELEGRAM_BOT_TOKEN")
 	h.press("enter")
@@ -185,7 +185,7 @@ func TestListsWithOptionsArePickedSeveralAtATime(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.moveTo("on_site")
 	was := h.fileValue("search.on_site")
 	h.press("enter")
@@ -226,7 +226,7 @@ func TestEveryOptionFitsAndTheBlankOneIsNamed(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.open(80, 24)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.moveTo("ethnicity")
 	h.press("enter")
 	for _, o := range strings.Split("Decline|Hispanic/Latino|American Indian or Alaska Native|Asian", "|") {
@@ -245,7 +245,7 @@ func TestScrollingUpBringsTheSectionTitlesBack(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.open(100, 30)
-	h.press("2", "G")
+	h.press(tabKey(tabConfig), "G")
 	for range 300 {
 		if strings.Contains(h.screen(), "> first_name ") {
 			break
@@ -265,7 +265,7 @@ func TestAnOverrideInDotenvIsMarkedAndNeverSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.moveTo("location")
 	h.shows(location+"  ← AJA_CFG_SEARCH_LOCATION overrides it", "AJA_CFG_SEARCH_LOCATION in .env wins over the file")
 	h.moveTo("terms")
@@ -282,7 +282,7 @@ func TestABrokenDotenvIsReportedWithoutItsContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.shows("cannot be read: fix it in an", "aja never shows its content") // wrapped
 	if screen := h.screen(); strings.Contains(screen, "unterminated") || strings.Contains(screen, "SECRET") {
 		t.Fatalf("the .env's content is on screen:\n%s", screen)
@@ -298,7 +298,7 @@ func TestTheLogLevelNeedsTheDaemonRestarted(t *testing.T) {
 	}
 	defer d.Release()
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.moveTo("log_level")
 	h.press("enter", "enter")
 	h.shows("Restart the daemon to use it: it sets its log level when it starts.")

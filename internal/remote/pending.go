@@ -205,7 +205,7 @@ func (l *Listener) replied(ctx context.Context, m notify.Message) {
 	}
 	text := strings.TrimSpace(m.Text)
 	if len(a.Options) > 0 {
-		i := pickOption(text, a.Options)
+		i := questions.PickOption(text, a.Options)
 		if i < 0 {
 			l.reply(ctx, fmt.Sprintf("%q is not one of the options: %s. Reply again with one of them, or its beginning.", text, strings.Join(a.Options, " · ")))
 			return
@@ -220,32 +220,6 @@ func (l *Listener) replied(ctx context.Context, m notify.Message) {
 	if !l.edit(ctx, m.ReplyTo.MessageID, describe(*answered, "Answered: aja uses this answer from now on."), nil) {
 		l.reply(ctx, "Saved: "+text)
 	}
-}
-
-// pickOption is the option a reply names: the option itself, or the beginning
-// of exactly one option, ignoring case and spacing. -1 when it names none or
-// several: a reply is refused rather than guessed.
-func pickOption(text string, options []string) int {
-	norm := func(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
-	want := norm(text)
-	if want == "" {
-		return -1
-	}
-	for i, o := range options {
-		if norm(o) == want {
-			return i
-		}
-	}
-	found := -1
-	for i, o := range options {
-		if strings.HasPrefix(norm(o), want) {
-			if found >= 0 {
-				return -1
-			}
-			found = i
-		}
-	}
-	return found
 }
 
 // edit replaces a message's text and buttons (none removes them); false when

@@ -103,3 +103,30 @@ func indexOf(options []string, text string) int {
 	}
 	return -1
 }
+
+// PickOption is the option a person typed: the option itself, or the
+// beginning of exactly one option, ignoring case and spacing. -1 when the text
+// names none or several: what the user typed is refused rather than guessed
+// (a Telegram reply, an answer typed in the TUI).
+func PickOption(text string, options []string) int {
+	norm := func(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
+	want := norm(text)
+	if want == "" {
+		return -1
+	}
+	for i, o := range options {
+		if norm(o) == want {
+			return i
+		}
+	}
+	found := -1
+	for i, o := range options {
+		if strings.HasPrefix(norm(o), want) {
+			if found >= 0 {
+				return -1
+			}
+			found = i
+		}
+	}
+	return found
+}

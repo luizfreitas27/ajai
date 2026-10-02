@@ -91,10 +91,14 @@ type tab int
 
 const (
 	tabDashboard tab = iota
+	tabAnswers
 	tabConfig
 )
 
-var tabNames = []string{"Dashboard", "Config"}
+var tabNames = []string{"Dashboard", "Answers", "Config"}
+
+// tabKey is the number key that shows t.
+func tabKey(t tab) string { return fmt.Sprint(int(t) + 1) }
 
 // Model is the TUI.
 type Model struct {
@@ -112,6 +116,7 @@ type Model struct {
 	refreshes     int
 	dash          dashboard
 	runs          runControl
+	ans           answersTab
 	conf          configTab
 	checks        checklist
 }
@@ -160,6 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.conf = m.conf.resized(m.width, m.bodyHeight())
+		m.ans = m.ans.resized(m.width, m.bodyHeight())
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tickMsg:
@@ -186,6 +192,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
 		return m, cmd
+	case answersLoadedMsg, answerChangedMsg:
+		var cmd tea.Cmd
+		m.ans, cmd = m.ans.update(msg, m.deps)
+		return m, cmd
 	case checkAgainMsg:
 		return m.checkAgain()
 	case doctorMsg:
@@ -193,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.doctorBusy = false
 		// Something a run needs is missing: open on the checklist, once, never
 		// over a value being typed.
-		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() && !m.runs.editing() {
+		if !m.setupOpened && blocking(msg.report) && !m.typing() {
 			m.setupOpened, m.setupShown, m.help = true, true, false
 		}
 		if m.doctorAgain {
@@ -216,6 +226,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// typing reports whether a tab holds a value being typed or a question asked,
+// which every key but Ctrl-C goes to.
+func (m Model) typing() bool {
+	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.checks.editing()
+}
+
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
@@ -233,6 +249,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !m.setupShown && m.tab == tabDashboard && m.runs.editing():
 		var cmd tea.Cmd
 		m.runs, cmd = m.runs.update(msg, m.deps)
+		return m, cmd
+	case !m.setupShown && m.tab == tabAnswers && m.ans.editing():
+		var cmd tea.Cmd
+		m.ans, cmd = m.ans.update(msg, m.deps)
 		return m, cmd
 	}
 	switch key {
@@ -272,8 +292,11 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.tab, m.help, m.setupShown = t, false, false
-		if m.tab == tabConfig {
-			return m, loadConfig(m.deps) // the file may have changed meanwhile
+		switch m.tab { // what the tab shows may have changed meanwhile
+		case tabConfig:
+			return m, loadConfig(m.deps)
+		case tabAnswers:
+			return m, loadAnswers(m.deps, m.ans.shownState())
 		}
 		return m, nil
 	}
@@ -286,6 +309,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.tab == tabConfig:
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
+		return m, cmd
+	case m.tab == tabAnswers:
+		var cmd tea.Cmd
+		m.ans, cmd = m.ans.update(msg, m.deps)
 		return m, cmd
 	}
 	return m, nil
@@ -313,6 +340,8 @@ func (m Model) View() string {
 		body = m.checks.view(m.styles, m.deps, m.width)
 	case m.tab == tabConfig:
 		body = m.conf.view(m.styles, m.deps, m.width)
+	case m.tab == tabAnswers:
+		body = m.ans.view(m.styles, m.width)
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
@@ -327,6 +356,9 @@ func (m Model) tabBar() string {
 	}
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
+		if tab(i) == tabAnswers && m.dash.snap.pending > 0 {
+			label += fmt.Sprintf(" (%d)", m.dash.snap.pending)
+		}
 		if tab(i) == m.tab && !m.help && !m.setupShown {
 			parts = append(parts, m.styles.activeTab.Render(label))
 		} else {
@@ -344,13 +376,19 @@ func (m Model) hints() string {
 	case m.setupShown && m.checks.editing():
 		hint = "enter imports · esc cancels"
 	case m.setupShown && m.checks.noConfig:
-		hint = "↑↓ move · enter fix · i import · r check again · 2 config · q quit"
+		hint = "↑↓ move · enter fix · i import · r check again · " + tabKey(tabConfig) + " config · q quit"
 	case m.setupShown:
 		hint = "↑↓ move · enter fix · i import · r check again · esc back · q quit"
 	case m.tab == tabConfig && m.conf.editing():
 		hint = "enter saves · esc cancels"
 	case m.tab == tabConfig:
 		hint = "↑↓ move · enter edit · ? keys · q quit"
+	case m.tab == tabAnswers && m.ans.deleting != nil:
+		hint = "y deletes · n keeps"
+	case m.tab == tabAnswers && m.ans.edit != nil:
+		hint = "enter saves · esc cancels"
+	case m.tab == tabAnswers:
+		hint = "↑↓ move · tab pending/approved · a approve · e edit · d delete · ? keys · q quit"
 	case m.runs.form != nil:
 		hint = "↑↓ field · ←→ change · enter starts · esc cancels"
 	case m.runs.confirm != nil:
@@ -375,6 +413,11 @@ func (m Model) helpView() string {
 	row("r", "start a run: market, dry run or live, a maximum")
 	row("x", "stop the run in progress, whoever started it")
 	row("s", "the setup checklist")
+	lines = append(lines, "", m.styles.section.Render("Answers"), "")
+	row("Tab", "pending (the review queue) or approved")
+	row("a", "approve the answer as shown")
+	row("e, Enter", "correct it: pick or type an option, or type the answer")
+	row("d", "delete it: aja asks the question again")
 	lines = append(lines, "", m.styles.section.Render("Setup checklist"), "")
 	row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
 	row("i", "import from the Python bot")
