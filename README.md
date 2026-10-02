@@ -40,7 +40,13 @@ go build ./cmd/aja && ./aja version
 ./aja jobs list --failed --since 2026-10-01
 ./aja export --csv ./sheets     # the Python bot's two spreadsheets, from the database
 ./aja answers list --state pending   # the review queue; approve <id>, edit <id> "<text>", delete <id>
+./aja run --dry-run             # attach to your Chrome, wait for your login, search, screen, list what it would apply to
+./aja status && ./aja logs -f   # the run in progress and the live log
 ```
+
+`aja run` needs your Chrome closed (it attaches to your profile), or
+`settings.chrome_profile_dir` pointing at a profile aja can own; you sign in to
+LinkedIn once in that window and the session persists.
 
 History and the answer memory live in a SQLite database (`aja.db` in the data
 directory, pure-Go driver, no cgo).
