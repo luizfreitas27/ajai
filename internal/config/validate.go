@@ -16,6 +16,7 @@ type FieldError struct {
 	Valid   []string
 }
 
+// Error formats "key: problem; valid values: ...".
 func (e *FieldError) Error() string {
 	msg := e.Key + ": " + e.Problem
 	if len(e.Valid) > 0 {
@@ -31,6 +32,7 @@ func (e *FieldError) Error() string {
 // ValidationError bundles every FieldError found.
 type ValidationError struct{ Errors []*FieldError }
 
+// Error lists every problem, one per line.
 func (e *ValidationError) Error() string {
 	lines := make([]string, len(e.Errors))
 	for i, fe := range e.Errors {
@@ -60,11 +62,11 @@ func (c *Config) Validate() error {
 	walk(reflect.ValueOf(c).Elem(), "", func(r fieldRef) {
 		switch r.value.Kind() {
 		case reflect.String:
-			if r.HasOpts && !contains(r.Options, r.value.String()) {
+			if r.Options != nil && !contains(r.Options, r.value.String()) {
 				add(r.Key, fmt.Sprintf("%q is not a valid value", r.value.String()), r.Options...)
 			}
 		case reflect.Slice:
-			if r.HasOpts {
+			if r.Options != nil {
 				for i := 0; i < r.value.Len(); i++ {
 					if v := r.value.Index(i).String(); !contains(r.Options, v) {
 						add(r.Key, fmt.Sprintf("%q is not a valid value", v), r.Options...)
@@ -90,9 +92,10 @@ func (c *Config) Validate() error {
 	if len(c.Search.Terms) == 0 && len(c.ActiveMarket().Terms) == 0 {
 		add("search.terms", "needs at least one search term (or set terms on the active market)")
 	}
-	for name, m := range map[string]Market{"brasil": c.Markets.Brasil, "internacional": c.Markets.Internacional} {
+	for _, name := range MarketNames {
+		m, _ := c.Markets.Market(string(name))
 		if !currencyRe.MatchString(m.Currency) {
-			add("markets."+name+".currency", fmt.Sprintf("%q is not a three-letter ISO 4217 code such as BRL or USD", m.Currency))
+			add("markets."+string(name)+".currency", fmt.Sprintf("%q is not a three-letter ISO 4217 code such as BRL or USD", m.Currency))
 		}
 	}
 	p := c.Pacing
@@ -119,15 +122,6 @@ func (c *Config) Validate() error {
 		return nil
 	}
 	return &ValidationError{Errors: errs}
-}
-
-// ActiveMarket returns the values of the market named in markets.active (the
-// international one when the name is unknown; Validate reports the name).
-func (c *Config) ActiveMarket() Market {
-	if c.Markets.Active == "brasil" {
-		return c.Markets.Brasil
-	}
-	return c.Markets.Internacional
 }
 
 // AIBaseURL is the endpoint in use: the explicit one or the provider default.

@@ -28,7 +28,7 @@ overrides, .env) and lists which keys were overridden. Secrets are shown only as
 present or absent.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			l, err := a.load(nil)
+			l, err := a.load()
 			if l == nil {
 				return err
 			}
@@ -39,9 +39,9 @@ present or absent.`,
 			a.ui.Printf("%s", data)
 			a.ui.Println()
 			a.ui.Title("Secrets (from the environment or " + a.paths.EnvFile + ")")
-			a.ui.KV(config.EnvAIAPIKey, presence(l.Secrets.AIAPIKey))
-			a.ui.KV(config.EnvTelegramBotToken, presence(l.Secrets.TelegramBotToken))
-			a.ui.KV(config.EnvTelegramChatID, presence(l.Secrets.TelegramChatID))
+			for _, nv := range l.Secrets.Values() {
+				a.ui.KV(nv[0], presence(nv[1]))
+			}
 			if len(l.Overrides) > 0 {
 				a.ui.Println()
 				a.ui.Title("Overridden by the environment")
@@ -73,7 +73,7 @@ func (a *App) configGetCmd() *cobra.Command {
 		Short: "Print one value (lists are comma-separated)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			l, err := a.load(nil)
+			l, err := a.load()
 			if l == nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func (a *App) configGetCmd() *cobra.Command {
 }
 
 func (a *App) configSetCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "set <section.key> <value>",
 		Short: "Write one value to the config file, after validating it",
 		Long: `Sets a key and rewrites the file with its comments. Lists take a comma-separated
@@ -97,8 +97,8 @@ write is refused, naming the key and the valid values, when the new value is wro
 Environment overrides are not consulted: the file is what changes.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Read the file alone (no env overrides), so we never persist an override.
-			l, err := config.Load(a.paths, config.MapEnv(nil), nil, nil)
+			// The file alone, with no environment layer, so an override is never persisted.
+			l, err := config.Load(a.paths, config.MapEnv(nil), nil)
 			if l == nil {
 				return err
 			}
@@ -106,28 +106,26 @@ Environment overrides are not consulted: the file is what changes.`,
 				return errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
 			}
 			key, value := args[0], args[1]
-			if err := l.Config.Set(key, value); err != nil {
-				return err
+			other, err := l.Config.SetChecked(key, value)
+			if err != nil {
+				return fmt.Errorf("refusing to write: %w", err)
 			}
-			if verr := l.Config.Validate(); verr != nil {
-				if ve, ok := config.AsValidation(verr); ok {
-					for _, fe := range ve.Errors {
-						if fe.Key == key {
-							return fmt.Errorf("refusing to write: %w", fe)
-						}
-					}
-				}
-				// Problems elsewhere pre-date this change; write anyway and warn.
-				a.ui.Warn("config", "the file still has other problems; run `aja config validate`")
+			if other != nil {
+				a.ui.Warn("config", fmt.Sprintf("the file still has %d other problem(s); run `aja config validate`", len(other.Errors)))
 			}
 			if err := config.Write(a.paths.ConfigFile, l.Config); err != nil {
 				return err
 			}
+			a.openLog(l.Config.Settings.LogLevel)
 			got, _ := l.Config.Get(key)
+			a.logger.Info("config set", "key", key, "value", got)
 			a.ui.OK(key, got)
 			return nil
 		},
 	}
+	// Values such as -3 are arguments, not flags, once the two positionals start.
+	cmd.Flags().SetInterspersed(false)
+	return cmd
 }
 
 func (a *App) configValidateCmd() *cobra.Command {
@@ -136,7 +134,7 @@ func (a *App) configValidateCmd() *cobra.Command {
 		Short: "Check the configuration and report every problem",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			l, err := a.load(nil)
+			l, err := a.load()
 			if l == nil {
 				return err
 			}

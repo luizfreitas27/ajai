@@ -126,7 +126,7 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 		case sec.TelegramBotToken == "" || sec.TelegramChatID == "":
 			add("telegram", Warn, "only one of "+config.EnvTelegramBotToken+" / "+config.EnvTelegramChatID+" is set; notifications stay off")
 		default:
-			add("telegram", OK, "on, chat "+sec.TelegramChatID)
+			add("telegram", OK, "on (token and chat id set)")
 		}
 
 		// Resumes
@@ -152,8 +152,8 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	} else if f, err := os.CreateTemp(p.DataDir, ".doctor-*"); err != nil {
 		add("data dir", Fail, p.DataDir+" is not writable: "+err.Error())
 	} else {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		add("data dir", OK, p.DataDir)
 	}
 	return r

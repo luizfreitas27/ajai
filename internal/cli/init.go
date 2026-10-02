@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -14,17 +13,19 @@ import (
 	"github.com/luizfreitas27/aja/internal/config"
 )
 
-// initAnswers are the essentials the wizard (or the flags) collect.
+// initAnswers is what the wizard or the flags collect, as text; the config
+// package turns it into typed essentials.
 type initAnswers struct {
 	firstName, lastName, phone, city, country string
-	terms, location, market, resume           string
-	years                                     string
+	terms, location, market, resume, years    string
 	salary                                    string
-	acceptPacing                              bool
+	keepPacing                                bool
+	maxPerHour, maxPerRun                     string
 }
 
 func (a *App) initCmd() *cobra.Command {
-	var ans initAnswers
+	defaults := config.Defaults()
+	ans := initAnswers{keepPacing: true}
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -39,17 +40,20 @@ points you to.`,
 			if _, err := os.Stat(a.paths.ConfigFile); err == nil && !force {
 				return errors.New(a.paths.ConfigFile + " already exists; use --force to overwrite it")
 			}
-			interactive := !cmd.Flags().Changed("first-name") && !cmd.Flags().Changed("terms")
-			if interactive {
+			if !cmd.Flags().Changed("first-name") && !cmd.Flags().Changed("terms") {
 				if !a.stdinIsTerminal() {
 					return errors.New("no terminal to ask questions on; pass --first-name, --last-name and --terms (see --help)")
 				}
-				if err := a.wizard(&ans); err != nil {
+				if err := runWizard(&ans); err != nil {
 					return err
 				}
 			}
-			cfg, err := applyAnswers(config.Defaults(), ans)
+			essentials, err := ans.essentials()
 			if err != nil {
+				return err
+			}
+			cfg := defaults
+			if err := cfg.ApplyEssentials(essentials); err != nil {
 				return err
 			}
 			if err := cfg.Validate(); err != nil {
@@ -61,6 +65,8 @@ points you to.`,
 			if err := a.paths.EnsureDataDirs(); err != nil {
 				return err
 			}
+			a.openLog(cfg.Settings.LogLevel)
+			a.logger.Info("config created", "path", a.paths.ConfigFile, "market", cfg.Markets.Active)
 			a.ui.OK("config", a.paths.ConfigFile)
 			a.ui.Println()
 			a.ui.Title("Next steps")
@@ -78,10 +84,12 @@ points you to.`,
 	f.StringVar(&ans.country, "country", "", "country")
 	f.StringVar(&ans.terms, "terms", "", "search terms, comma-separated")
 	f.StringVar(&ans.location, "location", "", "search location")
-	f.StringVar(&ans.market, "market", "internacional", "active market: brasil or internacional")
-	f.StringVar(&ans.resume, "resume", "resume.pdf", "resume file (relative to the resumes dir, or absolute)")
-	f.StringVar(&ans.years, "years", "5", "total years of experience")
+	f.StringVar(&ans.market, "market", defaults.Markets.Active, "active market: brasil or internacional")
+	f.StringVar(&ans.resume, "resume", defaults.Questions.Resume, "resume file (relative to the resumes dir, or absolute)")
+	f.StringVar(&ans.years, "years", defaults.Questions.YearsOfExperience, "total years of experience")
 	f.StringVar(&ans.salary, "salary", "0", "desired salary (annual; monthly when --market brasil)")
+	f.StringVar(&ans.maxPerHour, "max-per-hour", strconv.Itoa(defaults.Pacing.MaxPerHour), "pacing: applications per hour")
+	f.StringVar(&ans.maxPerRun, "max-per-run", strconv.Itoa(defaults.Pacing.MaxPerRun), "pacing: applications per run")
 	f.BoolVar(&force, "force", false, "overwrite an existing config file")
 	return cmd
 }
@@ -91,8 +99,41 @@ func (a *App) stdinIsTerminal() bool {
 	return ok && term.IsTerminal(f.Fd())
 }
 
-func (a *App) wizard(ans *initAnswers) error {
-	ans.market, ans.resume, ans.years, ans.salary, ans.acceptPacing = "internacional", "resume.pdf", "5", "0", true
+// essentials parses the text answers. Flag defaults already hold the config
+// defaults, so only what the user typed differs.
+func (ans initAnswers) essentials() (config.Essentials, error) {
+	e := config.Essentials{
+		FirstName: strings.TrimSpace(ans.firstName), LastName: strings.TrimSpace(ans.lastName),
+		Phone: strings.TrimSpace(ans.phone), City: strings.TrimSpace(ans.city), Country: strings.TrimSpace(ans.country),
+		Terms: ans.terms, Location: strings.TrimSpace(ans.location), Market: strings.TrimSpace(ans.market),
+		Resume: strings.TrimSpace(ans.resume), YearsOfExperience: strings.TrimSpace(ans.years),
+	}
+	var err error
+	if e.DesiredSalary, err = number("--salary", ans.salary); err != nil {
+		return e, err
+	}
+	if e.MaxPerHour, err = number("--max-per-hour", ans.maxPerHour); err != nil {
+		return e, err
+	}
+	if e.MaxPerRun, err = number("--max-per-run", ans.maxPerRun); err != nil {
+		return e, err
+	}
+	return e, nil
+}
+
+func number(flag, text string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil {
+		return 0, errors.New(flag + ": " + strconv.Quote(text) + " is not a whole number")
+	}
+	return n, nil
+}
+
+func runWizard(ans *initAnswers) error {
+	marketOptions := make([]huh.Option[string], 0, len(config.MarketNames))
+	for _, m := range config.MarketNames {
+		marketOptions = append(marketOptions, huh.NewOption(string(m), string(m)))
+	}
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("First name").Value(&ans.firstName).Validate(required),
@@ -103,9 +144,8 @@ func (a *App) wizard(ans *initAnswers) error {
 		).Title("About you"),
 		huh.NewGroup(
 			huh.NewSelect[string]().Title("Market").
-				Description("Brazil: BRL, monthly salary. International: foreign currency, annual salary.").
-				Options(huh.NewOption("Brasil", "brasil"), huh.NewOption("Internacional", "internacional")).
-				Value(&ans.market),
+				Description("brasil: BRL, monthly salary. internacional: foreign currency, annual salary.").
+				Options(marketOptions...).Value(&ans.market),
 			huh.NewInput().Title("Search terms").Description("Comma-separated, e.g. Software Engineer, Python Developer").
 				Value(&ans.terms).Validate(required),
 			huh.NewInput().Title("Search location").Description("Blank uses the market's default").Value(&ans.location),
@@ -116,9 +156,13 @@ func (a *App) wizard(ans *initAnswers) error {
 			huh.NewInput().Title("Desired salary").Description("A plain number, in the market's period").Value(&ans.salary).Validate(isNumber),
 			huh.NewConfirm().Title("Keep the default pacing?").
 				Description("15 applications/hour, 50/run, 30-90 s between jobs. Conservative on purpose (ADR 0001).").
-				Value(&ans.acceptPacing),
+				Value(&ans.keepPacing),
 		).Title("Applying"),
-	).WithProgramOptions()
+		huh.NewGroup(
+			huh.NewInput().Title("Applications per hour").Value(&ans.maxPerHour).Validate(isNumber),
+			huh.NewInput().Title("Applications per run").Value(&ans.maxPerRun).Validate(isNumber),
+		).Title("Pacing").WithHideFunc(func() bool { return ans.keepPacing }),
+	)
 	return form.Run()
 }
 
@@ -134,34 +178,4 @@ func isNumber(s string) error {
 		return errors.New("a whole number, please")
 	}
 	return nil
-}
-
-// applyAnswers folds the essentials into a default config.
-func applyAnswers(cfg config.Config, ans initAnswers) (config.Config, error) {
-	cfg.Personals.FirstName = strings.TrimSpace(ans.firstName)
-	cfg.Personals.LastName = strings.TrimSpace(ans.lastName)
-	cfg.Personals.Phone = strings.TrimSpace(ans.phone)
-	cfg.Personals.City = strings.TrimSpace(ans.city)
-	cfg.Personals.Country = strings.TrimSpace(ans.country)
-	cfg.Questions.Resume = strings.TrimSpace(ans.resume)
-	cfg.Questions.YearsOfExperience = strings.TrimSpace(ans.years)
-	if err := cfg.Set("search.terms", ans.terms); err != nil {
-		return cfg, err
-	}
-	cfg.Markets.Active = strings.TrimSpace(ans.market)
-	salary, err := strconv.Atoi(strings.TrimSpace(ans.salary))
-	if err != nil {
-		return cfg, fmt.Errorf("--salary: %q is not a whole number", ans.salary)
-	}
-	switch cfg.Markets.Active {
-	case "brasil":
-		cfg.Markets.Brasil.DesiredSalary = salary
-		if ans.location != "" {
-			cfg.Markets.Brasil.Location = strings.TrimSpace(ans.location)
-		}
-	default:
-		cfg.Questions.DesiredSalary = salary
-		cfg.Search.Location = strings.TrimSpace(ans.location)
-	}
-	return cfg, nil
 }

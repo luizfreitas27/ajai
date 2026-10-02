@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -23,9 +24,7 @@ type App struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Stdin   io.Reader
-	Getenv  func(string) string
 	Env     config.Env
-	Environ config.Environ
 
 	// set by the root flags
 	configFlag string
@@ -39,8 +38,7 @@ type App struct {
 
 // NewApp wires the process environment.
 func NewApp(version string) *App {
-	return &App{Version: version, Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin,
-		Getenv: os.Getenv, Env: config.OSEnv(), Environ: os.Environ}
+	return &App{Version: version, Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin, Env: config.OSEnv()}
 }
 
 // Command builds the root command and its subcommands.
@@ -54,14 +52,14 @@ model. Start with "aja init", check with "aja doctor", try "aja run --dry-run".`
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			a.ui = ui.New(a.Stdout, a.Stderr, a.noColor)
-			a.paths = paths.Resolve(a.configFlag, a.Getenv)
+			a.ui = ui.New(a.Stdout, a.Stderr, a.noColor || a.Env.Get("NO_COLOR") != "")
+			a.paths = paths.Resolve(a.configFlag, a.Env.Getenv)
 			a.logger = logging.Discard
 			return nil
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			if a.closer != nil {
-				a.closer.Close()
+				_ = a.closer.Close()
 			}
 		},
 	}
@@ -83,39 +81,32 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 			a.ui = ui.New(a.Stdout, a.Stderr, true)
 		}
 		a.ui.Error(err)
-		var ec interface{ ExitCode() int }
-		if asExit(err, &ec) {
-			return ec.ExitCode()
+		var ee *exitError
+		if errors.As(err, &ee) {
+			return ee.code
 		}
 		return 1
 	}
 	return 0
 }
 
-// exitError carries a specific exit code (doctor: 1 on failures, 2 on warnings only).
+// exitError ends a command with a message and a specific exit code; commands
+// use it when the message has already been printed in detail above.
 type exitError struct {
 	code int
 	msg  string
 }
 
 func (e *exitError) Error() string { return e.msg }
-func (e *exitError) ExitCode() int { return e.code }
-
-func asExit(err error, target *interface{ ExitCode() int }) bool {
-	if e, ok := err.(*exitError); ok {
-		*target = e
-		return true
-	}
-	return false
-}
 
 // load reads the configuration for a command. It returns the loaded value even
 // when validation failed so callers can decide; the error says what is wrong.
-func (a *App) load(flags map[string]string) (*config.Loaded, error) {
-	return config.Load(a.paths, a.Env, a.Environ, flags)
+func (a *App) load() (*config.Loaded, error) {
+	return config.Load(a.paths, a.Env, nil)
 }
 
-// openLog starts the day's log file; commands that write to the data directory call it.
+// openLog starts the day's log file. Commands that write to the data directory
+// call it; read-only commands (version, config get/show/path) stay silent.
 func (a *App) openLog(level string) {
 	logger, closer, err := logging.Open(a.paths.LogDir, logging.ParseLevel(level), nil)
 	if err != nil {

@@ -11,8 +11,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/config"
 )
 
-// run executes aja with AJA_HOME pointing at a temp dir and returns exit code,
-// stdout and stderr. extraEnv is merged into the fake environment.
+// harness runs aja with AJA_HOME pointing at a temp dir and a fake environment.
 type harness struct {
 	home string
 	env  map[string]string
@@ -24,6 +23,7 @@ func newHarness(t *testing.T) *harness {
 	return &harness{home: t.TempDir(), env: map[string]string{}, t: t}
 }
 
+// run executes one command and returns exit code, stdout and stderr.
 func (h *harness) run(args ...string) (int, string, string) {
 	h.t.Helper()
 	env := map[string]string{"AJA_HOME": h.home, "NO_COLOR": "1"}
@@ -31,19 +31,16 @@ func (h *harness) run(args ...string) (int, string, string) {
 		env[k] = v
 	}
 	var out, errb bytes.Buffer
-	app := &App{Version: "test", Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(""),
-		Getenv: func(k string) string { return env[k] },
-		Env:    config.MapEnv(env),
-		Environ: func() []string {
-			var kv []string
-			for k, v := range env {
-				kv = append(kv, k+"="+v)
-			}
-			return kv
-		},
-	}
+	app := &App{Version: "test", Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(""), Env: config.MapEnv(env)}
 	code := app.Execute(context.Background(), args)
 	return code, out.String(), errb.String()
+}
+
+func (h *harness) write(name, text string) {
+	h.t.Helper()
+	if err := os.WriteFile(filepath.Join(h.home, name), []byte(text), 0o600); err != nil {
+		h.t.Fatal(err)
+	}
 }
 
 func (h *harness) initValid() {
@@ -125,12 +122,45 @@ func TestConfigSetGetAndRejection(t *testing.T) {
 	if !strings.Contains(string(text), "# aja configuration.") {
 		t.Error("comments lost after set")
 	}
+	// Negative numbers are values, not flags.
+	code, _, errText = h.run("config", "set", "pacing.max_per_run", "-3")
+	if code == 0 || !strings.Contains(errText, "pacing.max_per_run: must be at least 1") {
+		t.Errorf("negative value: %d %s", code, errText)
+	}
+}
+
+func TestCommandsThatWriteLeaveAStructuredLogLine(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	h.run("config", "set", "search.switch_number", "4")
+	entries, err := os.ReadDir(filepath.Join(h.home, "logs"))
+	if err != nil || len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "aja-") {
+		t.Fatalf("log dir: %v %v", entries, err)
+	}
+	text, _ := os.ReadFile(filepath.Join(h.home, "logs", entries[0].Name()))
+	if !strings.Contains(string(text), `"msg":"config created"`) || !strings.Contains(string(text), `"msg":"config set"`) || !strings.Contains(string(text), `"key":"search.switch_number"`) {
+		t.Errorf("log:\n%s", text)
+	}
+}
+
+func TestInitPacingFlagsReachTheConfig(t *testing.T) {
+	h := newHarness(t)
+	code, _, errText := h.run("init", "--first-name", "A", "--last-name", "B", "--terms", "x", "--max-per-hour", "5", "--max-per-run", "20")
+	if code != 0 {
+		t.Fatal(errText)
+	}
+	if _, out, _ := h.run("config", "get", "pacing.max_applications_per_hour"); strings.TrimSpace(out) != "5" {
+		t.Errorf("max per hour %q", out)
+	}
+	if code, _, errText := h.run("--config", filepath.Join(h.home, "other.yaml"), "init", "--first-name", "A", "--last-name", "B", "--terms", "x", "--max-per-run", "zero"); code == 0 || !strings.Contains(errText, "--max-per-run") {
+		t.Errorf("bad pacing flag: %d %s", code, errText)
+	}
 }
 
 func TestSecretsComeOnlyFromEnvAndAreMaskedInShow(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
-	os.WriteFile(filepath.Join(h.home, ".env"), []byte("AJA_AI_API_KEY=sk-secret-value\n"), 0o600)
+	h.write(".env", "AJA_AI_API_KEY=sk-secret-value\n")
 	_, out, _ := h.run("config", "show")
 	if strings.Contains(out, "sk-secret-value") {
 		t.Error("secret leaked in show")
@@ -139,7 +169,7 @@ func TestSecretsComeOnlyFromEnvAndAreMaskedInShow(t *testing.T) {
 		t.Errorf("show:\n%s", out)
 	}
 	// A secret in the YAML is refused.
-	os.WriteFile(filepath.Join(h.home, "config.yaml"), []byte("ai:\n  api_key: sk-123\n"), 0o600)
+	h.write("config.yaml", "ai:\n  api_key: sk-123\n")
 	code, _, errText := h.run("config", "validate")
 	if code == 0 || !strings.Contains(errText, "looks like a secret") {
 		t.Errorf("secret in yaml: %d %s", code, errText)
@@ -149,7 +179,7 @@ func TestSecretsComeOnlyFromEnvAndAreMaskedInShow(t *testing.T) {
 func TestConfigValidateListsEveryProblemWithExitCodeOne(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
-	os.WriteFile(filepath.Join(h.home, "config.yaml"), []byte("personals:\n  first_name: ''\nsearch:\n  terms: []\n  sort_by: Newest\n"), 0o600)
+	h.write("config.yaml", "personals:\n  first_name: ''\nsearch:\n  terms: []\n  sort_by: Newest\n")
 	code, out, _ := h.run("config", "validate")
 	if code != 1 {
 		t.Errorf("exit %d", code)

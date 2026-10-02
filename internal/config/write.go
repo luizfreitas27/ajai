@@ -40,8 +40,6 @@ func Marshal(c Config) ([]byte, error) {
 	return buf.Bytes(), enc.Close()
 }
 
-func yamlName(sf reflect.StructField) string { return strings.Split(sf.Tag.Get("yaml"), ",")[0] }
-
 func structNode(v reflect.Value) (*yaml.Node, error) {
 	node := &yaml.Node{Kind: yaml.MappingNode}
 	t := v.Type()
@@ -69,9 +67,9 @@ func structNode(v reflect.Value) (*yaml.Node, error) {
 
 func comment(sf reflect.StructField) string {
 	parts := []string{sf.Tag.Get("doc")}
-	if opts, ok := sf.Tag.Lookup("opts"); ok {
-		quoted := []string{}
-		for _, o := range strings.Split(opts, "|") {
+	if opts := options(sf); opts != nil {
+		quoted := make([]string, 0, len(opts))
+		for _, o := range opts {
 			quoted = append(quoted, fmt.Sprintf("%q", o))
 		}
 		parts = append(parts, "Options: "+strings.Join(quoted, ", "))

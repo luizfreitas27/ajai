@@ -38,20 +38,33 @@ func looksLikeSecret(key string) bool {
 	return false
 }
 
-// Env is an environment: a lookup plus the ability to read a .env file. The
-// real variable always beats the file.
+// Env is an environment: a lookup, an optional listing (for prefix scans), and
+// the ability to read a .env file. The real variable always beats the file.
 type Env struct {
-	Lookup func(string) (string, bool)
-	file   map[string]string
+	Lookup  func(string) (string, bool)
+	Environ func() []string // KEY=VALUE lines, like os.Environ; nil means "no scan"
+	file    map[string]string
 }
 
 // OSEnv is the process environment.
-func OSEnv() Env { return Env{Lookup: os.LookupEnv} }
+func OSEnv() Env { return Env{Lookup: os.LookupEnv, Environ: os.Environ} }
 
 // MapEnv is a fixed environment, for tests.
 func MapEnv(m map[string]string) Env {
-	return Env{Lookup: func(k string) (string, bool) { v, ok := m[k]; return v, ok }}
+	return Env{
+		Lookup: func(k string) (string, bool) { v, ok := m[k]; return v, ok },
+		Environ: func() []string {
+			out := make([]string, 0, len(m))
+			for k, v := range m {
+				out = append(out, k+"="+v)
+			}
+			return out
+		},
+	}
 }
+
+// Getenv is Get with the signature paths.Resolve and friends expect.
+func (e Env) Getenv(key string) string { return e.Get(key) }
 
 // LoadDotenv reads a .env file into the environment's lower layer. A missing
 // file is not an error.
@@ -81,6 +94,16 @@ func (e Env) Secrets() Secrets {
 		AIAPIKey:         strings.TrimSpace(e.Get(EnvAIAPIKey)),
 		TelegramBotToken: strings.TrimSpace(e.Get(EnvTelegramBotToken)),
 		TelegramChatID:   strings.TrimSpace(e.Get(EnvTelegramChatID)),
+	}
+}
+
+// Values lists every secret as (variable name, value) in SecretEnvNames order,
+// so output code never spells the names twice.
+func (s Secrets) Values() [][2]string {
+	return [][2]string{
+		{EnvAIAPIKey, s.AIAPIKey},
+		{EnvTelegramBotToken, s.TelegramBotToken},
+		{EnvTelegramChatID, s.TelegramChatID},
 	}
 }
 

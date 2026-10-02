@@ -168,7 +168,7 @@ func Defaults() Config {
 		},
 		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, ClickGap: 1, LogLevel: "INFO"},
 		Markets: Markets{
-			Active:        "internacional",
+			Active:        string(MarketInternacional),
 			Brasil:        Market{Currency: "BRL", Location: "Brasil", Terms: []string{}},
 			Internacional: Market{Currency: "USD", Terms: []string{}},
 		},

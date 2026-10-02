@@ -18,9 +18,15 @@ check failed, 0 otherwise (warnings do not fail).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a.ui.Banner(a.Version)
-			l, err := a.load(nil)
+			l, err := a.load()
 			report := doctor.Run(l, err, a.paths, doctor.RealProbe())
 			a.printReport(report)
+			level := config.Defaults().Settings.LogLevel
+			if l != nil {
+				level = l.Config.Settings.LogLevel
+			}
+			a.openLog(level)
+			a.logger.Info("doctor", "failed", report.Failed(), "checks", len(report.Checks))
 			if report.Failed() {
 				return &exitError{code: 1, msg: "doctor found problems"}
 			}

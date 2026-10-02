@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,26 +139,74 @@ func TestGetAndSetCoerceEveryKind(t *testing.T) {
 }
 
 func TestSetRejectsBadTypesAndUnknownKeysWithSuggestions(t *testing.T) {
-	c := valid()
-	if err := c.Set("search.switch_number", "many"); err == nil || !strings.Contains(err.Error(), "not a whole number") {
-		t.Errorf("int: %v", err)
+	cases := []struct{ key, in, wantErr string }{
+		{"search.switch_number", "many", "not a whole number"},
+		{"search.easy_apply_only", "yes please", "not a boolean"},
+		{"search.term", "x", `unknown key "search.term"; did you mean`},
+		{"search.trems", "x", "search.terms"},
 	}
-	if err := c.Set("search.easy_apply_only", "yes please"); err == nil || !strings.Contains(err.Error(), "not a boolean") {
-		t.Errorf("bool: %v", err)
+	for _, tc := range cases {
+		c := valid()
+		err := c.Set(tc.key, tc.in)
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("set %s=%q: got %v, want %q", tc.key, tc.in, err, tc.wantErr)
+		}
 	}
-	err := c.Set("search.term", "x")
 	var uk *UnknownKeyError
-	if !asUnknown(err, &uk) || !contains(uk.Suggestions, "search.terms") {
-		t.Errorf("unknown key: %v", err)
+	c := valid()
+	if err := c.Set("search.term", "x"); !errors.As(err, &uk) || !contains(uk.Suggestions, "search.terms") {
+		t.Errorf("unknown key type: %v", err)
 	}
 }
 
-func asUnknown(err error, target **UnknownKeyError) bool {
-	e, ok := err.(*UnknownKeyError)
-	if ok {
-		*target = e
+func TestSetCheckedSeparatesTheNewValueFromOlderProblems(t *testing.T) {
+	c := valid()
+	c.Search.SortBy = "Newest" // pre-existing problem
+	other, err := c.SetChecked("search.switch_number", "3")
+	if err != nil || other == nil || other.Errors[0].Key != "search.sort_by" {
+		t.Errorf("other=%v err=%v", other, err)
 	}
-	return ok
+	var fe *FieldError
+	if _, err := c.SetChecked("markets.active", "europa"); !errors.As(err, &fe) || fe.Key != "markets.active" {
+		t.Errorf("new bad value should be a FieldError for its key: %v", err)
+	}
+}
+
+func TestEssentialsGoToTheMarketForBrazilAndToTheGeneralSettingsOtherwise(t *testing.T) {
+	cases := []struct {
+		market                string
+		wantBRSalary, wantGen int
+		wantBRLoc, wantGenLoc string
+	}{
+		{"brasil", 9000, 0, "Rio", ""},
+		{"internacional", 0, 9000, "Brasil", "Rio"},
+	}
+	for _, tc := range cases {
+		c := Defaults()
+		err := c.ApplyEssentials(Essentials{FirstName: "A", LastName: "B", Terms: "x", Market: tc.market,
+			Location: "Rio", Resume: "r.pdf", DesiredSalary: 9000, MaxPerRun: 7})
+		if err != nil || c.Validate() != nil {
+			t.Fatalf("%s: %v %v", tc.market, err, c.Validate())
+		}
+		if c.Markets.Brasil.DesiredSalary != tc.wantBRSalary || c.Questions.DesiredSalary != tc.wantGen ||
+			c.Markets.Brasil.Location != tc.wantBRLoc || c.Search.Location != tc.wantGenLoc || c.Pacing.MaxPerRun != 7 || c.Pacing.MaxPerHour != 15 {
+			t.Errorf("%s: %+v %+v %+v", tc.market, c.Markets.Brasil, c.Questions.DesiredSalary, c.Search.Location)
+		}
+	}
+}
+
+func TestMarketNamesMatchTheOptionsTag(t *testing.T) {
+	for _, f := range Fields() {
+		if f.Key == "markets.active" {
+			want := make([]string, len(MarketNames))
+			for i, m := range MarketNames {
+				want[i] = string(m)
+			}
+			if strings.Join(f.Options, "|") != strings.Join(want, "|") {
+				t.Errorf("opts %v, MarketNames %v", f.Options, want)
+			}
+		}
+	}
 }
 
 // ------------------------------------------------------------ write / load round trip
@@ -168,7 +217,10 @@ func TestWrittenFileIsCommentedAndRoundTrips(t *testing.T) {
 	if err := Write(p.ConfigFile, c); err != nil {
 		t.Fatal(err)
 	}
-	text, _ := os.ReadFile(p.ConfigFile)
+	text, err := os.ReadFile(p.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{
 		"# aja configuration.",
 		"# Which market this run applies in.",
@@ -188,7 +240,7 @@ func TestWrittenFileIsCommentedAndRoundTrips(t *testing.T) {
 			t.Errorf("%s has no doc tag", f.Key)
 		}
 	}
-	l, err := Load(p, MapEnv(nil), nil, nil)
+	l, err := Load(p, MapEnv(nil), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +251,7 @@ func TestWrittenFileIsCommentedAndRoundTrips(t *testing.T) {
 
 func TestLoadWithoutAFileUsesDefaultsAndReportsIt(t *testing.T) {
 	p := tmpPaths(t)
-	l, err := Load(p, MapEnv(nil), nil, nil)
+	l, err := Load(p, MapEnv(nil), nil)
 	if l == nil || l.FileExisted {
 		t.Fatalf("loaded %+v err %v", l, err)
 	}
@@ -210,14 +262,13 @@ func TestLoadWithoutAFileUsesDefaultsAndReportsIt(t *testing.T) {
 
 func TestUnknownYAMLKeysAreErrorsAndSecretsPointToDotenv(t *testing.T) {
 	p := tmpPaths(t)
-	os.MkdirAll(filepath.Dir(p.ConfigFile), 0o755)
-	os.WriteFile(p.ConfigFile, []byte("search:\n  trems: [a]\n"), 0o600)
-	_, err := Load(p, MapEnv(nil), nil, nil)
+	mustWrite(t, p.ConfigFile, "search:\n  trems: [a]\n")
+	_, err := Load(p, MapEnv(nil), nil)
 	if err == nil || !strings.Contains(err.Error(), `unknown key "trems"`) || !strings.Contains(err.Error(), "search.terms") {
 		t.Errorf("typo: %v", err)
 	}
-	os.WriteFile(p.ConfigFile, []byte("ai:\n  api_key: sk-123\n"), 0o600)
-	_, err = Load(p, MapEnv(nil), nil, nil)
+	mustWrite(t, p.ConfigFile, "ai:\n  api_key: sk-123\n")
+	_, err = Load(p, MapEnv(nil), nil)
 	if err == nil || !strings.Contains(err.Error(), "looks like a secret") || !strings.Contains(err.Error(), EnvAIAPIKey) {
 		t.Errorf("secret in yaml: %v", err)
 	}
@@ -225,11 +276,12 @@ func TestUnknownYAMLKeysAreErrorsAndSecretsPointToDotenv(t *testing.T) {
 
 func TestLayersEnvironmentBeatsDotenvAndFlagsBeatEverything(t *testing.T) {
 	p := tmpPaths(t)
-	Write(p.ConfigFile, valid())
-	os.WriteFile(p.EnvFile, []byte("AJA_AI_API_KEY=from-file\nAJA_TELEGRAM_CHAT_ID=42\nAJA_CFG_SEARCH_LOCATION=Lisboa\nAJA_CFG_MARKETS_BRASIL_TERMS=Dev,QA\n"), 0o600)
-	env := MapEnv(map[string]string{"AJA_AI_API_KEY": "from-env", "AJA_CFG_SEARCH_SWITCH_NUMBER": "5"})
-	environ := func() []string { return []string{"AJA_CFG_SEARCH_SWITCH_NUMBER=5", "PATH=/bin"} }
-	l, err := Load(p, env, environ, map[string]string{"markets.active": "brasil"})
+	if err := Write(p.ConfigFile, valid()); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, p.EnvFile, "AJA_AI_API_KEY=from-file\nAJA_TELEGRAM_CHAT_ID=42\nAJA_CFG_SEARCH_LOCATION=Lisboa\nAJA_CFG_MARKETS_BRASIL_TERMS=Dev,QA\n")
+	env := MapEnv(map[string]string{"AJA_AI_API_KEY": "from-env", "AJA_CFG_SEARCH_SWITCH_NUMBER": "5", "PATH": "/bin"})
+	l, err := Load(p, env, map[string]string{"markets.active": "brasil"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,5 +302,15 @@ func TestSecretsAreNotKeys(t *testing.T) {
 		if looksLikeSecret(f.Key) {
 			t.Errorf("%s would be mistaken for a secret", f.Key)
 		}
+	}
+}
+
+func mustWrite(t *testing.T, path, text string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

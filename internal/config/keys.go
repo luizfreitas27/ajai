@@ -13,7 +13,6 @@ type Field struct {
 	Key     string // dotted, e.g. "search.terms"
 	Doc     string
 	Options []string // closed set for strings / string lists; nil when open
-	HasOpts bool
 	Example string
 	Min     *int
 	Kind    reflect.Kind // String, Int, Bool, Slice (of string)
@@ -29,7 +28,7 @@ func walk(v reflect.Value, prefix string, visit func(fieldRef)) {
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		sf := t.Field(i)
-		name := strings.Split(sf.Tag.Get("yaml"), ",")[0]
+		name := yamlName(sf)
 		if name == "" || name == "-" {
 			continue
 		}
@@ -43,10 +42,7 @@ func walk(v reflect.Value, prefix string, visit func(fieldRef)) {
 			continue
 		}
 		f := Field{Key: key, Doc: sf.Tag.Get("doc"), Example: sf.Tag.Get("example"), Kind: sf.Type.Kind()}
-		if opts, ok := sf.Tag.Lookup("opts"); ok {
-			f.HasOpts = true
-			f.Options = strings.Split(opts, "|")
-		}
+		f.Options = options(sf)
 		if m, ok := sf.Tag.Lookup("min"); ok {
 			n, _ := strconv.Atoi(m)
 			f.Min = &n
@@ -68,9 +64,20 @@ func Sections() []string {
 	t := reflect.TypeOf(Config{})
 	out := make([]string, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
-		out = append(out, strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0])
+		out = append(out, yamlName(t.Field(i)))
 	}
 	return out
+}
+
+// yamlName is the key a struct field is written under.
+func yamlName(sf reflect.StructField) string { return strings.Split(sf.Tag.Get("yaml"), ",")[0] }
+
+// options is the closed value set from the `opts` tag, nil when the field is open.
+func options(sf reflect.StructField) []string {
+	if opts, ok := sf.Tag.Lookup("opts"); ok {
+		return strings.Split(opts, "|")
+	}
+	return nil
 }
 
 func (c *Config) find(key string) (fieldRef, bool) {
@@ -90,6 +97,7 @@ type UnknownKeyError struct {
 	Suggestions []string
 }
 
+// Error formats the key and the suggestions.
 func (e *UnknownKeyError) Error() string {
 	msg := fmt.Sprintf("unknown key %q", e.Key)
 	if len(e.Suggestions) > 0 {
@@ -172,6 +180,27 @@ func (c *Config) Set(key, text string) error {
 		return fmt.Errorf("%s: unsupported type %s", key, r.value.Kind())
 	}
 	return nil
+}
+
+// SetChecked sets a key and validates the whole config. It returns a *FieldError
+// when the new value itself is invalid (the caller should refuse the write), and
+// otherwise the remaining problems elsewhere in the config, if any, as a
+// *ValidationError the caller may warn about.
+func (c *Config) SetChecked(key, text string) (other *ValidationError, err error) {
+	if err := c.Set(key, text); err != nil {
+		return nil, err
+	}
+	verr := c.Validate()
+	if verr == nil {
+		return nil, nil
+	}
+	ve, _ := AsValidation(verr)
+	for _, fe := range ve.Errors {
+		if fe.Key == key {
+			return nil, fe
+		}
+	}
+	return ve, nil
 }
 
 func splitList(text string) []string {

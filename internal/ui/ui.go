@@ -26,10 +26,10 @@ type styles struct {
 	banner, ok, warn, fail, key, dim, title lipgloss.Style
 }
 
-// New builds a Printer. Colour is on only when out is a terminal, NO_COLOR is
-// unset and noColor is false.
+// New builds a Printer. Colour is on only when out is a terminal and noColor is
+// false; the caller folds --no-color and the NO_COLOR variable into noColor.
 func New(out, err io.Writer, noColor bool) *Printer {
-	color := !noColor && os.Getenv("NO_COLOR") == ""
+	color := !noColor
 	if f, ok := out.(*os.File); ok {
 		color = color && term.IsTerminal(f.Fd())
 	} else {
@@ -69,9 +69,13 @@ func (p *Printer) Printf(format string, args ...any) { fmt.Fprintf(p.Out, format
 // Println writes a plain line.
 func (p *Printer) Println(args ...any) { fmt.Fprintln(p.Out, args...) }
 
-// OK, Warn and Fail print a status line: a marker, a label, a detail.
-func (p *Printer) OK(label, detail string)   { p.status(p.styles.ok.Render("ok  "), label, detail) }
+// OK prints a passing status line: marker, label, detail.
+func (p *Printer) OK(label, detail string) { p.status(p.styles.ok.Render("ok  "), label, detail) }
+
+// Warn prints a warning status line.
 func (p *Printer) Warn(label, detail string) { p.status(p.styles.warn.Render("warn"), label, detail) }
+
+// Fail prints a failing status line.
 func (p *Printer) Fail(label, detail string) { p.status(p.styles.fail.Render("FAIL"), label, detail) }
 
 func (p *Printer) status(marker, label, detail string) {

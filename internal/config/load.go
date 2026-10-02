@@ -29,14 +29,10 @@ type Loaded struct {
 // first token; the rest is the key with its underscores kept.
 const EnvOverridePrefix = "AJA_CFG_"
 
-// Environ lists every variable as KEY=VALUE, like os.Environ; used to find
-// AJA_CFG_ overrides. Nil means "only the lookup", i.e. no prefix scan.
-type Environ func() []string
-
 // Load builds the configuration: defaults, then the YAML file (strict: unknown
 // keys are errors), then AJA_CFG_ environment overrides, then flag overrides,
 // then validation. The .env beside the config is read for secrets and overrides.
-func Load(p paths.Paths, env Env, environ Environ, flags map[string]string) (*Loaded, error) {
+func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
 	l := &Loaded{Config: Defaults(), Paths: p}
 
 	data, err := os.ReadFile(p.ConfigFile)
@@ -56,7 +52,7 @@ func Load(p paths.Paths, env Env, environ Environ, flags map[string]string) (*Lo
 	}
 	l.Secrets = env.Secrets()
 
-	for key, value := range envOverrides(env, environ) {
+	for key, value := range envOverrides(env) {
 		if err := l.Config.Set(key, value); err != nil {
 			return nil, fmt.Errorf("environment override %s%s: %w", EnvOverridePrefix, strings.ToUpper(strings.Replace(key, ".", "_", 1)), err)
 		}
@@ -95,10 +91,10 @@ func decodeStrict(data []byte, into *Config) error {
 	return err
 }
 
-func envOverrides(env Env, environ Environ) map[string]string {
+func envOverrides(env Env) map[string]string {
 	out := map[string]string{}
-	if environ != nil {
-		for _, kv := range environ() {
+	if env.Environ != nil {
+		for _, kv := range env.Environ() {
 			if k, v, ok := strings.Cut(kv, "="); ok && strings.HasPrefix(k, EnvOverridePrefix) {
 				if key := envKeyToDotted(k); key != "" {
 					out[key] = v
@@ -126,7 +122,7 @@ func envKeyToDotted(k string) string {
 	}
 	// markets has one more level: AJA_CFG_MARKETS_BRASIL_TERMS -> markets.brasil.terms
 	if section == "markets" {
-		if sub, k2, ok := strings.Cut(key, "_"); ok && (sub == "brasil" || sub == "internacional") {
+		if sub, k2, ok := strings.Cut(key, "_"); ok && IsValidMarket(sub) {
 			return section + "." + sub + "." + k2
 		}
 	}

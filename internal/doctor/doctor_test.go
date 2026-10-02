@@ -65,9 +65,14 @@ func TestMissingChromeAndMissingResumeFail(t *testing.T) {
 
 func TestEverythingPresentPasses(t *testing.T) {
 	p, l := setup(t)
-	os.MkdirAll(l.Config.Settings.ChromeProfileDir, 0o755)
-	os.MkdirAll(p.ResumeDir, 0o755)
-	os.WriteFile(filepath.Join(p.ResumeDir, "resume.pdf"), []byte("%PDF"), 0o600)
+	for _, dir := range []string{l.Config.Settings.ChromeProfileDir, p.ResumeDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(p.ResumeDir, "resume.pdf"), []byte("%PDF"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	r := Run(l, nil, p, probe(true))
 	if r.Failed() {
 		t.Errorf("%+v", r.Checks)

@@ -14,7 +14,7 @@ import (
 )
 
 // ErrNotFound means no Chrome executable was located.
-var ErrNotFound = errors.New("Chrome was not found; install Google Chrome or set settings.chrome_binary")
+var ErrNotFound = errors.New("no Chrome executable was found; install Google Chrome or set settings.chrome_binary")
 
 // Candidates are the names and paths searched, per OS, in order.
 func Candidates() []string {
