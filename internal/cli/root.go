@@ -16,6 +16,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/ui"
 )
 
@@ -120,7 +121,7 @@ func (a *App) load() (*config.Loaded, error) {
 func (a *App) openLog(level string) {
 	logger, closer, err := logging.Open(a.paths.LogDir, logging.ParseLevel(level), nil)
 	if err != nil {
-		a.ui.Warn("log", "could not open the log file: "+err.Error())
+		a.note(run.EventWarn, "log", "could not open the log file: "+err.Error())
 		return
 	}
 	a.logger = logger

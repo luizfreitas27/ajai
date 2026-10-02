@@ -50,8 +50,10 @@ var (
 
 	// Gender and race/ethnicity questions are answered from the configured
 	// personals.gender / personals.ethnicity ("Decline" picks the decline option).
-	genderTerms    = []string{"gender", "sex", "sexual orientation", "gênero", "genero", "sexo"}
-	ethnicityTerms = []string{"ethnicity", "ethnic", "race", "racial", "raça", "raca", "etnia", "cor ou raça", "cor/raça"}
+	genderTerms = []string{"gender", "sex", "sexual orientation", "gênero", "genero", "sexo"}
+	// A bare "race" is only a race question when it is the whole label ("Race *");
+	// "race conditions" or "a race against deadlines" are not (isEthnicity).
+	ethnicityTerms = []string{"ethnicity", "ethnic", "racial", "your race", "race/ethnicity", "race or ethnicity", "raça", "raca", "etnia", "cor ou raça", "cor/raça"}
 
 	countryTerms = []string{"country", "país", "pais"}
 	stateTerms   = []string{"state", "province", "estado", "uf"}

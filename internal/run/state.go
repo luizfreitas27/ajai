@@ -24,6 +24,8 @@ type State struct {
 	Skipped    int       `json:"skipped"`
 	WouldApply int       `json:"would_apply"`
 	Term       string    `json:"term"`
+	// NextRun is set while a non-stop session waits between runs.
+	NextRun time.Time `json:"next_run,omitempty"`
 }
 
 // StateFileName is the file's name inside the data directory.

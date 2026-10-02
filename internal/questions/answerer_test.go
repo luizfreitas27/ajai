@@ -931,8 +931,15 @@ func TestGenderAndEthnicityAreAnsweredFromTheConfigInDropdownsAndRadios(t *testi
 	if d := a.Answer(radio("Ethnicity", "Asian", "White", "I don't wish to answer"), job); d.Value != "I don't wish to answer" {
 		t.Errorf("%+v", d)
 	}
-	// Words that merely contain "race" are not ethnicity questions.
-	if d := a.Answer(text("Do you embrace challenges?"), job); d.Source == "config" {
+	// Words that merely contain "race", or "race" in another sense, are not ethnicity questions.
+	for _, label := range []string{"Do you embrace challenges?", "Have you debugged race conditions in Go?", "Do you thrive in a race against deadlines?"} {
+		// An ordinary question: not answered from personals.ethnicity, and remembered for review.
+		if d := a.Answer(text(label), job); d.Source == "config" || !d.Remember {
+			t.Errorf("%q: %+v", label, d)
+		}
+	}
+	// A label that is just "Race" is one.
+	if d := a.Answer(radio("Race *", "Asian", "White", "I don't wish to answer"), job); d.Value != "I don't wish to answer" || d.Source != "config" {
 		t.Errorf("%+v", d)
 	}
 }

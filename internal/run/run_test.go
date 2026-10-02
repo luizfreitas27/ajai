@@ -461,3 +461,16 @@ func TestTermAndLocationOverridesAndOurOwnHistory(t *testing.T) {
 }
 
 func newPacer(c config.Config) *pacing.Pacer { return pacing.New(c.Pacing, true) }
+
+func TestARunThatCannotBeRecordedStillEndsWithASummary(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{}, pages: [][]string{{}}}
+	r, st, events := runner(t, site, cfg())
+	_ = st.Close() // StartRun fails
+	sum, err := r.Run(context.Background(), Options{DryRun: true})
+	if err == nil || sum.End != EndError {
+		t.Fatalf("%+v %v", sum, err)
+	}
+	if ends := kinds(*events, EventRunEnd); len(ends) != 1 || ends[0].Summary == nil || ends[0].Summary.End != EndError {
+		t.Errorf("--json and the terminal need the run-end event: %+v", *events)
+	}
+}

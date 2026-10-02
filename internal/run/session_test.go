@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,18 +16,21 @@ func TestTheFilterCycleChangesFiltersBetweenRunsLikeThePythonBot(t *testing.T) {
 		alternate, narrow bool
 		want              [][2]string // sort, date for runs 1..n
 	}{
-		{"both on", "Most relevant", "Past month", true, true, [][2]string{
+		// The shipped defaults: what the Python bot did at run time.
+		{"python defaults", "", "Past week", true, true, [][2]string{
+			{"", "Past week"},
+			{"Most relevant", "Past 24 hours"}, {"Most recent", "Past 24 hours"},
+			{"Most relevant", "Past 24 hours"}, {"Most recent", "Past 24 hours"},
+		}},
+		{"most relevant configured", "Most relevant", "Past month", true, true, [][2]string{
 			{"Most relevant", "Past month"},
-			{"Most recent", "Past week"}, {"Most relevant", "Past week"},
 			{"Most recent", "Past 24 hours"}, {"Most relevant", "Past 24 hours"},
-			{"Most recent", "Past 24 hours"}, // stays at 24 hours
 		}},
-		{"only alternate, LinkedIn's default sort", "", "Past week", true, false, [][2]string{
-			{"", "Past week"}, {"Most recent", "Past week"}, {"", "Past week"}, {"Most recent", "Past week"},
+		{"most recent configured", "Most recent", "Any time", true, false, [][2]string{
+			{"Most recent", "Any time"}, {"Most relevant", "Any time"}, {"Most recent", "Any time"},
 		}},
-		{"only narrow, from no date filter", "Most recent", "", false, true, [][2]string{
-			{"Most recent", ""}, {"Most recent", "Past month"}, {"Most recent", "Past week"},
-			{"Most recent", "Past 24 hours"}, {"Most recent", "Past 24 hours"},
+		{"only the date, from no date filter", "Most recent", "", false, true, [][2]string{
+			{"Most recent", ""}, {"Most recent", "Past 24 hours"}, {"Most recent", "Past 24 hours"},
 		}},
 		{"neither", "Most recent", "Past week", false, false, [][2]string{
 			{"Most recent", "Past week"}, {"Most recent", "Past week"},
@@ -102,7 +106,7 @@ func TestANonStopSessionRunsAgainAfterTheWaitAndStopsAtTheDailyLimit(t *testing.
 	if len(sums) != 4 || sums[3].End != EndDailyLimit || len(*waits) != 3 || (*waits)[0] != defaultNonStopWait {
 		t.Fatalf("%d runs, waits %v, last %+v", len(sums), *waits, sums[len(sums)-1])
 	}
-	if got := rec.dates; len(got) != 4 || got[0] != "Past month" || got[1] != "Past week" || got[2] != "Past 24 hours" || got[3] != "Past 24 hours" {
+	if got := rec.dates; len(got) != 4 || got[0] != "Past month" || got[1] != "Past 24 hours" || got[2] != "Past 24 hours" || got[3] != "Past 24 hours" {
 		t.Errorf("date filter per run: %v", got)
 	}
 	if r.Cfg.Search.DatePosted != "Past month" {
@@ -114,10 +118,21 @@ func TestCtrlCDuringTheWaitEndsTheSessionAndAnErrorOrHourlyCapNeverRetries(t *te
 	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
 	r, _ := nonStopRunner(t, site)
 	ctx, cancel := context.WithCancel(context.Background())
-	r.Sleep = func(context.Context, time.Duration) error { cancel(); return context.Canceled }
+	var waiting State
+	r.Sleep = func(context.Context, time.Duration) error {
+		waiting, _ = ReadState(r.StatePath) // what aja status sees during the wait
+		cancel()
+		return context.Canceled
+	}
 	sums, err := r.Session(ctx, Options{DryRun: true})
 	if err != nil || len(sums) != 1 {
 		t.Errorf("%d runs %v", len(sums), err)
+	}
+	if waiting.NextRun.IsZero() || waiting.PID == 0 {
+		t.Errorf("the wait must be visible to aja status: %+v", waiting)
+	}
+	if _, err := ReadState(r.StatePath); !errors.Is(err, ErrNoState) {
+		t.Error("the waiting state must be removed when the session ends")
 	}
 
 	site2 := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go"), "2": job("2", "Go Dev", "B", "Go")}, pages: [][]string{{"1", "2"}}}

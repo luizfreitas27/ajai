@@ -60,10 +60,16 @@ type Options struct {
 }
 
 // ResolveUnattended decides whether a run may pause for help: only with a person
-// at a terminal on both ends. --unattended, a piped stdout or a non-terminal
-// stdin (the scheduler, the panel, a script) all mean nobody can answer.
-func ResolveUnattended(flag, stdinIsTerminal, stdoutIsTerminal bool) bool {
-	return flag || !stdinIsTerminal || !stdoutIsTerminal
+// at a terminal on both ends. --unattended, --json (output for a script), a piped
+// stdout or a non-terminal stdin (the scheduler, the panel) all mean nobody can answer.
+func ResolveUnattended(flag, jsonOutput, stdinIsTerminal, stdoutIsTerminal bool) bool {
+	return flag || jsonOutput || !stdinIsTerminal || !stdoutIsTerminal
+}
+
+// PausesAfterFilters: search.pause_after_filters applies only with someone at
+// the terminal.
+func (o Options) PausesAfterFilters(c config.Config) bool {
+	return c.Search.PauseAfterFilters && !o.Unattended
 }
 
 // errInvalidOptions marks a mistake in the command line: the person typing it
@@ -138,6 +144,11 @@ const (
 	EndTimedOut   End = "timed-out"
 	EndError      End = "error"
 )
+
+// ended records how and why a run ended.
+func (s *Summary) ended(e End, reason string) {
+	s.End, s.Reason = e, reason
+}
 
 // Continues reports whether a non-stop session starts another run after one
 // that ended this way: only after a complete pass or the per-run cap. LinkedIn's
@@ -215,7 +226,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 		// A bug must not end a run silently: report it, then let it crash as before.
 		if p := recover(); p != nil {
 			if sum.Reason == "" {
-				sum.Reason = fmt.Sprintf("crashed: %v", p)
+				sum.ended(EndError, fmt.Sprintf("crashed: %v", p))
 			}
 			r.notifyEnd(sum, fmt.Errorf("aja crashed: %v", p))
 			panic(p)
@@ -223,24 +234,20 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	}()
 	sum, err = r.run(ctx, opts)
 	if err != nil && sum.Reason == "" {
-		sum.Reason = "error: " + err.Error()
+		sum.ended(EndError, "error: "+err.Error())
 	}
-	if err != nil && sum.End == "" {
-		sum.End = EndError
+	if errors.Is(err, errInvalidOptions) {
+		return sum, err // a mistake on the command line, not a run
 	}
-	if sum.RunID == 0 {
-		if !errors.Is(err, errInvalidOptions) {
-			r.notifyEnd(sum, err)
+	if sum.RunID != 0 { // 0: the run could not even be recorded
+		if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
+			sum.PendingAnswers = n
 		}
-		return sum, err
-	}
-	if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
-		sum.PendingAnswers = n
-	}
-	_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
-		Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
-	if r.StatePath != "" {
-		RemoveState(r.StatePath)
+		_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
+			Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
+		if r.StatePath != "" {
+			RemoveState(r.StatePath)
+		}
 	}
 	r.notifyEnd(sum, err)
 	ended := sum
@@ -249,15 +256,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 }
 
 func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
-	if r.Logger == nil {
-		r.Logger = slog.New(slog.DiscardHandler)
-	}
-	if r.Now == nil {
-		r.Now = time.Now
-	}
-	if r.LoginTimeout == 0 {
-		r.LoginTimeout = 10 * time.Minute
-	}
+	r.defaults()
 	if err := opts.Validate(); err != nil {
 		return Summary{}, err
 	}
@@ -277,7 +276,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		if ctx.Err() != nil {
 			return r.stop(&sum, ctx.Err())
 		}
-		sum.Reason, sum.End = "login: "+err.Error(), EndError
+		sum.ended(EndError, "login: "+err.Error())
 		return sum, err
 	}
 
@@ -365,12 +364,12 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 			}
 		}
 		if opts.Max > 0 && r.Pacer.Total() >= opts.Max {
-			sum.Reason, sum.End = "--max reached", EndMax
+			sum.ended(EndMax, "--max reached")
 			r.emit(EventLimit, sum.Reason, nil)
 			return sum, nil
 		}
 	}
-	sum.Reason, sum.End = "all search terms visited", EndAllTerms
+	sum.ended(EndAllTerms, "all search terms visited")
 	return sum, nil
 }
 
@@ -430,7 +429,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	switch kind {
 	case linkedin.NoApplyButton:
 		if r.Site.DailyLimitReached() {
-			sum.Reason, sum.End = "LinkedIn's daily Easy Apply limit reached", EndDailyLimit
+			sum.ended(EndDailyLimit, "LinkedIn's daily Easy Apply limit reached")
 			_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
 			r.emit(EventLimit, sum.Reason, &c)
 			return cardEndsRun, nil
@@ -459,11 +458,12 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	r.Logger.Info("easy apply button found", "job", c.ID, "how", how)
 	if err := r.Pacer.Allow(); err != nil {
-		sum.Reason, sum.End = err.Error(), EndHourlyCap
+		end := EndError
 		var le *pacing.LimitError
-		if errors.As(err, &le) && le.Cap == pacing.CapPerRun {
-			sum.End = EndPerRunCap
+		if errors.As(err, &le) {
+			end = map[string]End{pacing.CapPerRun: EndPerRunCap, pacing.CapPerHour: EndHourlyCap}[le.Cap]
 		}
+		sum.ended(end, err.Error())
 		r.emit(EventLimit, sum.Reason, &c)
 		return cardEndsRun, nil
 	}
@@ -560,15 +560,15 @@ func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error 
 func (r *Runner) stop(sum *Summary, err error) (Summary, error) {
 	switch {
 	case errors.Is(err, context.Canceled):
-		sum.Reason, sum.End = "stopped by user", EndStopped
+		sum.ended(EndStopped, "stopped by user")
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	case errors.Is(err, context.DeadlineExceeded):
-		sum.Reason, sum.End = "timed out", EndTimedOut
+		sum.ended(EndTimedOut, "timed out")
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	}
-	sum.Reason, sum.End = "error: "+err.Error(), EndError
+	sum.ended(EndError, "error: "+err.Error())
 	return *sum, err
 }
 

@@ -78,7 +78,7 @@ var superseded = map[string]string{
 	"settings.failed_file_name":          "history lives in the SQLite database; `aja export --csv` writes the spreadsheet",
 	"settings.logs_folder_path":          "logs live in the aja data directory",
 	"settings.stealth_mode":              "no stealth library in aja (ADR 0001)",
-	"settings.click_gap":                 "pacing.between_actions_min_seconds / _max_seconds set the pause between form actions",
+	"settings.click_gap":                 config.RetiredKeys["settings.click_gap"],
 	"settings.stop_date_cycle_at_24hr":   "a non-stop session always narrows the date filter to \"Past 24 hours\" and stays there, the Python default",
 	"secrets.username":                   "aja never logs in with a password; sign in once in your Chrome profile",
 	"secrets.password":                   "aja never logs in with a password; sign in once in your Chrome profile",

@@ -276,7 +276,7 @@ func (e *rodElement) Property(name string) (string, error) {
 }
 
 func (e *rodElement) Click() error {
-	_ = e.el.ScrollIntoView()
+	_ = e.ScrollIntoView()
 	return e.el.Click(proto.InputMouseButtonLeft, 1)
 }
 
@@ -293,9 +293,10 @@ func (e *rodElement) Focus() error { return e.el.Focus() }
 
 // ScrollIntoView brings the element to the middle of the viewport, smoothly when
 // settings.smooth_scroll is on (the Python bot's scroll_to_view), and waits for a
-// smooth scroll to settle so the next click lands where it should.
+// smooth scroll to settle so the next click lands where it should. Click scrolls
+// through it too.
 func (e *rodElement) ScrollIntoView() error {
-	if _, err := e.el.Eval(ScrollScript(e.smooth)); err != nil {
+	if _, err := e.el.Eval(scrollScript(e.smooth)); err != nil {
 		return err
 	}
 	if e.smooth {
@@ -307,14 +308,21 @@ func (e *rodElement) ScrollIntoView() error {
 // smoothScrollLimit bounds the wait for a smooth scroll (a long one takes about a second).
 const smoothScrollLimit = 3 * time.Second
 
-// waitScrollSettle returns once the page has stopped scrolling: two readings of
-// the scroll position 100 ms apart agree (or the limit passes).
+// waitScrollSettle returns once the element has stopped moving: two readings of
+// its position 50 ms apart agree. Watching the element, not the window, also
+// covers a scroll inside a container (LinkedIn's job list), and ends at the
+// limit or when the page's context ends.
 func (e *rodElement) waitScrollSettle() {
+	ctx := e.el.GetContext()
 	deadline := time.Now().Add(smoothScrollLimit)
 	last := ""
 	for time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		v, err := e.el.Eval(`() => String(window.scrollX) + "," + String(window.scrollY)`)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+		v, err := e.el.Eval(`() => { const r = this.getBoundingClientRect(); return r.top + "," + r.left }`)
 		if err != nil {
 			return
 		}
@@ -326,9 +334,9 @@ func (e *rodElement) waitScrollSettle() {
 	}
 }
 
-// ScrollScript is the JavaScript that scrolls an element (this) into the middle
+// scrollScript is the JavaScript that scrolls an element (this) into the middle
 // of the viewport.
-func ScrollScript(smooth bool) string {
+func scrollScript(smooth bool) string {
 	behavior := "instant"
 	if smooth {
 		behavior = "smooth"

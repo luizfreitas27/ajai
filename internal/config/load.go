@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -49,15 +50,12 @@ func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
 	switch {
 	case err == nil:
 		l.FileExisted = true
-		data, retired, err := dropRetired(data)
+		retired, err := decodeStrict(data, &l.Config)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p.ConfigFile, err)
 		}
 		for _, key := range retired {
 			l.Warnings = append(l.Warnings, fmt.Sprintf("%s is no longer used and was ignored: %s (remove it, or run any `aja config set` to rewrite the file)", key, RetiredKeys[key]))
-		}
-		if err := decodeStrict(data, &l.Config); err != nil {
-			return nil, fmt.Errorf("%s: %w", p.ConfigFile, err)
 		}
 	case errors.Is(err, os.ErrNotExist):
 	default:
@@ -95,56 +93,70 @@ func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
 
 var unknownFieldRe = regexp.MustCompile(`field (\S+) not found`)
 
-// dropRetired removes RetiredKeys from a YAML document and reports which it found.
-// The file is only rewritten in memory; comments elsewhere are irrelevant here.
-func dropRetired(data []byte) ([]byte, []string, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, nil, err
-	}
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return data, nil, nil
-	}
-	var found []string
-	root := doc.Content[0]
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		section, body := root.Content[i].Value, root.Content[i+1]
-		if body.Kind != yaml.MappingNode {
-			continue
-		}
-		kept := body.Content[:0]
-		for j := 0; j+1 < len(body.Content); j += 2 {
-			key := section + "." + body.Content[j].Value
-			if _, retired := RetiredKeys[key]; retired {
-				found = append(found, key)
-				continue
-			}
-			kept = append(kept, body.Content[j], body.Content[j+1])
-		}
-		body.Content = kept
-	}
-	if len(found) == 0 {
-		return data, nil, nil
-	}
-	out, err := yaml.Marshal(&doc)
-	return out, found, err
-}
-
-func decodeStrict(data []byte, into *Config) error {
+// decodeStrict overlays a YAML document on into. Unknown keys are errors, except
+// RetiredKeys, which it returns instead. The decoder carries on past an unknown
+// key, so a retired one is simply left out, and every error keeps its line number.
+func decodeStrict(data []byte, into *Config) ([]string, error) {
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	dec.KnownFields(true)
 	err := dec.Decode(into)
 	if err == nil || errors.Is(err, io.EOF) { // io.EOF: an empty file, nothing to overlay
-		return nil
+		return nil, nil
+	}
+	var retired []string
+	var te *yaml.TypeError
+	if errors.As(err, &te) {
+		var rest []string
+		for _, msg := range te.Errors {
+			if key := retiredKeyIn(msg); key != "" {
+				retired = append(retired, key)
+				continue
+			}
+			rest = append(rest, msg)
+		}
+		if len(rest) == 0 {
+			return retired, nil
+		}
+		err = &yaml.TypeError{Errors: rest}
 	}
 	if m := unknownFieldRe.FindStringSubmatch(err.Error()); m != nil {
 		if looksLikeSecret(m[1]) {
-			return fmt.Errorf("key %q looks like a secret; secrets never go in the config file. Put it in .env or the environment as one of %s",
+			return nil, fmt.Errorf("key %q looks like a secret; secrets never go in the config file. Put it in .env or the environment as one of %s",
 				m[1], strings.Join(SecretEnvNames, ", "))
 		}
-		return &UnknownKeyError{Key: m[1], Suggestions: suggest(m[1])}
+		return nil, &UnknownKeyError{Key: m[1], Suggestions: suggest(m[1])}
 	}
-	return err
+	return nil, err
+}
+
+// fieldNotFoundRe is one of the decoder's unknown-key errors.
+var fieldNotFoundRe = regexp.MustCompile(`^line \d+: field (\S+) not found in type (\S+)$`)
+
+// retiredKeyIn returns the RetiredKeys entry an unknown-key error is about, or "".
+func retiredKeyIn(msg string) string {
+	m := fieldNotFoundRe.FindStringSubmatch(msg)
+	if m == nil {
+		return ""
+	}
+	for key := range RetiredKeys {
+		section, name, _ := strings.Cut(key, ".")
+		if name == m[1] && sectionType(section) == m[2] {
+			return key
+		}
+	}
+	return ""
+}
+
+// sectionType is the Go type of a top-level section ("settings" → "config.Settings"),
+// as the decoder names it in its errors.
+func sectionType(section string) string {
+	typ := reflect.TypeOf(Config{})
+	for i := 0; i < typ.NumField(); i++ {
+		if f := typ.Field(i); yamlName(f) == section {
+			return f.Type.String()
+		}
+	}
+	return ""
 }
 
 func envOverrides(env Env) map[string]string {

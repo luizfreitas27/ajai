@@ -30,10 +30,11 @@ type Pacer struct {
 // New builds a pacer from the config. fast shortens the between-jobs pauses to
 // a tenth; callers allow it only together with --dry-run.
 func New(cfg config.Pacing, fast bool) *Pacer {
-	return &Pacer{cfg: cfg, fast: fast, now: time.Now, sleep: sleepCtx, rand: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 7))}
+	return &Pacer{cfg: cfg, fast: fast, now: time.Now, sleep: Sleep, rand: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 7))}
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) error {
+// Sleep waits d, or returns ctx's error as soon as ctx ends.
+func Sleep(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return ctx.Err()
 	}

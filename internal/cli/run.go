@@ -98,8 +98,7 @@ else on stdout.`,
 					}
 				}
 			}
-			// --json is for scripts: nobody answers a pause there.
-			opts.Unattended = run.ResolveUnattended(opts.Unattended || a.eventsAsJSON, a.stdinIsTerminal(), a.stdoutIsTerminal())
+			opts.Unattended = run.ResolveUnattended(opts.Unattended, a.eventsAsJSON, a.stdinIsTerminal(), a.stdoutIsTerminal())
 			cfg := l.Config
 			st, err := a.openStore()
 			if err != nil {
@@ -110,12 +109,11 @@ else on stdout.`,
 			if err != nil {
 				return cannotStart(err)
 			}
-			pauseFilters := cfg.Search.PauseAfterFilters && !opts.Unattended
 			if !a.eventsAsJSON {
 				a.ui.Banner(a.Version)
 			}
 			a.note(run.EventStart, "market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
-			a.note(run.EventStart, "mode", runMode(opts, cfg.Settings.RunNonStop, pauseFilters))
+			a.note(run.EventStart, "mode", runMode(opts, cfg))
 			a.note(run.EventStart, "ai", aiMode(cfg, aiClient != nil))
 			for _, w := range l.Warnings {
 				a.note(run.EventWarn, "config", w)
@@ -160,7 +158,7 @@ else on stdout.`,
 			}
 			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
 				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume, Notifier: telegram}
-			if pauseFilters {
+			if opts.PausesAfterFilters(cfg) {
 				runner.AfterFilters = a.filterPause(defaultHelpTimeout)
 			}
 			_, runErr := runner.Session(ctx, opts)
@@ -186,7 +184,7 @@ func aiMode(c config.Config, on bool) string {
 	return c.AI.Provider + " " + c.AI.Model
 }
 
-func runMode(o run.Options, nonStop, pauseFilters bool) string {
+func runMode(o run.Options, c config.Config) string {
 	parts := []string{}
 	if o.DryRun {
 		parts = append(parts, "dry run")
@@ -199,10 +197,10 @@ func runMode(o run.Options, nonStop, pauseFilters bool) string {
 	if o.Fast {
 		parts = append(parts, "fast")
 	}
-	if nonStop {
+	if c.Settings.RunNonStop {
 		parts = append(parts, "non-stop")
 	}
-	if pauseFilters {
+	if o.PausesAfterFilters(c) {
 		parts = append(parts, "pause after filters")
 	}
 	return strings.Join(parts, ", ")
@@ -227,6 +225,8 @@ func (a *App) statusCmd() *cobra.Command {
 				a.ui.Println("No run in progress.")
 			case err != nil:
 				a.ui.Warn("state", err.Error())
+			case state.Alive() && !state.NextRun.IsZero():
+				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
 			case state.Alive():
 				mode := "live"
 				if state.DryRun {

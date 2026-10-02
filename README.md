@@ -133,9 +133,11 @@ scheduler), the job is skipped instead and the question waits for your answer in
 
 With `settings.run_non_stop: true`, a run that visited every search term (or hit the
 per-run cap) is followed, ten minutes later, by another, until LinkedIn's daily limit, the
-hourly cap, `--max`, an error or Ctrl-C. Between runs, `settings.alternate_sort_by` swaps
-the sort order and `settings.cycle_date_posted` narrows the date filter one step towards
-"Past 24 hours", as the Python bot did. Each run is recorded and reported on its own.
+hourly cap, `--max`, an error or Ctrl-C. The filters change between runs the way the
+Python bot changed them: `settings.cycle_date_posted` sets the date filter to "Past 24
+hours" for every later run, and `settings.alternate_sort_by` flips the sort order before
+each one (a blank sort becomes "Most relevant", then "Most recent", and so on). Each run is
+recorded and reported on its own; `aja status` shows when the next one starts.
 
 With `search.pause_after_filters: true` (the default) and you at the terminal, aja stops
 after applying each term's filters so you can check or adjust them in Chrome; press Enter

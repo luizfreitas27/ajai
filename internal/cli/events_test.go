@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/browser"
+	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/linkedin"
 	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/ui"
@@ -65,14 +66,19 @@ func TestRunWithJSONKeepsStdoutJSONAndImpliesUnattended(t *testing.T) {
 			t.Fatalf("stdout has a non-JSON line: %q\nall:\n%s", line, out)
 		}
 	}
-	if !strings.Contains(out, `"text":"dry run, unattended`) || strings.Contains(out, "aja test") {
+	if !strings.Contains(out, `"label":"mode","text":"dry run, unattended`) || !strings.Contains(out, `"label":"market"`) || strings.Contains(out, "aja test") {
 		t.Errorf("json implies unattended and prints no banner:\n%s", out)
 	}
 }
 
 func TestTheModeLineNamesNonStopAndTheFilterPause(t *testing.T) {
-	if got := runMode(run.Options{DryRun: true}, true, true); got != "dry run, non-stop, pause after filters" {
+	c := config.Defaults()
+	c.Settings.RunNonStop, c.Search.PauseAfterFilters = true, true
+	if got := runMode(run.Options{DryRun: true}, c); got != "dry run, non-stop, pause after filters" {
 		t.Errorf("%q", got)
+	}
+	if got := runMode(run.Options{DryRun: true, Unattended: true}, c); got != "dry run, unattended, non-stop" {
+		t.Errorf("an unattended run never pauses after filters: %q", got)
 	}
 }
 

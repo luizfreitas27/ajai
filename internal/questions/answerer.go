@@ -372,7 +372,7 @@ func (a *Answerer) answerSelect(ctx context.Context, q Question, job Job) Decisi
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
 	case textmatch.Has(label, genderTerms...):
 		answer = a.Cfg.Personals.Gender
-	case textmatch.Has(label, ethnicityTerms...):
+	case isEthnicity(label):
 		answer = a.Cfg.Personals.Ethnicity
 	case textmatch.Has(label, disabilityTerms...):
 		answer = a.Cfg.Personals.Disability
@@ -412,7 +412,7 @@ func (a *Answerer) answerRadio(ctx context.Context, q Question, job Job) Decisio
 		answer = a.Cfg.Personals.Disability
 	case textmatch.Has(label, genderTerms...):
 		answer = a.Cfg.Personals.Gender
-	case textmatch.Has(label, ethnicityTerms...):
+	case isEthnicity(label):
 		answer = a.Cfg.Personals.Ethnicity
 	}
 	return a.chooseOption(ctx, q, answer, job)
@@ -629,4 +629,10 @@ func (a *Answerer) RememberUnanswered(q Question, d Decision, jobLink string) bo
 // this question, and the question has a usable, non-sensitive title.
 func (a *Answerer) mayRemember(label string, d Decision) bool {
 	return a.Memory != nil && d.Remember && label != "" && label != UnknownTitle && !IsSensitive(label)
+}
+
+// isEthnicity reports a race/ethnicity question (ethnicityTerms, or a label that
+// is just "Race").
+func isEthnicity(label string) bool {
+	return textmatch.Has(label, ethnicityTerms...) || strings.Trim(strings.ToLower(label), " *:?.()") == "race"
 }

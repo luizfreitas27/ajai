@@ -3,9 +3,12 @@ package run
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/pacing"
 )
 
 // defaultNonStopWait is the pause between the runs of a non-stop session, the
@@ -18,15 +21,11 @@ const defaultNonStopWait = 10 * time.Minute
 // (FilterCycle) and NonStopWait in between. Each run is recorded and reported
 // on its own. The configuration is restored when the session ends.
 func (r *Runner) Session(ctx context.Context, opts Options) ([]Summary, error) {
+	r.defaults()
+	r.filtersPaused = false
 	if !r.Cfg.Settings.RunNonStop {
 		sum, err := r.Run(ctx, opts)
 		return []Summary{sum}, err
-	}
-	if r.NonStopWait == 0 {
-		r.NonStopWait = defaultNonStopWait
-	}
-	if r.Sleep == nil {
-		r.Sleep = sleep
 	}
 	base := r.Cfg.Search
 	defer func() { r.Cfg.Search = base }()
@@ -40,45 +39,59 @@ func (r *Runner) Session(ctx context.Context, opts Options) ([]Summary, error) {
 		if err != nil || !sum.End.Continues() {
 			return all, err
 		}
-		next := cycle.Peek()
-		r.emit(EventWait, fmt.Sprintf("non-stop: next run at %s (sort %q, date posted %q)",
-			r.now().Add(r.NonStopWait).Format("15:04"), next.SortBy, next.DatePosted), nil)
-		if err := r.Sleep(ctx, r.NonStopWait); err != nil {
+		next, at := cycle.Peek(), r.Now().Add(r.NonStopWait)
+		r.emit(EventWait, fmt.Sprintf("non-stop: next run at %s (sort %q, date posted %q)", at.Format("15:04"), next.SortBy, next.DatePosted), nil)
+		r.saveWaiting(sum, opts, at)
+		err = r.Sleep(ctx, r.NonStopWait)
+		if r.StatePath != "" {
+			RemoveState(r.StatePath)
+		}
+		if err != nil {
 			return all, nil // Ctrl-C during the wait ends the session cleanly
 		}
 	}
 }
 
-func (r *Runner) now() time.Time {
-	if r.Now != nil {
-		return r.Now()
+// saveWaiting records, for aja status, that a non-stop session is between runs.
+func (r *Runner) saveWaiting(last Summary, opts Options, next time.Time) {
+	if r.StatePath == "" {
+		return
 	}
-	return time.Now()
-}
-
-func sleep(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
+	st := State{PID: os.Getpid(), Started: r.started, DryRun: opts.DryRun, Market: last.Market, NextRun: next}
+	if err := WriteState(r.StatePath, st); err != nil {
+		r.Logger.Warn("could not write the run state", "error", err)
 	}
 }
 
-// datePostedSteps is LinkedIn's date-posted filter, widest first.
-var datePostedSteps = []string{"Any time", "Past month", "Past week", "Past 24 hours"}
+// defaults fills what a Runner may leave unset.
+func (r *Runner) defaults() {
+	if r.Logger == nil {
+		r.Logger = slog.New(slog.DiscardHandler)
+	}
+	if r.Now == nil {
+		r.Now = time.Now
+	}
+	if r.LoginTimeout == 0 {
+		r.LoginTimeout = 10 * time.Minute
+	}
+	if r.NonStopWait == 0 {
+		r.NonStopWait = defaultNonStopWait
+	}
+	if r.Sleep == nil {
+		r.Sleep = pacing.Sleep
+	}
+}
 
-// FilterCycle yields the search filters for each run of a non-stop session, the
-// way the Python bot changed them between runs:
+// FilterCycle yields the search filters for each run of a non-stop session,
+// reproducing what the Python bot did at run time:
 //   - the first run uses the configured filters;
 //   - before each later round, with cycle_date_posted, the date-posted filter
-//     narrows one step towards "Past 24 hours" and stays there (the Python
-//     default, stop_date_cycle_at_24hr);
-//   - with alternate_sort_by, each round is two runs: first with the other sort
-//     order, then with the configured one ("" is LinkedIn's default, "Most
-//     relevant").
+//     becomes "Past 24 hours" (the Python bot's code, with its default
+//     stop_date_cycle_at_24hr, always landed there) and stays;
+//   - with alternate_sort_by, each round is two runs: the sort is flipped, a run,
+//     flipped again, a run. Python's flip is `"Most recent" if sort == "Most
+//     relevant" else "Most relevant"`, so a configured "" (LinkedIn's default)
+//     becomes "Most relevant", then "Most recent", and so on.
 type FilterCycle struct {
 	current           config.Search
 	alternate, narrow bool
@@ -93,15 +106,12 @@ func NewFilterCycle(base config.Search, alternateSort, cycleDate bool) *FilterCy
 
 // Next returns the filters for the next run.
 func (c *FilterCycle) Next() config.Search {
+	next := c.Peek()
 	if !c.started {
 		c.started = true
-		return c.current
+	} else {
+		c.queue = c.queue[1:]
 	}
-	if len(c.queue) == 0 {
-		c.fill()
-	}
-	next := c.queue[0]
-	c.queue = c.queue[1:]
 	return next
 }
 
@@ -118,31 +128,24 @@ func (c *FilterCycle) Peek() config.Search {
 
 func (c *FilterCycle) fill() {
 	if c.narrow {
-		c.current.DatePosted = narrower(c.current.DatePosted)
+		c.current.DatePosted = lastDateStep
 	}
-	if c.alternate {
-		other := c.current
-		other.SortBy = otherSort(c.current.SortBy)
-		c.queue = append(c.queue, other)
+	if !c.alternate {
+		c.queue = append(c.queue, c.current)
+		return
 	}
+	c.current.SortBy = pythonFlip(c.current.SortBy)
+	c.queue = append(c.queue, c.current)
+	c.current.SortBy = pythonFlip(c.current.SortBy)
 	c.queue = append(c.queue, c.current)
 }
 
-func narrower(date string) string {
-	for i, step := range datePostedSteps {
-		if step == date && i+1 < len(datePostedSteps) {
-			return datePostedSteps[i+1]
-		}
-	}
-	if date == "" {
-		return datePostedSteps[1] // no filter is "Any time"
-	}
-	return date // already the narrowest, or a value LinkedIn does not list
-}
+// lastDateStep is where the Python bot's date cycle always ended up.
+const lastDateStep = "Past 24 hours"
 
-func otherSort(sort string) string {
-	if sort == "Most recent" {
-		return "Most relevant"
+func pythonFlip(sort string) string {
+	if sort == "Most relevant" {
+		return "Most recent"
 	}
-	return "Most recent"
+	return "Most relevant"
 }

@@ -13,6 +13,7 @@ import (
 type jsonEvent struct {
 	Time    string       `json:"time"`
 	Event   string       `json:"event"`
+	Label   string       `json:"label,omitempty"` // what a start or warn note is about: "market", "mode", "config"...
 	Text    string       `json:"text,omitempty"`
 	Job     *jsonJob     `json:"job,omitempty"`
 	Summary *run.Summary `json:"summary,omitempty"`
@@ -26,29 +27,24 @@ type jsonJob struct {
 	Link     string `json:"link"`
 }
 
-// eventsAsJSON is set by `aja run --json`: events go to stdout as JSON lines and
-// nothing else is printed there.
+// report shows one run event: a terminal line, or a JSON line with --json.
 func (a *App) report(e run.Event) {
 	if !a.eventsAsJSON {
 		a.printEvent(e)
 		return
 	}
-	line := jsonEvent{Time: time.Now().Format(time.RFC3339), Event: string(e.Kind), Text: e.Text, Summary: e.Summary}
+	line := jsonEvent{Event: string(e.Kind), Text: e.Text, Summary: e.Summary}
 	if e.Card != nil {
 		line.Job = &jsonJob{ID: e.Card.ID, Title: e.Card.Title, Company: e.Card.Company, Location: e.Card.Location, Link: e.Card.Link}
 	}
-	data, err := json.Marshal(line)
-	if err != nil {
-		return
-	}
-	a.ui.Printf("%s\n", data)
+	a.printJSON(line)
 }
 
 // note reports something outside the run loop (a warning before the run, the
 // run's settings): a JSON event in --json mode, a terminal line otherwise.
 func (a *App) note(kind run.EventKind, label, text string) {
 	if a.eventsAsJSON {
-		a.report(run.Event{Kind: kind, Text: text})
+		a.printJSON(jsonEvent{Event: string(kind), Label: label, Text: text})
 		return
 	}
 	if kind == run.EventWarn {
@@ -56,6 +52,16 @@ func (a *App) note(kind run.EventKind, label, text string) {
 		return
 	}
 	a.ui.KV(label, text)
+}
+
+// printJSON writes one event line. With --json, stdout carries nothing else.
+func (a *App) printJSON(line jsonEvent) {
+	line.Time = time.Now().Format(time.RFC3339)
+	data, err := json.Marshal(line)
+	if err != nil {
+		return
+	}
+	a.ui.Printf("%s\n", data)
 }
 
 func (a *App) printEvent(e run.Event) {
