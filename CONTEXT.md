@@ -126,8 +126,12 @@ _Avoid_: server, service, agent, background mode
 A Telegram message from the configured chat that the daemon acts on: show the status, stop the run, start a run, or work the review queue. Messages from any other chat are ignored.
 _Avoid_: bot command, webhook, chat command
 
+**TUI**:
+The full-screen terminal interface `aja` opens when started with no command in a real terminal. Its tabs: the Dashboard (the run in progress, the last runs, the next opening, the daemon, the log), the review queue and approved answers, the schedule windows and the daemon, the job history and the configuration; and a setup checklist when something needed to run is missing. A run it starts runs in a process of its own, unattended, so closing the TUI never ends it.
+_Avoid_: console, panel, control panel; "dashboard" for the TUI as a whole (the Dashboard is its first tab)
+
 **Stop request**:
-A request, from `aja stop`, a remote command or a schedule window closing, that the run in progress end cleanly, as if the user had pressed Ctrl-C at its terminal. Honoured by any run on the machine; the run records the request's reason.
+A request, from `aja stop`, the TUI, a remote command or a schedule window closing, that the run in progress end cleanly, as if the user had pressed Ctrl-C at its terminal. Honoured by any run on the machine; the run records the request's reason.
 _Avoid_: kill, abort, cancel
 
 **Run summary**:

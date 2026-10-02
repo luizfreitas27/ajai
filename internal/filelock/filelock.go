@@ -65,15 +65,28 @@ func Acquire(path string, desc []byte, settle time.Duration, real func(desc []by
 	}
 }
 
+// Held with no description may be another reader's own check (Held takes the
+// lock for an instant) or a holder that has not described itself yet; both
+// last microseconds, so ReadHeld looks again a few times before believing it.
+const (
+	undescribedChecks = 5
+	undescribedPause  = 10 * time.Millisecond
+)
+
 // ReadHeld reports whether someone holds the lock on path, with the holder's
 // description.
 func ReadHeld(path string) ([]byte, bool, error) {
-	held, err := Held(path)
-	if err != nil || !held {
-		return nil, false, err
+	for i := 1; ; i++ {
+		held, err := Held(path)
+		if err != nil || !held {
+			return nil, false, err
+		}
+		desc, err := Read(path)
+		if err != nil || len(desc) > 0 || i == undescribedChecks {
+			return desc, true, err
+		}
+		time.Sleep(undescribedPause)
 	}
-	desc, err := Read(path)
-	return desc, true, err
 }
 
 // Describe replaces the file's content with data.

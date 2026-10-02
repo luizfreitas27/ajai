@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,14 +62,21 @@ func (a *App) Command() *cobra.Command {
 		Long: `aja drives your real, visible Chrome through LinkedIn job search and Easy Apply,
 answering forms from your configuration, its answer memory and (optionally) an AI
 model. Start with "aja init", sign in once with "aja login", check with "aja doctor",
-try "aja run --dry-run".`,
+try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			a.ui = ui.New(a.Stdout, a.Stderr, a.noColor || a.Env.Get("NO_COLOR") != "")
+			a.ui = ui.New(a.Stdout, a.Stderr, a.colorOff())
 			a.paths = paths.Resolve(a.configFlag, a.Env.Getenv)
 			a.logger = logging.Discard
 			return nil
+		},
+		// With no command: the TUI in a real terminal, the help anywhere else.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !inTerminal(a) {
+				return cmd.Help()
+			}
+			return a.openTUI(cmd.Context())
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			for i := len(a.cleanups) - 1; i >= 0; i-- {
@@ -77,6 +85,9 @@ try "aja run --dry-run".`,
 			a.cleanups = nil
 		},
 	}
+	// The root runs the TUI, which would add "aja [flags]" to the help; the
+	// help stays as it was, and subcommands keep their usage line.
+	root.SetUsageTemplate(strings.Replace(root.UsageTemplate(), "{{if .Runnable}}", "{{if and .Runnable .HasParent}}", 1))
 	root.SetOut(a.Stdout)
 	root.SetErr(a.Stderr)
 	root.SetIn(a.Stdin)
@@ -85,6 +96,9 @@ try "aja run --dry-run".`,
 	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.loginCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd(), a.scheduleCmd(), a.daemonCmd())
 	return root
 }
+
+// colorOff: --no-color or NO_COLOR.
+func (a *App) colorOff() bool { return a.noColor || a.Env.Get("NO_COLOR") != "" }
 
 // Execute runs the tree and returns the exit code.
 func (a *App) Execute(ctx context.Context, args []string) int {

@@ -249,34 +249,34 @@ func (a *App) statusCmd() *cobra.Command {
 		Short: "Show whether a run is in progress and the last runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			holder, held, lerr := run.ReadLock(a.paths.DataDir)
-			if lerr != nil {
-				a.ui.Warn("lock", lerr.Error())
+			act, err := run.ReadActivity(a.paths.DataDir)
+			if err != nil {
+				a.ui.Warn("run", err.Error())
 			}
-			state, err := run.ReadState(run.StatePath(a.paths.DataDir))
-			switch {
-			case errors.Is(err, run.ErrNoState) && held && holder.PID == 0:
-				a.ui.OK("running", "a run is starting")
-			case errors.Is(err, run.ErrNoState) && held:
-				a.ui.OK("running", holder.String()+", starting")
-			case errors.Is(err, run.ErrNoState):
-				a.ui.Println("No run in progress.")
-			case err != nil:
-				a.ui.Warn("state", err.Error())
-			case state.Alive() && !state.NextRun.IsZero():
-				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
-				if held {
-					a.ui.KV("started from", holder.From())
+			state := act.State
+			switch act.Kind {
+			case run.Starting:
+				if act.From() == "" {
+					a.ui.OK("running", "a run is starting")
+				} else {
+					a.ui.OK("running", act.Holder.String()+", starting")
 				}
-			case state.Alive():
+			case run.Idle:
+				a.ui.Println("No run in progress.")
+			case run.Waiting:
+				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
+				if from := act.From(); from != "" {
+					a.ui.KV("started from", from)
+				}
+			case run.Running:
 				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), run.Mode(state.DryRun), state.Market))
-				if held {
-					a.ui.KV("started from", holder.From())
+				if from := act.From(); from != "" {
+					a.ui.KV("started from", from)
 				}
 				a.ui.KV("term", state.Term)
 				a.ui.KV("applied", fmt.Sprintf("%d (external %d, failed %d, would apply %d)", state.Applied, state.External, state.Failed, state.WouldApply))
 				a.ui.KV("skipped", fmt.Sprint(state.Skipped))
-			default:
+			case run.Stale:
 				a.ui.Warn("stale", fmt.Sprintf("pid %d is gone; the last run did not exit cleanly", state.PID))
 			}
 			st, err := a.openStore()
@@ -341,7 +341,8 @@ func (a *App) logsCmd() *cobra.Command {
 			if ofDaemon {
 				name = logging.DaemonFileName // the daemon and the runs it starts
 			}
-			path := name(a.paths.LogDir, time.Now())
+			today := time.Now()
+			path := name(a.paths.LogDir, today)
 			data, err := os.ReadFile(path)
 			if err != nil && !os.IsNotExist(err) {
 				return err
@@ -358,7 +359,7 @@ func (a *App) logsCmd() *cobra.Command {
 			if !follow {
 				return nil
 			}
-			return a.follow(cmd.Context(), name, path, int64(len(data)))
+			return a.follow(cmd.Context(), name, today, int64(len(data)))
 		},
 	}
 	cmd.Flags().BoolVar(&ofDaemon, "daemon", false, "the daemon's log (with the runs it started) instead of the terminal's")
@@ -367,39 +368,19 @@ func (a *App) logsCmd() *cobra.Command {
 	return cmd
 }
 
-// follow prints what is appended to the day's log, surviving truncation (the
-// offset resets) and midnight (the file name changes with the day).
-func (a *App) follow(ctx context.Context, name logging.FileNamer, path string, offset int64) error {
+// follow prints what is appended to day's log after offset, surviving
+// truncation and midnight.
+func (a *App) follow(ctx context.Context, name logging.FileNamer, day time.Time, offset int64) error {
+	tail := logging.NewTail(name, a.paths.LogDir, day, offset)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(500 * time.Millisecond):
 		}
-		if today := name(a.paths.LogDir, time.Now()); today != path {
-			path, offset = today, 0
+		if data, _ := tail.Read(time.Now()); len(data) > 0 {
+			a.ui.Printf("%s", data)
 		}
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		if info, err := f.Stat(); err == nil && info.Size() < offset {
-			offset = 0
-		}
-		if _, err := f.Seek(offset, 0); err == nil {
-			buf := make([]byte, 64*1024)
-			for {
-				n, err := f.Read(buf)
-				if n > 0 {
-					a.ui.Printf("%s", buf[:n])
-					offset += int64(n)
-				}
-				if err != nil {
-					break
-				}
-			}
-		}
-		_ = f.Close()
 	}
 }
 

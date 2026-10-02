@@ -84,3 +84,35 @@ func TestTheLockDiesWithItsProcess(t *testing.T) {
 	}
 	l.Unlock()
 }
+
+// TestAnotherReadersCheckIsNotAHolder: Held takes the lock for an instant, so a
+// reader can find it taken with no description. ReadHeld looks again rather
+// than report a holder nobody is; a holder that stays undescribed is believed.
+func TestAnotherReadersCheckIsNotAHolder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+	check, err := TryLock(path) // another reader's check, caught in the act
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(15 * time.Millisecond)
+		_ = unlock(check.f)
+		_ = check.f.Close()
+	}()
+	if desc, held, err := ReadHeld(path); held || err != nil {
+		t.Errorf("a passing check is not a holder: %q %v %v", desc, held, err)
+	}
+
+	quiet, err := TryLock(path) // a holder that never describes itself
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer quiet.Unlock()
+	start := time.Now()
+	if _, held, _ := ReadHeld(path); !held {
+		t.Error("a holder that stays undescribed is still a holder")
+	}
+	if waited := time.Since(start); waited > 200*time.Millisecond {
+		t.Errorf("looked again for %v", waited)
+	}
+}
