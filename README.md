@@ -217,6 +217,25 @@ configuration is read afresh for every run, so `aja config set` needs no restart
 daemon runs at a time, and Ctrl-C lets the run in progress end cleanly first. Its runs use
 the aja profile, so sign in once with `aja login` before the first window.
 
+## Telegram commands
+
+With `AJA_TELEGRAM_BOT_TOKEN` and `AJA_TELEGRAM_CHAT_ID` set (the same bot that sends the run
+summaries), `aja daemon` also takes commands from that chat:
+
+| Command | What it does |
+|---|---|
+| `/status` | The run in progress (who started it, market, counts, term) or the last run, pending answers, the next window |
+| `/stop` | Stop the run in progress, wherever it was started; a second message says when it has ended |
+| `/run [brasil\|internacional] [dry]` | Start an unattended run now, or say why not (a run in progress, a config error) |
+| `/help` | The list |
+
+Messages from any other chat are ignored. The daemon asks Telegram for new messages (long
+polling), so nothing on your machine is reachable from the internet, and it remembers what
+it read, so a restart never repeats a command; a command sent while the daemon was down
+(more than 10 minutes old) is not acted on. If your bot has a webhook set, Telegram refuses
+to hand messages out: remove it (`deleteWebhook`). The token and chat id are read when the
+daemon starts.
+
 ## Markets
 
 `markets.active` is `internacional` (foreign currency, annual salaries) or `brasil` (BRL,

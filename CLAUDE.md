@@ -113,6 +113,12 @@ to the tag before tagging and the workflow publishes that section as the release
   `XDG_CONFIG_HOME`. `Unit` is golden-tested (`go test ./internal/service -update`
   rewrites `testdata/`); `systemctl --user` goes through the `Systemctl` seam (stdout only;
   stderr in the error). Check a changed unit with `systemd-analyze --user verify`.
+- `internal/remote`: the remote commands. `Listener.Loop` long-polls `notify.Telegram.Updates`
+  (the `Bot` interface), acts only on the configured chat (others logged once), saves the
+  update offset in the store's state *before* acting (a restart never repeats a command),
+  refuses commands older than `MaxAge`, and backs off with one warning. Commands go through
+  the `Runs` interface (the daemon's `Supervisor`). Tests run against an httptest fake of
+  the Bot API.
 - `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
   goroutine (one at a time; a second `Start` gets a `*run.HeldError`, and so does a run of
   another process, checked before the `Starter` reads any config). The CLI's `Starter`

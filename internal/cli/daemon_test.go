@@ -2,6 +2,9 @@ package cli
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +14,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/logging"
+	"github.com/luizfreitas27/aja/internal/notify"
 	"github.com/luizfreitas27/aja/internal/schedule"
 	"github.com/luizfreitas27/aja/internal/store"
 )
@@ -80,5 +84,29 @@ func TestTheDaemonRunsUntilCtrlCAndRecordsAWindowItCouldNotStart(t *testing.T) {
 	}
 	if _, running, _ := daemon.ReadLock(h.home); running {
 		t.Error("the daemon lock must be released")
+	}
+}
+
+func TestTheDaemonListensForTelegramCommandsWhenTheBotIsSet(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
+		_, _ = io.WriteString(w, `{"ok":true,"result":[]}`)
+	}))
+	defer srv.Close()
+	saved := notify.APIBase
+	notify.APIBase = srv.URL
+	defer func() { notify.APIBase = saved }()
+	h.env["AJA_TELEGRAM_BOT_TOKEN"], h.env["AJA_TELEGRAM_CHAT_ID"] = "1:tok", "42"
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(300 * time.Millisecond); cancel() }()
+	code, out, errText := h.runCtx(ctx, "daemon")
+	if code != 0 || !strings.Contains(out, "listening for commands: /status, /stop, /run, /help") {
+		t.Errorf("%d %s %s", code, out, errText)
+	}
+	logs, _ := os.ReadFile(logging.DaemonFileName(filepath.Join(h.home, "logs"), time.Now()))
+	if !strings.Contains(string(logs), "listening for Telegram commands") || strings.Contains(string(logs), "1:tok") {
+		t.Errorf("%s", logs)
 	}
 }
