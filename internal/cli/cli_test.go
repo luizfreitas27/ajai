@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ type harness struct {
 	stdin string    // typed into the next command
 	now   time.Time // the clock commands see; zero: the real one
 	t     *testing.T
+	mu    sync.Mutex // a long-running command (aja daemon) may run beside others
 }
 
 func newHarness(t *testing.T) *harness {
@@ -31,17 +33,25 @@ func newHarness(t *testing.T) *harness {
 // run executes one command and returns exit code, stdout and stderr.
 func (h *harness) run(args ...string) (int, string, string) {
 	h.t.Helper()
+	return h.runCtx(context.Background(), args...)
+}
+
+// runCtx is run with a context the test cancels (Ctrl-C), for long-running commands.
+func (h *harness) runCtx(ctx context.Context, args ...string) (int, string, string) {
+	h.t.Helper()
+	h.mu.Lock()
 	env := map[string]string{"AJA_HOME": h.home, "NO_COLOR": "1"}
 	for k, v := range h.env {
 		env[k] = v
 	}
 	var out, errb bytes.Buffer
 	app := &App{Version: "test", Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(h.stdin), Env: config.MapEnv(env)}
-	if !h.now.IsZero() {
-		app.Now = func() time.Time { return h.now }
+	if now := h.now; !now.IsZero() {
+		app.Now = func() time.Time { return now }
 	}
 	h.stdin = ""
-	code := app.Execute(context.Background(), args)
+	h.mu.Unlock()
+	code := app.Execute(ctx, args)
 	return code, out.String(), errb.String()
 }
 

@@ -103,7 +103,18 @@ to the tag before tagging and the workflow publishes that section as the release
   `Current` (decided on the wall clock, as the Python bot did, so DST days behave), `Due`
   (current and not yet handled) and `Next`. The store keeps the windows
   (`schedule_windows`) and each handled opening, keyed by window and local date
-  (`schedule_openings`); `aja schedule` manages them. The scheduler loop is the daemon's.
+  (`schedule_openings`); `aja schedule` manages them.
+- `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
+  goroutine (one at a time; a second `Start` gets a `*run.HeldError`), started through a
+  `Starter` (the CLI's goes through `launch`, config read afresh, unattended forced); it
+  recovers panics so the daemon survives, and `Stop` cancels its own run with a
+  `*run.StopRequested` cause or writes a stop request for another process's run.
+  `Scheduler.Tick` holds every decision for one moment (injected clock): stop our run when
+  its window closed / was disabled / removed (`closedReason`), start a due opening, record
+  and notify a skip when another run is in progress, but let the next opening wait while our
+  own run is still ending (back-to-back windows). `Loop` ticks every 30 s and on
+  `RunEnded`. The daemon lock (`daemon.AcquireLock`) allows one daemon; its log is
+  `daemon-YYYY-MM-DD.log` via `logging.OpenDaily`, which moves to a new file at midnight.
 - aja is a CLI and targets Linux only for now: no web panel, no Windows or macOS code paths
   in new work (the few OS branches from phase 1 stay), releases for linux/amd64 and arm64.
 

@@ -85,11 +85,11 @@ func TestWindowsAndOpenings(t *testing.T) {
 	if err != nil || len(handled) != 1 || !handled[k] {
 		t.Errorf("only openings since the date: %v %v", handled, err)
 	}
-	var outcome string
-	var run sql.NullInt64
-	_ = s.db.QueryRow(`SELECT outcome, run_id FROM schedule_openings WHERE window_id = ? AND date = ?`, k.WindowID, k.Date).Scan(&outcome, &run)
-	if outcome != "started" || run.Int64 != runID {
-		t.Errorf("replaced: %s %v", outcome, run)
+	if rec, err := s.GetOpening(k); err != nil || rec == nil || rec.Outcome != schedule.OutcomeStarted || rec.RunID != runID || rec.Detail != "" {
+		t.Errorf("replaced: %+v %v", rec, err)
+	}
+	if rec, err := s.GetOpening(schedule.Key{WindowID: id, Date: "2030-01-01"}); rec != nil || err != nil {
+		t.Errorf("never handled: %+v %v", rec, err)
 	}
 
 	// Deleting a window forgets its openings.

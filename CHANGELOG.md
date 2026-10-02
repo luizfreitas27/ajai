@@ -25,3 +25,5 @@ no such section the notes are the commit list.
 - `aja doctor` names the Chrome profile and whether LinkedIn is signed in there.
 - `aja schedule add/list/rm/enable/disable`: schedule windows (weekdays, hours, optional
   market and dry run); `aja status` shows the next opening.
+- `aja daemon`: starts an unattended run when a window opens and stops it when it closes,
+  with Telegram notices; `aja logs --daemon` shows its log, `aja status` whether it runs.

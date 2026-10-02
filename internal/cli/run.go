@@ -13,6 +13,7 @@ import (
 
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/launch"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/notify"
@@ -274,6 +275,11 @@ func (a *App) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if d, running, _ := daemon.ReadLock(a.paths.DataDir); running {
+				a.ui.KV("daemon", fmt.Sprintf("running (pid %d, since %s)", d.PID, d.Started.Local().Format("Mon 02 Jan 15:04")))
+			} else if len(windows) > 0 {
+				a.ui.KV("daemon", "not running: schedule windows start runs only while aja daemon runs")
+			}
 			if len(windows) > 0 {
 				a.printNextOpening(windows)
 			}
@@ -312,14 +318,18 @@ func firstNonEmpty(a, b string) string {
 }
 
 func (a *App) logsCmd() *cobra.Command {
-	var follow bool
+	var follow, ofDaemon bool
 	var lines int
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "Print today's log; -f follows it like tail -f",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := logging.FileName(a.paths.LogDir, time.Now())
+			name := logging.FileName
+			if ofDaemon {
+				name = logging.DaemonFileName // the daemon and the runs it starts
+			}
+			path := name(a.paths.LogDir, time.Now())
 			data, err := os.ReadFile(path)
 			if err != nil && !os.IsNotExist(err) {
 				return err
@@ -336,9 +346,10 @@ func (a *App) logsCmd() *cobra.Command {
 			if !follow {
 				return nil
 			}
-			return a.follow(cmd.Context(), path, int64(len(data)))
+			return a.follow(cmd.Context(), name, path, int64(len(data)))
 		},
 	}
+	cmd.Flags().BoolVar(&ofDaemon, "daemon", false, "the daemon's log (with the runs it started) instead of the terminal's")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing as the file grows")
 	cmd.Flags().IntVarP(&lines, "lines", "n", 50, "print only the last N lines first (0: all)")
 	return cmd
@@ -346,14 +357,14 @@ func (a *App) logsCmd() *cobra.Command {
 
 // follow prints what is appended to the day's log, surviving truncation (the
 // offset resets) and midnight (the file name changes with the day).
-func (a *App) follow(ctx context.Context, path string, offset int64) error {
+func (a *App) follow(ctx context.Context, name func(string, time.Time) string, path string, offset int64) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(500 * time.Millisecond):
 		}
-		if today := logging.FileName(a.paths.LogDir, time.Now()); today != path {
+		if today := name(a.paths.LogDir, time.Now()); today != path {
 			path, offset = today, 0
 		}
 		f, err := os.Open(path)

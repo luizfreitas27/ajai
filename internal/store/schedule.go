@@ -112,3 +112,27 @@ func (s *Store) HandledOpenings(since string) (map[schedule.Key]bool, error) {
 	}
 	return out, rows.Err()
 }
+
+// OpeningRecord is what the scheduler recorded for one opening.
+type OpeningRecord struct {
+	Outcome schedule.Outcome
+	Detail  string
+	RunID   int64 // 0 when no run started (or it was never recorded)
+}
+
+// GetOpening returns the record of one opening, or nil when it was not handled.
+func (s *Store) GetOpening(k schedule.Key) (*OpeningRecord, error) {
+	var r OpeningRecord
+	var outcome string
+	var runID sql.NullInt64
+	err := s.db.QueryRow(`SELECT outcome, detail, run_id FROM schedule_openings WHERE window_id = ? AND date = ?`, k.WindowID, k.Date).
+		Scan(&outcome, &r.Detail, &runID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.Outcome, r.RunID = schedule.Outcome(outcome), runID.Int64
+	return &r, nil
+}
