@@ -41,6 +41,7 @@ func (a *App) openTUI(ctx context.Context) error {
 	home, _ := os.UserHomeDir()
 	d := tui.Deps{Paths: a.paths, Store: st, Env: a.Env, Logger: logger, Now: a.now,
 		Probe: doctor.RealProbe(), Launcher: launcher{executable: self, configFlag: a.configFlag, noColor: a.noColor}, Home: home}
+	d.Unit = daemonUnit{app: a}
 	return showTUI(ctx, d, a.Stdin, a.Stdout, a.colorOff())
 }
 

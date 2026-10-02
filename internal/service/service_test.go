@@ -181,3 +181,29 @@ func TestUninstallAndStatus(t *testing.T) {
 		t.Error("the unit must be removed")
 	}
 }
+
+func TestStartAndStopTheInstalledUnit(t *testing.T) {
+	f := &fakeSystemctl{answers: desktop()}
+	m := Manager{UnitDir: t.TempDir(), Systemctl: f.run, Settle: time.Millisecond}
+	if _, err := m.Start(); !errors.Is(err, ErrNotInstalled) {
+		t.Errorf("nothing to start: %v", err)
+	}
+	if _, err := m.Install(Options{Binary: "/usr/bin/aja"}); err != nil {
+		t.Fatal(err)
+	}
+	f.calls = nil
+	if ran, err := m.Stop(); err != nil || !slices.Equal(ran, []string{"systemctl --user stop aja.service"}) {
+		t.Errorf("%q %v", ran, err)
+	}
+	f.fail = "start aja.service"
+	if _, err := m.Start(); err == nil || !strings.Contains(err.Error(), "systemctl --user start aja.service") {
+		t.Errorf("the failing command is named: %v", err)
+	}
+	if !slices.Equal(f.calls, []string{"stop aja.service", "start aja.service"}) {
+		t.Errorf("%q", f.calls)
+	}
+	f.fail, f.answers["is-active aja.service"] = "", "failed" // it starts, then exits
+	if _, err := m.Start(); err == nil || !strings.Contains(err.Error(), "did not stay up") {
+		t.Errorf("a daemon that does not stay up is said: %v", err)
+	}
+}

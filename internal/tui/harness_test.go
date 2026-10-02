@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"io"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/doctor"
 	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/aja/internal/service"
 	"github.com/luizfreitas27/aja/internal/store"
 )
 
@@ -45,8 +47,37 @@ type harness struct {
 	onRun   func(args []string)
 	started [][]string // the runs Start was asked for
 	exit    chan error // the last one's end, sent by the test
+	systemd *fakeSystemd
 	quit    bool
 }
+
+// fakeSystemd is systemctl --user: it records commands and answers from a
+// script, as the service package's tests do.
+type fakeSystemd struct {
+	calls   []string
+	answers map[string]string
+	fail    string // a command that fails
+}
+
+func (f *fakeSystemd) run(args ...string) (string, error) {
+	cmd := strings.Join(args, " ")
+	f.calls = append(f.calls, cmd)
+	if cmd == f.fail {
+		return "", errors.New("exit status 1: Failed to connect to bus")
+	}
+	return f.answers[cmd], nil
+}
+
+// harnessUnit is the daemon's unit over a real service.Manager, in the
+// temporary AJA_HOME, with the fake systemctl.
+type harnessUnit struct{ service.Manager }
+
+func (u harnessUnit) Install() (service.Installed, error) {
+	return u.Manager.Install(service.Options{Binary: "/usr/local/bin/aja"})
+}
+func (u harnessUnit) Uninstall() error { _, err := u.Manager.Uninstall(); return err }
+func (u harnessUnit) Start() error     { _, err := u.Manager.Start(); return err }
+func (u harnessUnit) Stop() error      { _, err := u.Manager.Stop(); return err }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -60,7 +91,9 @@ func newHarness(t *testing.T) *harness {
 	if err := p.EnsureDataDirs(); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, p: p, now: time.Date(2026, 10, 5, 9, 30, 0, 0, time.Local), env: map[string]string{}, logs: &bytes.Buffer{}, session: true}
+	h := &harness{t: t, p: p, now: time.Date(2026, 10, 5, 9, 30, 0, 0, time.Local), env: map[string]string{}, logs: &bytes.Buffer{}, session: true,
+		systemd: &fakeSystemd{answers: map[string]string{"is-active graphical-session.target": "active", "show-environment": "WAYLAND_DISPLAY=wayland-1",
+			"is-active aja.service": "active", "is-enabled aja.service": "enabled"}}}
 	st, err := store.Open(p.DBFile)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +177,8 @@ func (h *harness) open(width, height int) {
 // paths show as ~/… and the golden screens stay the same from run to run.
 func (h *harness) deps() Deps {
 	return Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
-		Now: func() time.Time { return h.now }, Probe: h.probe(), Launcher: h, Home: h.p.DataDir}
+		Now: func() time.Time { return h.now }, Probe: h.probe(), Launcher: h, Home: h.p.DataDir,
+		Unit: harnessUnit{service.Manager{UnitDir: filepath.Join(h.p.DataDir, "systemd"), Systemctl: h.systemd.run, Settle: time.Millisecond}}}
 }
 
 func (h *harness) send(msg tea.Msg) {
