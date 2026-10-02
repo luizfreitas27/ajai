@@ -214,7 +214,7 @@ func providerFromPython(provider, url string) (string, string) {
 // the resumes directory. The config is written even when it still fails
 // validation; Report.ConfigProblems says what to fix.
 func Import(src string, p paths.Paths, st *store.Store) (*Report, error) {
-	base, lerr := config.Load(p, config.MapEnv(nil), nil)
+	base, lerr := config.LoadFile(p) // the file alone: an override never ends up in it
 	if base == nil {
 		return nil, lerr
 	}

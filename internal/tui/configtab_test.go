@@ -31,7 +31,7 @@ func (h *harness) writeConfig() {
 // fileValue reads key from the config file alone.
 func (h *harness) fileValue(key string) string {
 	h.t.Helper()
-	l, err := config.Load(h.p, config.MapEnv(nil), nil)
+	l, err := config.LoadFile(h.p)
 	if l == nil {
 		h.t.Fatal(err)
 	}
@@ -196,4 +196,127 @@ func TestSecretsAreTypedHiddenSavedInDotenvAndNeverShownOrLogged(t *testing.T) {
 	h.moveTo("first_name")
 	h.press("enter", "ctrl+u", "Ana Maria", "enter")
 	h.shows("Saved personals.first_name = Ana Maria. The daemon's next run uses it.")
+}
+
+func TestListsWithOptionsArePickedSeveralAtATime(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(100, 30)
+	h.press("2")
+	h.moveTo("on_site")
+	was := h.fileValue("search.on_site")
+	h.press("enter")
+	h.shows("Edit search.on_site (Space picks or drops an option)")
+	if was != "" && !strings.Contains(h.screen(), "[x]") {
+		t.Fatalf("the current values start picked (%q):\n%s", was, h.screen())
+	}
+	// Drop everything picked, then pick the first and the last option.
+	opts := strings.Count(h.screen(), "[")
+	for range opts {
+		if strings.Contains(h.selectedLine(), "[x]") {
+			h.press(" ")
+		}
+		h.press("down")
+	}
+	h.press(" ")
+	for range opts {
+		h.press("up")
+	}
+	h.press(" ", "enter")
+	got := h.fileValue("search.on_site")
+	if strings.Count(got, ",") != 1 {
+		t.Errorf("two options picked, saved as a list: %q", got)
+	}
+}
+
+// selectedLine is the screen line under the editor's cursor.
+func (h *harness) selectedLine() string {
+	for _, l := range strings.Split(h.screen(), "\n") {
+		if strings.HasPrefix(l, "> [") {
+			return l
+		}
+	}
+	return ""
+}
+
+func TestEveryOptionFitsAndTheBlankOneIsNamed(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(80, 24)
+	h.press("2")
+	h.moveTo("ethnicity")
+	h.press("enter")
+	for _, o := range strings.Split("Decline|Hispanic/Latino|American Indian or Alaska Native|Asian", "|") {
+		h.shows(o)
+	}
+	last := h.screen()
+	if !strings.Contains(last, "Two or More Races") && !strings.Contains(last, "White") {
+		t.Errorf("the last options are cut off:\n%s", last)
+	}
+	h.press("esc")
+	h.moveTo("gender")
+	h.shows("one of: Male | Female | Other | Decline | (blank)")
+}
+
+func TestScrollingUpBringsTheSectionTitlesBack(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(100, 30)
+	h.press("2", "G")
+	for range 300 {
+		if strings.Contains(h.screen(), "> first_name ") {
+			break
+		}
+		h.press("up")
+	}
+	h.shows("> first_name ", "personals")
+	h.press("up")
+	h.shows("> AJA_TELEGRAM_CHAT_ID", "secrets, kept in")
+}
+
+func TestAnOverrideInDotenvIsMarkedAndNeverSaved(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	location := h.fileValue("search.location")
+	if err := os.WriteFile(h.p.EnvFile, []byte("AJA_CFG_SEARCH_LOCATION=Lisboa\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.open(100, 30)
+	h.press("2")
+	h.moveTo("location")
+	h.shows(location+"  ← AJA_CFG_SEARCH_LOCATION overrides it", "AJA_CFG_SEARCH_LOCATION in .env wins over the file")
+	h.moveTo("terms")
+	h.press("enter", "ctrl+u", "Rust", "enter")
+	if got := h.fileValue("search.location"); got != location {
+		t.Errorf("the .env override reached the file: %q", got)
+	}
+}
+
+func TestABrokenDotenvIsReportedWithoutItsContent(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	if err := os.WriteFile(h.p.EnvFile, []byte("AJA_AI_API_KEY='sk-unterminated\nAJA_TELEGRAM_BOT_TOKEN=123:SECRET\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.open(100, 30)
+	h.press("2")
+	h.shows("cannot be read: fix it in an", "aja never shows its content") // wrapped
+	if screen := h.screen(); strings.Contains(screen, "unterminated") || strings.Contains(screen, "SECRET") {
+		t.Fatalf("the .env's content is on screen:\n%s", screen)
+	}
+}
+
+func TestTheLogLevelNeedsTheDaemonRestarted(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	d, err := daemon.AcquireLock(h.p.DataDir, h.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Release()
+	h.open(100, 30)
+	h.press("2")
+	h.moveTo("log_level")
+	h.press("enter", "enter")
+	h.shows("Restart the daemon to use it: it sets its log level when it starts.")
 }

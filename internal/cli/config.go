@@ -100,8 +100,8 @@ write is refused, naming the key and the valid values, when the new value is wro
 Environment overrides are not consulted: the file is what changes.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// The file alone, with no environment layer, so an override is never persisted.
-			l, err := config.Load(a.paths, config.MapEnv(nil), nil)
+			// The file alone, so an override (environment or .env) is never persisted.
+			l, err := config.LoadFile(a.paths)
 			if l == nil {
 				return err
 			}

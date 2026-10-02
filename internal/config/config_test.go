@@ -298,6 +298,21 @@ func TestLayersEnvironmentBeatsDotenvAndFlagsBeatEverything(t *testing.T) {
 	}
 }
 
+func TestLoadFileIsTheFileAloneWithNoOverrideFromDotenv(t *testing.T) {
+	p := tmpPaths(t)
+	if err := Write(p.ConfigFile, valid()); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, p.EnvFile, "AJA_AI_API_KEY=from-file\nAJA_CFG_SEARCH_LOCATION=Lisboa\n")
+	l, err := LoadFile(p)
+	if err != nil || !l.FileExisted {
+		t.Fatal(l, err)
+	}
+	if l.Config.Search.Location == "Lisboa" || len(l.Overrides) != 0 || l.Secrets.AIAPIKey != "" {
+		t.Errorf("an override or a secret from .env reached the file's configuration: %q %v %+v", l.Config.Search.Location, l.Overrides, l.Secrets)
+	}
+}
+
 func TestSecretsAreNotKeys(t *testing.T) {
 	for _, f := range Fields() {
 		if looksLikeSecret(f.Key) {

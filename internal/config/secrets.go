@@ -24,6 +24,13 @@ const (
 // SecretEnvNames lists every secret variable, for doctor and import to print.
 var SecretEnvNames = []string{EnvAIAPIKey, EnvTelegramBotToken, EnvTelegramChatID}
 
+// SecretDocs says what each secret is for.
+var SecretDocs = map[string]string{
+	EnvAIAPIKey:         "The AI provider's API key, used when ai.enabled is true and the provider needs one.",
+	EnvTelegramBotToken: "The token @BotFather gave your bot: run summaries, nudges and remote commands.",
+	EnvTelegramChatID:   "The numeric id of your chat with the bot; aja only talks and listens there.",
+}
+
 // secretYAMLKeys are names that look like secrets; finding one in the YAML is an
 // error with a pointer to .env instead of a generic "unknown key".
 var secretYAMLKeys = []string{"api_key", "apikey", "token", "password", "secret", "chat_id"}

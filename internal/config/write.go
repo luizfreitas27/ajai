@@ -87,12 +87,28 @@ func Write(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	return writeFileAtomic(path, data, 0o755)
+}
+
+// writeFileAtomic replaces the file at path with data, readable only by its
+// owner, creating its directory (with dirPerm) when missing: written beside
+// it, then renamed over it, so a reader never sees half a file.
+func writeFileAtomic(path string, data []byte, dirPerm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp") // created 0600
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }

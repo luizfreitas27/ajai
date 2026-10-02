@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 
+	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/tui"
 )
 
@@ -13,17 +14,20 @@ var inTerminal = func(a *App) bool { return a.stdinIsTerminal() && a.stdoutIsTer
 var showTUI = tui.Run
 
 // openTUI shows the TUI over the data directory and database. Its actions go to
-// the day's log, at the configured level when there is a config.
+// the log of the day they happen (the TUI may stay open past midnight), at the
+// configured level.
 func (a *App) openTUI(ctx context.Context) error {
 	st, err := a.openStore()
 	if err != nil {
 		return err
 	}
-	level := ""
-	if l, _ := a.load(); l != nil {
-		level = l.Config.Settings.LogLevel
+	l, _ := a.load()
+	logger, closer, err := logging.OpenDaily(a.paths.LogDir, logging.FileName, logging.ParseLevel(logLevel(l)))
+	if err != nil {
+		logger = logging.Discard
+	} else {
+		a.cleanups = append(a.cleanups, closer.Close)
 	}
-	a.openLog(level)
-	d := tui.Deps{Paths: a.paths, Store: st, Env: a.Env, Logger: a.logger, Now: a.now}
+	d := tui.Deps{Paths: a.paths, Store: st, Env: a.Env, Logger: logger, Now: a.now}
 	return showTUI(ctx, d, a.Stdin, a.Stdout, a.colorOff())
 }

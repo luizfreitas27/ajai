@@ -3,12 +3,15 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/daemon"
@@ -17,15 +20,23 @@ import (
 const (
 	// configKeyWidth is the settings list's first column.
 	configKeyWidth = 34
-	// configDetailLines is the room under the list for the selected row's
-	// explanation, or for the editor.
+	// configDetailLines is the least room kept under the list for the selected
+	// row's explanation or the editor; they take more when they need it.
 	configDetailLines = 7
 )
 
+// readAtDaemonStart are what the daemon reads once, when it starts: changing
+// one needs a restart. It re-reads every other setting for every run.
+var readAtDaemonStart = map[string]string{
+	config.EnvTelegramBotToken: "it reads Telegram's settings when it starts",
+	config.EnvTelegramChatID:   "it reads Telegram's settings when it starts",
+	"settings.log_level":       "it sets its log level when it starts",
+}
+
 // configTab is the Config tab: the three secrets, shown only as set or not and
 // typed into a masked field that saves them in aja's .env; then every setting
-// by section, as the config file has it (an environment override is marked and
-// never saved), edited one at a time.
+// by section, as the config file alone has it (an override, from the
+// environment or .env, is marked and never saved), edited one at a time.
 type configTab struct {
 	loaded  bool
 	problem string   // the config file or .env could not be read
@@ -40,26 +51,46 @@ type configTab struct {
 	notice  notice
 }
 
+type rowKind int
+
+const (
+	titleRow rowKind = iota
+	secretRow
+	settingRow
+)
+
 type configRow struct {
-	title    string       // a section title; nothing else is set
-	field    config.Field // a setting
-	value    string       // its value in the file
-	override string       // the variable overriding it, or ""
-	secret   string       // a secret's variable name
-	set      bool         // the secret has a value
-	from     string       // where that value comes from
+	kind  rowKind
+	title string // titleRow
+
+	secret          string // secretRow: the variable
+	set             bool   // it has a value
+	fromEnvironment bool   // the value is the environment's, not .env's
+
+	field        config.Field // settingRow
+	value        string       // its value in the file
+	override     string       // the variable overriding it, or ""
+	overrideFrom string       // "your environment" or ".env"
 }
 
-func (r configRow) selectable() bool { return r.title == "" }
+// name is what the row edits: a secret's variable or a setting's key.
+func (r configRow) name() string {
+	if r.kind == secretRow {
+		return r.secret
+	}
+	return r.field.Key
+}
 
-// configEdit is the row being edited: a closed set of options is picked from,
-// anything else typed.
+// configEdit is the row being edited. A closed set of options is picked from
+// (any number of them for a list), anything else typed.
 type configEdit struct {
-	row     int
+	target  configRow
 	input   textinput.Model
 	options []string
-	choice  int
-	refusal string // why the last value was refused
+	multi   bool         // a list: any number of options
+	picked  map[int]bool // multi: the options chosen
+	choice  int          // the option under the cursor
+	refusal string       // why the last value was refused
 	saving  bool
 }
 
@@ -97,24 +128,18 @@ func loadConfig(d Deps) tea.Cmd {
 func readConfigRows(d Deps) configLoadedMsg {
 	var msg configLoadedMsg
 	env := d.Env
-	if err := env.LoadDotenv(d.Paths.EnvFile); err != nil {
-		msg.problem = err.Error()
+	dotenvOK := env.LoadDotenv(d.Paths.EnvFile) == nil
+	if !dotenvOK {
+		// The parser's message quotes the file: it is never shown.
+		msg.problem = d.Paths.EnvFile + " cannot be read: fix it in an editor (aja never shows its content)."
 	}
-	msg.rows = append(msg.rows, configRow{title: "secrets, kept in " + d.Paths.EnvFile})
-	for _, name := range config.SecretEnvNames {
-		_, inEnvironment := env.Lookup(name)
-		r := configRow{secret: name, set: strings.TrimSpace(env.Get(name)) != ""}
-		switch {
-		case r.set && inEnvironment:
-			r.from = "your environment"
-		case r.set:
-			r.from = ".env"
-		}
-		msg.rows = append(msg.rows, r)
+	msg.rows = append(msg.rows, configRow{kind: titleRow, title: "secrets, kept in " + d.Paths.EnvFile})
+	for _, secret := range env.Secrets().Values() {
+		_, inEnvironment := env.Lookup(secret[0])
+		msg.rows = append(msg.rows, configRow{kind: secretRow, secret: secret[0], set: secret[1] != "", fromEnvironment: inEnvironment})
 	}
 
-	// The file alone, so an override is never shown as the file's value or saved.
-	file, err := config.Load(d.Paths, config.MapEnv(nil), nil)
+	file, err := config.LoadFile(d.Paths)
 	switch {
 	case file == nil:
 		msg.problem = err.Error()
@@ -130,21 +155,29 @@ func readConfigRows(d Deps) configLoadedMsg {
 		}
 	}
 	overridden := map[string]bool{}
-	if effective, _ := config.Load(d.Paths, d.Env, nil); effective != nil {
-		for _, key := range effective.Overrides {
-			overridden[key] = true
+	if dotenvOK {
+		effective, err := config.Load(d.Paths, d.Env, nil)
+		if effective == nil {
+			msg.invalid = append(msg.invalid, err.Error()) // an AJA_CFG_ value that cannot apply
+		} else {
+			for _, key := range effective.Overrides {
+				overridden[key] = true
+			}
 		}
 	}
 	section := ""
 	for _, f := range config.Fields() {
 		if s, _, _ := strings.Cut(f.Key, "."); s != section {
 			section = s
-			msg.rows = append(msg.rows, configRow{title: s})
+			msg.rows = append(msg.rows, configRow{kind: titleRow, title: s})
 		}
 		value, _ := file.Config.Get(f.Key)
-		r := configRow{field: f, value: value}
+		r := configRow{kind: settingRow, field: f, value: value}
 		if overridden[f.Key] {
-			r.override = config.EnvOverrideName(f.Key)
+			r.override, r.overrideFrom = config.EnvOverrideName(f.Key), ".env"
+			if _, ok := env.Lookup(r.override); ok {
+				r.overrideFrom = "your environment"
+			}
 		}
 		msg.rows = append(msg.rows, r)
 	}
@@ -159,14 +192,19 @@ func (c configTab) update(msg tea.Msg, d Deps) (configTab, tea.Cmd) {
 	case configLoadedMsg:
 		c.loaded, c.problem, c.missing, c.invalid, c.rows = true, msg.problem, msg.missing, msg.invalid, msg.rows
 		c.cursor = c.nearestSelectable(c.cursor)
-		c = c.scrolled()
+		if c.edit != nil { // the rows moved under the editor: follow its row
+			c.cursor = c.find(c.edit.target.name())
+		}
+		return c.scrolled(), nil
 	case configSavedMsg:
 		if c.edit == nil {
 			return c, nil
 		}
-		c.edit.saving = false
+		e := *c.edit
+		e.saving = false
 		if msg.refusal != "" {
-			c.edit.refusal = msg.refusal
+			e.refusal = msg.refusal
+			c.edit = &e
 			return c, nil
 		}
 		c.edit, c.notice = nil, msg.notice
@@ -180,35 +218,6 @@ func (c configTab) update(msg tea.Msg, d Deps) (configTab, tea.Cmd) {
 	return c, nil
 }
 
-// resized gives the tab its room on screen.
-func (c configTab) resized(width, height int) configTab {
-	c.width, c.height = width, height
-	return c.scrolled()
-}
-
-// scrolled keeps the selected row in view, moving the list as little as it can.
-func (c configTab) scrolled() configTab {
-	n := c.listHeight()
-	if c.cursor < c.top {
-		c.top = c.cursor
-	}
-	if c.cursor >= c.top+n {
-		c.top = c.cursor - n + 1
-	}
-	c.top = max(0, c.top)
-	return c
-}
-
-// listHeight is the room for rows: the tab's, less its title line, its
-// heading and the detail.
-func (c configTab) listHeight() int {
-	lines := 0
-	for _, n := range c.heading() {
-		lines += len(wrap(n.text, c.width))
-	}
-	return max(1, c.height-1-lines-configDetailLines)
-}
-
 func (c configTab) browseKey(msg tea.KeyMsg) configTab {
 	switch msg.String() {
 	case "up", "k":
@@ -216,20 +225,16 @@ func (c configTab) browseKey(msg tea.KeyMsg) configTab {
 	case "down", "j":
 		c.cursor = c.step(1)
 	case "pgup":
-		for range 10 {
-			c.cursor = c.step(-1)
-		}
+		c.cursor = c.step(-10)
 	case "pgdown":
-		for range 10 {
-			c.cursor = c.step(1)
-		}
+		c.cursor = c.step(10)
 	case "home", "g":
-		c.cursor = c.nearestSelectable(0)
+		c.cursor, c.top = c.nearestSelectable(0), 0
 	case "end", "G":
 		c.cursor = c.step(len(c.rows))
 	case "enter":
-		if c.cursor < len(c.rows) {
-			c.edit = newConfigEdit(c.cursor, c.rows[c.cursor])
+		if c.cursor < len(c.rows) && c.rows[c.cursor].kind != titleRow {
+			c.edit = newConfigEdit(c.rows[c.cursor], c.width)
 			c.notice = notice{}
 		}
 	}
@@ -244,7 +249,7 @@ func (c configTab) step(n int) int {
 		if n < 0 {
 			dir = -1
 		}
-		for next += dir; next >= 0 && next < len(c.rows) && !c.rows[next].selectable(); next += dir {
+		for next += dir; next >= 0 && next < len(c.rows) && c.rows[next].kind == titleRow; next += dir {
 		}
 		if next < 0 || next >= len(c.rows) {
 			break
@@ -256,37 +261,130 @@ func (c configTab) step(n int) int {
 
 func (c configTab) nearestSelectable(i int) int {
 	for ; i < len(c.rows); i++ {
-		if c.rows[i].selectable() {
+		if c.rows[i].kind != titleRow {
 			return i
 		}
 	}
 	return max(0, len(c.rows)-1)
 }
 
-func newConfigEdit(row int, r configRow) *configEdit {
-	e := &configEdit{row: row, input: textinput.New()}
+// find is the row that edits name, or the first selectable one.
+func (c configTab) find(name string) int {
+	for i, r := range c.rows {
+		if r.kind != titleRow && r.name() == name {
+			return i
+		}
+	}
+	return c.nearestSelectable(0)
+}
+
+// resized gives the tab its room on screen.
+func (c configTab) resized(width, height int) configTab {
+	c.width, c.height = width, height
+	if c.edit != nil {
+		e := *c.edit
+		e.input.Width = inputWidth(width)
+		c.edit = &e
+	}
+	return c.scrolled()
+}
+
+func inputWidth(width int) int { return max(10, width-4) }
+
+// scrolled keeps the selected row in view, moving the list as little as it
+// can; going up, its section's title comes into view too when it fits.
+func (c configTab) scrolled() configTab {
+	n := c.listHeight()
+	if c.cursor < c.top {
+		c.top = c.cursor
+		title := c.cursor
+		for title > 0 && c.rows[title].kind != titleRow {
+			title--
+		}
+		if c.cursor-title < n {
+			c.top = title
+		}
+	}
+	if c.cursor >= c.top+n {
+		c.top = c.cursor - n + 1
+	}
+	c.top = max(0, c.top)
+	return c
+}
+
+// measure renders nothing anyone sees: it counts lines.
+var measure = func() styles {
+	r := lipgloss.NewRenderer(io.Discard)
+	r.SetColorProfile(termenv.Ascii)
+	return newStyles(r)
+}()
+
+// listHeight is the room for rows: the tab's, less its title line, its
+// heading and the detail.
+func (c configTab) listHeight() int {
+	lines := 0
+	for _, n := range c.heading() {
+		lines += len(wrap(n.text, c.width))
+	}
+	detail := max(configDetailLines, len(c.detail(measure, c.width)))
+	return max(1, c.height-1-lines-detail)
+}
+
+func newConfigEdit(r configRow, width int) *configEdit {
+	e := &configEdit{target: r, input: textinput.New()}
 	e.input.Prompt = "> "
+	e.input.Width = inputWidth(width)
 	e.input.Cursor.SetMode(cursor.CursorStatic)
 	switch {
-	case r.secret != "":
+	case r.kind == secretRow:
 		e.input.EchoMode = textinput.EchoPassword
 		e.input.EchoCharacter = '•'
 		e.input.Placeholder = "the value; leave empty to remove it from .env"
 	case len(r.field.Options) > 0:
 		e.options = r.field.Options
+		e.multi = r.field.Kind == reflect.Slice
 	case r.field.Kind == reflect.Bool:
 		e.options = []string{"true", "false"}
 	default:
 		e.input.SetValue(r.value)
 		e.input.CursorEnd()
 	}
-	for i, o := range e.options {
-		if o == r.value {
-			e.choice = i
+	if e.multi {
+		current := map[string]bool{}
+		for _, v := range strings.Split(r.value, ",") {
+			current[strings.TrimSpace(v)] = true
+		}
+		e.picked = map[int]bool{}
+		for i, o := range e.options {
+			e.picked[i] = current[o]
+		}
+	} else {
+		for i, o := range e.options {
+			if o == r.value {
+				e.choice = i
+			}
 		}
 	}
 	e.input.Focus()
 	return e
+}
+
+// value is what the editor holds: the text typed, the option chosen, or the
+// options picked, comma-separated.
+func (e configEdit) value() string {
+	switch {
+	case e.multi:
+		var picked []string
+		for i, o := range e.options {
+			if e.picked[i] {
+				picked = append(picked, o)
+			}
+		}
+		return strings.Join(picked, ", ")
+	case e.options != nil:
+		return e.options[e.choice]
+	}
+	return e.input.Value()
 }
 
 func (c configTab) editKey(msg tea.KeyMsg, d Deps) (configTab, tea.Cmd) {
@@ -294,22 +392,17 @@ func (c configTab) editKey(msg tea.KeyMsg, d Deps) (configTab, tea.Cmd) {
 	if e.saving {
 		return c, nil
 	}
-	row := c.rows[e.row]
 	switch msg.String() {
 	case "esc":
 		c.edit = nil
-		return c, nil
+		return c.scrolled(), nil
 	case "enter":
 		e.saving, e.refusal = true, ""
 		c.edit = &e
-		if row.secret != "" {
-			return c, saveSecret(d, row.secret, e.input.Value())
+		if e.target.kind == secretRow {
+			return c, saveSecret(d, e.target.secret, e.value())
 		}
-		value := e.input.Value()
-		if e.options != nil {
-			value = e.options[e.choice]
-		}
-		return c, saveSetting(d, row.field.Key, value)
+		return c, saveSetting(d, e.target.field.Key, e.value())
 	}
 	if e.options != nil {
 		switch msg.String() {
@@ -317,9 +410,18 @@ func (c configTab) editKey(msg tea.KeyMsg, d Deps) (configTab, tea.Cmd) {
 			e.choice = max(0, e.choice-1)
 		case "down", "j":
 			e.choice = min(len(e.options)-1, e.choice+1)
+		case " ":
+			if e.multi {
+				picked := map[int]bool{}
+				for i, on := range e.picked {
+					picked[i] = on
+				}
+				picked[e.choice] = !picked[e.choice]
+				e.picked = picked
+			}
 		}
 		c.edit = &e
-		return c, nil
+		return c.scrolled(), nil
 	}
 	var cmd tea.Cmd
 	e.input, cmd = e.input.Update(msg)
@@ -330,7 +432,7 @@ func (c configTab) editKey(msg tea.KeyMsg, d Deps) (configTab, tea.Cmd) {
 // saveSetting validates the new value against the file alone and writes it.
 func saveSetting(d Deps, key, value string) tea.Cmd {
 	return func() tea.Msg {
-		file, err := config.Load(d.Paths, config.MapEnv(nil), nil)
+		file, err := config.LoadFile(d.Paths)
 		switch {
 		case file == nil:
 			return configSavedMsg{refusal: "the config file cannot be read: " + err.Error()}
@@ -347,14 +449,11 @@ func saveSetting(d Deps, key, value string) tea.Cmd {
 		saved, _ := file.Config.Get(key)
 		d.logger().Info("config set from the TUI", "key", key, "value", saved)
 		n := notice{text: fmt.Sprintf("Saved %s = %s.", key, saved)}
-		if _, running, _ := daemon.ReadLock(d.Paths.DataDir); running {
-			n.text += " The daemon's next run uses it."
-		}
 		if others != nil {
 			n.level = levelWarn
 			n.text += fmt.Sprintf(" The file still has %d other problem(s), listed above.", len(others.Errors))
 		}
-		return configSavedMsg{notice: n}
+		return configSavedMsg{notice: daemonNote(d, key, n, true)}
 	}
 }
 
@@ -374,16 +473,29 @@ func saveSecret(d Deps, name, value string) tea.Cmd {
 			n.level = levelWarn
 			n.text += " Your environment sets it too, and wins."
 		}
-		if _, running, _ := daemon.ReadLock(d.Paths.DataDir); running && name != config.EnvAIAPIKey {
-			n.level = levelWarn
-			n.text += " Restart the daemon to use it: it reads Telegram's settings when it starts."
-		}
-		return configSavedMsg{notice: n}
+		return configSavedMsg{notice: daemonNote(d, name, n, false)}
 	}
 }
 
+// daemonNote says, when the daemon runs, when a change to name reaches it: at
+// its next run for a setting, or once it is restarted for what it reads only
+// when it starts.
+func daemonNote(d Deps, name string, n notice, setting bool) notice {
+	if _, running, _ := daemon.ReadLock(d.Paths.DataDir); !running {
+		return n
+	}
+	switch why, ok := readAtDaemonStart[name]; {
+	case ok:
+		n.level = levelWarn
+		n.text += " Restart the daemon to use it: " + why + "."
+	case setting:
+		n.text += " The daemon's next run uses it."
+	}
+	return n
+}
+
 // heading is what the tab says above its list: a problem, the notice of the
-// last action. Each entry is one line.
+// last action.
 func (c configTab) heading() []notice {
 	var head []notice
 	switch {
@@ -411,30 +523,34 @@ func (c configTab) view(s styles, d Deps, width int) string {
 		}
 	}
 	n := c.listHeight()
-	for i := c.top; i < len(c.rows) && i < c.top+n; i++ {
-		lines = append(lines, c.rowLine(s, i))
-	}
-	for i := len(c.rows) - c.top; i < n; i++ {
-		lines = append(lines, "")
+	for i := c.top; i < c.top+n; i++ {
+		if i < len(c.rows) {
+			lines = append(lines, c.rowLine(s, i))
+		} else {
+			lines = append(lines, "")
+		}
 	}
 	return strings.Join(append(lines, c.detail(s, width)...), "\n")
 }
 
 func (c configTab) rowLine(s styles, i int) string {
 	r := c.rows[i]
-	if r.title != "" {
+	if r.kind == titleRow {
 		return s.section.Render(r.title)
 	}
 	mark := "  "
 	if i == c.cursor {
 		mark = s.key.Render("> ")
 	}
-	name, value := "", ""
-	switch {
-	case r.secret != "":
-		name, value = r.secret, s.dim.Render("not set")
+	name, value := r.secret, ""
+	switch r.kind {
+	case secretRow:
+		value = s.dim.Render("not set")
 		if r.set {
-			value = s.ok.Render("set") + " (" + r.from + ")"
+			value = s.ok.Render("set") + " (.env)"
+			if r.fromEnvironment {
+				value = s.ok.Render("set") + " (your environment)"
+			}
 		}
 	default:
 		_, name, _ = strings.Cut(r.field.Key, ".")
@@ -452,54 +568,85 @@ func (c configTab) detail(s styles, width int) []string {
 	if len(c.rows) == 0 || c.cursor >= len(c.rows) {
 		return lines
 	}
-	r := c.rows[c.cursor]
 	if e := c.edit; e != nil {
-		what := r.field.Key
-		switch {
-		case r.secret != "":
-			what = r.secret + " (hidden as you type)"
-		case r.field.Kind == reflect.Slice:
-			what += " (comma-separated; empty clears it)"
+		return append(lines, c.editor(s, *e)...)
+	}
+	text := func(st lipgloss.Style, t string) {
+		for _, l := range wrap(t, width) {
+			lines = append(lines, st.Render(l))
 		}
-		lines = append(lines, s.section.Render("Edit "+what))
-		if e.options != nil {
-			for i, o := range e.options {
-				mark := "  "
-				if i == e.choice {
-					mark = s.key.Render("> ")
-				}
-				lines = append(lines, mark+o)
+	}
+	r := c.rows[c.cursor]
+	switch r.kind {
+	case secretRow:
+		text(s.plain, config.SecretDocs[r.secret])
+		if r.fromEnvironment {
+			text(s.warn, "Your environment sets it, and wins over .env.")
+		}
+	case settingRow:
+		text(s.plain, r.field.Doc)
+		var facts []string
+		if len(r.field.Options) > 0 {
+			labels := make([]string, len(r.field.Options))
+			for i, o := range r.field.Options {
+				labels[i] = optionLabel(o)
 			}
-		} else {
-			lines = append(lines, e.input.View())
+			facts = append(facts, "one of: "+strings.Join(labels, " | "))
 		}
-		if e.refusal != "" {
-			lines = append(lines, s.fail.Render("Refused: "+e.refusal))
+		if r.field.Example != "" {
+			facts = append(facts, "e.g. "+r.field.Example)
 		}
-		return lines
-	}
-	if r.secret != "" {
-		lines = append(lines, s.plain.Width(width).Render(secretDoc[r.secret]))
-		if r.from == "your environment" {
-			lines = append(lines, s.warn.Render("Your environment sets it, and wins over .env."))
+		if len(facts) > 0 {
+			text(s.dim, strings.Join(facts, "   "))
 		}
-		return lines
-	}
-	lines = append(lines, s.plain.Width(width).Render(r.field.Doc))
-	var facts []string
-	if len(r.field.Options) > 0 {
-		facts = append(facts, "one of: "+strings.Join(r.field.Options, " | "))
-	}
-	if r.field.Example != "" {
-		facts = append(facts, "e.g. "+r.field.Example)
-	}
-	if len(facts) > 0 {
-		lines = append(lines, s.dim.Render(strings.Join(facts, "   ")))
-	}
-	if r.override != "" {
-		lines = append(lines, s.warn.Render(r.override+" in your environment wins over the file; an edit here changes the file."))
+		if r.override != "" {
+			text(s.warn, r.override+" in "+r.overrideFrom+" wins over the file; an edit here changes the file.")
+		}
 	}
 	return lines
+}
+
+func (c configTab) editor(s styles, e configEdit) []string {
+	r := e.target
+	what := r.name()
+	switch {
+	case r.kind == secretRow:
+		what += " (hidden as you type)"
+	case e.multi:
+		what += " (Space picks or drops an option)"
+	case r.field.Kind == reflect.Slice:
+		what += " (comma-separated; empty clears it)"
+	}
+	lines := []string{s.section.Render("Edit " + what)}
+	if e.options == nil {
+		lines = append(lines, e.input.View())
+	}
+	for i, o := range e.options {
+		mark := "  "
+		if i == e.choice {
+			mark = s.key.Render("> ")
+		}
+		if e.multi {
+			box := "[ ] "
+			if e.picked[i] {
+				box = "[x] "
+			}
+			mark += box
+		}
+		lines = append(lines, mark+optionLabel(o))
+	}
+	if e.refusal != "" {
+		lines = append(lines, s.fail.Render("Refused: "+e.refusal))
+	}
+	return lines
+}
+
+// optionLabel names an option; the empty one is "(blank)".
+func optionLabel(o string) string {
+	if o == "" {
+		return "(blank)"
+	}
+	return o
 }
 
 // wrap breaks text into lines of at most width cells, at spaces.
@@ -517,11 +664,4 @@ func wrap(text string, width int) []string {
 		}
 	}
 	return append(lines, line)
-}
-
-// secretDoc says what each secret is for.
-var secretDoc = map[string]string{
-	config.EnvAIAPIKey:         "The AI provider's API key, used when ai.enabled is true and the provider needs one.",
-	config.EnvTelegramBotToken: "The token @BotFather gave your bot: run summaries, nudges and remote commands.",
-	config.EnvTelegramChatID:   "The numeric id of your chat with the bot; aja only talks and listens there.",
 }

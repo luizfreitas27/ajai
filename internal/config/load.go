@@ -44,6 +44,16 @@ const EnvOverridePrefix = "AJA_CFG_"
 // keys are errors), then AJA_CFG_ environment overrides, then flag overrides,
 // then validation. The .env beside the config is read for secrets and overrides.
 func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
+	return load(p, &env, flags)
+}
+
+// LoadFile builds the configuration from the defaults and the YAML file alone:
+// no environment, no .env, no secrets. It is what an edit changes and writes
+// back, so an override, from the environment or from .env, never reaches the
+// file.
+func LoadFile(p paths.Paths) (*Loaded, error) { return load(p, nil, nil) }
+
+func load(p paths.Paths, env *Env, flags map[string]string) (*Loaded, error) {
 	l := &Loaded{Config: Defaults(), Paths: p}
 
 	data, err := os.ReadFile(p.ConfigFile)
@@ -62,20 +72,22 @@ func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
 		return nil, err
 	}
 
-	if err := env.LoadDotenv(p.EnvFile); err != nil {
-		return nil, fmt.Errorf("%s: %w", p.EnvFile, err)
-	}
-	l.Secrets = env.Secrets()
+	if env != nil {
+		if err := env.LoadDotenv(p.EnvFile); err != nil {
+			return nil, fmt.Errorf("%s: %w", p.EnvFile, err)
+		}
+		l.Secrets = env.Secrets()
 
-	for key, value := range envOverrides(env) {
-		if why, ok := RetiredKeys[key]; ok {
-			l.Warnings = append(l.Warnings, fmt.Sprintf("the environment override for %s was ignored: %s", key, why))
-			continue
+		for key, value := range envOverrides(*env) {
+			if why, ok := RetiredKeys[key]; ok {
+				l.Warnings = append(l.Warnings, fmt.Sprintf("the environment override for %s was ignored: %s", key, why))
+				continue
+			}
+			if err := l.Config.Set(key, value); err != nil {
+				return nil, fmt.Errorf("environment override %s: %w", EnvOverrideName(key), err)
+			}
+			l.Overrides = append(l.Overrides, key)
 		}
-		if err := l.Config.Set(key, value); err != nil {
-			return nil, fmt.Errorf("environment override %s: %w", EnvOverrideName(key), err)
-		}
-		l.Overrides = append(l.Overrides, key)
 	}
 	for key, value := range flags {
 		if err := l.Config.Set(key, value); err != nil {
@@ -180,6 +192,13 @@ func envOverrides(env Env) map[string]string {
 		}
 	}
 	return out
+}
+
+// EnvOverrideName is the variable that overrides key, envKeyToDotted's
+// inverse: search.terms → AJA_CFG_SEARCH_TERMS, markets.brasil.terms →
+// AJA_CFG_MARKETS_BRASIL_TERMS.
+func EnvOverrideName(key string) string {
+	return EnvOverridePrefix + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
 }
 
 func envKeyToDotted(k string) string {

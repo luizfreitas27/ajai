@@ -63,15 +63,45 @@ func TestSetDotenvWritesOneVariableAndKeepsTheRest(t *testing.T) {
 		t.Errorf("an empty value removes the variable:\n%s", text)
 	}
 
-	for _, bad := range []string{"it's", "two\nlines"} {
+	if err := SetDotenv(path, EnvAIAPIKey, "sk-new"); err != nil {
+		t.Fatal(err)
+	}
+	if text, m := read(); text != "# my secrets\nOTHER=1\nAJA_TELEGRAM_CHAT_ID='-100123'\nAJA_AI_API_KEY='sk-new'\n" || m[EnvAIAPIKey] != "sk-new" {
+		t.Errorf("a new variable is appended, the rest kept:\n%s", text)
+	}
+
+	// The forms godotenv also reads are recognised, so a removal really removes.
+	if err := os.WriteFile(path, []byte("AJA_AI_API_KEY: colon\nexport\tAJA_TELEGRAM_CHAT_ID=tab\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{EnvAIAPIKey, EnvTelegramChatID} {
+		if err := SetDotenv(path, name, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if text, m := read(); text != "" || len(m) != 0 {
+		t.Errorf("both forms removed: %q %v", text, m)
+	}
+
+	for _, bad := range []string{"it's", "two\nlines", `ends\`} {
 		if err := SetDotenv(path, EnvAIAPIKey, bad); err == nil {
-			t.Errorf("%q must be refused", bad)
+			t.Errorf("%q must be refused: godotenv would misread it", bad)
 		}
 	}
 	if err := SetDotenv(path, "NOT A NAME", "x"); err == nil {
 		t.Error("a bad name must be refused")
 	}
-	if got := EnvOverrideName("search.terms"); got != "AJA_CFG_SEARCH_TERMS" {
-		t.Errorf("%q", got)
+}
+
+func TestEnvOverrideNameIsTheVariableThatOverridesAKey(t *testing.T) {
+	for key, want := range map[string]string{
+		"search.terms":            "AJA_CFG_SEARCH_TERMS",
+		"settings.run_non_stop":   "AJA_CFG_SETTINGS_RUN_NON_STOP",
+		"markets.brasil.currency": "AJA_CFG_MARKETS_BRASIL_CURRENCY",
+	} {
+		got := EnvOverrideName(key)
+		if got != want || envKeyToDotted(got) != key {
+			t.Errorf("EnvOverrideName(%q) = %q (back: %q), want %q", key, got, envKeyToDotted(got), want)
+		}
 	}
 }

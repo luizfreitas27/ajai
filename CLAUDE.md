@@ -68,10 +68,16 @@ to the tag before tagging and the workflow publishes that section as the release
   a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
   with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them; the
   temporary AJA_HOME is written as `$AJA_HOME`). While a tab edits a value every key but
-  Ctrl-C goes to it (`configTab.editing`). The Config tab loads the file with
-  `config.MapEnv(nil)` both to show and to save (as `aja config set`), and with the real
+  Ctrl-C goes to it (`configTab.editing`). The Config tab reads and saves through
+  `config.LoadFile` (the YAML alone: no environment, no `.env`), and loads with the real
   environment only to mark `AJA_CFG_` overrides; secrets go through `config.SetDotenv`
-  (single-quoted values, 0600, atomic) and their values are never rendered or logged. No adaptive
+  (single-quoted values, refusing quotes, backslashes and line breaks; 0600, atomic) and
+  their values are never rendered or logged, nor is godotenv's error text (it quotes the
+  file). What the daemon reads only at start is `readAtDaemonStart`.
+- Editing the config file: always `config.LoadFile`, then `SetChecked`, then `Write`
+  (`aja config set`, `aja import`, the TUI). `config.Load(p, config.MapEnv(nil), nil)`
+  still reads `.env` and applies its `AJA_CFG_` lines, which would then be written into
+  the file. No adaptive
   colours: they make the renderer query the terminal's background while Bubble Tea reads
   the keyboard, and the reply arrives as key presses. To try it outside tests, run it in a
   pty that answers the OSC 11 query Bubble Tea's own init sends, or termenv eats the

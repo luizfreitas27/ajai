@@ -124,10 +124,11 @@ The **Dashboard** refreshes every second. It shows:
 
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
-- a setting with fixed values is picked from a list;
+- a setting with fixed values is picked from a list (several, with Space, for a list such
+  as `search.on_site`);
 - anything else is typed, and refused with the reason if it is not valid;
-- a setting your environment overrides (`AJA_CFG_...`) is marked, and an edit changes the
-  file, never saving the environment's value.
+- a setting your environment or `.env` overrides (`AJA_CFG_...`) is marked, and an edit
+  changes the file, never saving the override.
 
 The three secrets (`AJA_AI_API_KEY`, `AJA_TELEGRAM_BOT_TOKEN`, `AJA_TELEGRAM_CHAT_ID`) show
 only whether they are set, and where (your environment or `.env`). Each one is typed into a

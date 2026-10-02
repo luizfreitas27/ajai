@@ -20,7 +20,7 @@ secrets, kept in $AJA_HOME/.env
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-The AI provider's API key, used when ai.enabled is true and the provider needs one.                 
+The AI provider's API key, used when ai.enabled is true and the provider needs one.
 Your environment sets it, and wins over .env.
 
 
