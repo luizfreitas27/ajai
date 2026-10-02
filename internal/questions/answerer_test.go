@@ -907,3 +907,39 @@ func (c *ctxRecorder) Answer(ctx context.Context, _ string, _ Kind, _ []string, 
 	c.got = ctx
 	return "", nil
 }
+
+func TestGenderAndEthnicityAreAnsweredFromTheConfigInDropdownsAndRadios(t *testing.T) {
+	cfg := pinned()
+	cfg.Personals.Gender, cfg.Personals.Ethnicity = "Female", "Hispanic/Latino"
+	a, _ := answerer(t, cfg)
+	cases := []struct {
+		q    Question
+		want string
+	}{
+		{dropdown("What is your race/ethnicity?", "Select an option", "Asian", "Hispanic/Latino", "White", "I don't wish to answer"), "Hispanic/Latino"},
+		{radio("Ethnicity", "Asian", "Hispanic/Latino", "Decline to self-identify"), "Hispanic/Latino"},
+		{radio("Gender", "Male", "Female", "Prefer not to say"), "Female"},
+		{dropdown("Qual é a sua cor ou raça?", "Select an option", "Branca", "Hispanic/Latino", "Prefiro não informar"), "Hispanic/Latino"},
+	}
+	for _, tc := range cases {
+		if d := a.Answer(tc.q, job); d.Action != Choose || d.Value != tc.want || d.Source != "config" {
+			t.Errorf("%q: %+v", tc.q.Label, d)
+		}
+	}
+	// "Decline" (the default) lands on the option that declines.
+	a, _ = answerer(t, pinned())
+	if d := a.Answer(radio("Ethnicity", "Asian", "White", "I don't wish to answer"), job); d.Value != "I don't wish to answer" {
+		t.Errorf("%+v", d)
+	}
+	// Words that merely contain "race", or "race" in another sense, are not ethnicity questions.
+	for _, label := range []string{"Do you embrace challenges?", "Have you debugged race conditions in Go?", "Do you thrive in a race against deadlines?"} {
+		// An ordinary question: not answered from personals.ethnicity, and remembered for review.
+		if d := a.Answer(text(label), job); d.Source == "config" || !d.Remember {
+			t.Errorf("%q: %+v", label, d)
+		}
+	}
+	// A label that is just "Race" is one.
+	if d := a.Answer(radio("Race *", "Asian", "White", "I don't wish to answer"), job); d.Value != "I don't wish to answer" || d.Source != "config" {
+		t.Errorf("%+v", d)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/ui"
 )
 
@@ -37,6 +38,8 @@ type App struct {
 	paths    paths.Paths
 	logger   *slog.Logger
 	cleanups []func() error // closed in reverse order when the command ends
+
+	eventsAsJSON bool // aja run --json
 
 	linesOnce   sync.Once   // starts the stdin reader (readLine)
 	lines       chan string // lines typed on stdin; closed at end of input
@@ -118,7 +121,7 @@ func (a *App) load() (*config.Loaded, error) {
 func (a *App) openLog(level string) {
 	logger, closer, err := logging.Open(a.paths.LogDir, logging.ParseLevel(level), nil)
 	if err != nil {
-		a.ui.Warn("log", "could not open the log file: "+err.Error())
+		a.note(run.EventWarn, "log", "could not open the log file: "+err.Error())
 		return
 	}
 	a.logger = logger

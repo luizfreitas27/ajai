@@ -34,8 +34,20 @@ func TestCapsPerRunAndPerRollingHour(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 	p.RecordApplication()
-	if err := p.Allow(); !errors.As(err, &le) || le.Cap != "per run" || p.Applied() != 3 {
+	if err := p.Allow(); !errors.As(err, &le) || le.Cap != CapPerRun || p.Applied() != 3 {
 		t.Errorf("%v", err)
+	}
+	// A new run starts the per-run count again, but the hourly history carries over.
+	p.NewRun()
+	if p.Applied() != 0 || p.Total() != 3 {
+		t.Errorf("applied %d total %d", p.Applied(), p.Total())
+	}
+	if err := p.Allow(); err != nil {
+		t.Errorf("one application in the last hour, cap 2: %v", err)
+	}
+	p.RecordApplication()
+	if err := p.Allow(); !errors.As(err, &le) || le.Cap != CapPerHour {
+		t.Errorf("the hourly cap must survive NewRun: %v", err)
 	}
 }
 

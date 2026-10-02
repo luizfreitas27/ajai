@@ -40,7 +40,11 @@ _Avoid_: query, keyword, role
 
 **Run**:
 One full pass over all search terms, ended by the end of the terms, a pacing limit, a schedule window closing, or the user. Recorded in the run history.
-_Avoid_: session, cycle, loop
+_Avoid_: cycle, loop
+
+**Non-stop session**:
+Runs repeated one after another (with `run_non_stop`), ten minutes apart, with the sort order and date filter changed between them, until a run ends in a way that should not be retried (LinkedIn's daily limit, the hourly cap, an error, the user).
+_Avoid_: loop, daemon, cycle
 
 **Market**:
 The set of values that differ between applying in Brazil and abroad: currency, desired and current salary (monthly in Brazil, annual abroad), search location, search terms and, optionally, the resume to upload. One market is active per run.

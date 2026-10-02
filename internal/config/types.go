@@ -100,11 +100,10 @@ type Settings struct {
 	ChromeProfileDir  string `yaml:"chrome_profile_dir" doc:"Chrome user-data directory to attach to. Blank uses this OS's default Chrome profile, where your LinkedIn session already lives."`
 	CloseTabs         bool   `yaml:"close_tabs" doc:"Close the tabs the run opened when it ends."`
 	FollowCompanies   bool   `yaml:"follow_companies" doc:"Leave the 'follow company' checkbox ticked when applying."`
-	RunNonStop        bool   `yaml:"run_non_stop" doc:"Start a new run when one ends, until the daily limit or a pacing limit."`
-	AlternateSortBy   bool   `yaml:"alternate_sort_by" doc:"Alternate the sort filter between runs when running non-stop."`
-	CycleDatePosted   bool   `yaml:"cycle_date_posted" doc:"Cycle the date-posted filter between runs when running non-stop."`
-	ClickGap          int    `yaml:"click_gap" doc:"Base seconds between clicks; pacing adds jitter on top." min:"0"`
-	SmoothScroll      bool   `yaml:"smooth_scroll" doc:"Scroll smoothly instead of jumping."`
+	RunNonStop        bool   `yaml:"run_non_stop" doc:"Start another run, ten minutes later, when one visits every search term or reaches the per-run cap; stop at LinkedIn's daily limit, the hourly cap, --max or an error."`
+	AlternateSortBy   bool   `yaml:"alternate_sort_by" doc:"Non-stop: flip the sort order before each later run (Most relevant <-> Most recent)."`
+	CycleDatePosted   bool   `yaml:"cycle_date_posted" doc:"Non-stop: use the date-posted filter \"Past 24 hours\" for every later run."`
+	SmoothScroll      bool   `yaml:"smooth_scroll" doc:"Scroll elements into view smoothly instead of jumping, before reading or clicking them."`
 	DisableExtensions bool   `yaml:"disable_extensions" doc:"Start Chrome with extensions disabled."`
 	LogLevel          string `yaml:"log_level" doc:"Level for the log file." opts:"DEBUG|INFO|WARN|ERROR"`
 }
@@ -166,7 +165,7 @@ func Defaults() Config {
 				"cannot sponsor", "unable to sponsor", "no sponsorship", "without sponsorship", "not able to sponsor"},
 			DidMasters: false, CurrentExperience: -1,
 		},
-		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, ClickGap: 1, LogLevel: "INFO"},
+		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, LogLevel: "INFO"},
 		Markets: Markets{
 			Active:        string(MarketInternacional),
 			Brasil:        Market{Currency: "BRL", Location: "Brasil", Terms: []string{}},

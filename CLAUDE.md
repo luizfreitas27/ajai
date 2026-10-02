@@ -37,7 +37,15 @@ Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, c
 - `internal/screening`: the pure skip rules (card, company, description).
 - `internal/pacing`: caps and jittered pauses; `--fast` only with `--dry-run`.
 - `internal/run`: the run loop over a `Site` interface (the session), tested with a fake
-  site; records runs and jobs in the store.
+  site; records runs and jobs in the store. `Runner.Session` repeats runs for
+  `settings.run_non_stop` (`FilterCycle` changes the filters between them; `End.Continues`
+  decides whether another run starts). `Runner.AfterFilters` is the filter pause hook.
+- `internal/config/wired_test.go` fails when a config field is read nowhere outside the
+  config package: a setting must do what its comment says. It type-checks the module
+  (`golang.org/x/tools/go/packages`), counts reads only (an assignment, e.g. the importer's,
+  is not a use) and credits a read inside a `Config` method (other than `Validate`) to its
+  callers. Retire a setting through `config.RetiredKeys` (old files keep loading, with a
+  warning, and error line numbers stay right), never by just deleting it.
 - `internal/questions`: the question heuristics (`Answerer.Answer(Question, Job) Decision`),
   pure: configured answers, then the answer memory, then the AI, never a guess. Sensitive
   questions are gated here. `internal/textmatch` is the whole-word matcher every label

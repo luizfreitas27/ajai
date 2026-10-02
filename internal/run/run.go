@@ -60,10 +60,16 @@ type Options struct {
 }
 
 // ResolveUnattended decides whether a run may pause for help: only with a person
-// at a terminal on both ends. --unattended, a piped stdout or a non-terminal
-// stdin (the scheduler, the panel, a script) all mean nobody can answer.
-func ResolveUnattended(flag, stdinIsTerminal, stdoutIsTerminal bool) bool {
-	return flag || !stdinIsTerminal || !stdoutIsTerminal
+// at a terminal on both ends. --unattended, --json (output for a script), a piped
+// stdout or a non-terminal stdin (the scheduler, the panel) all mean nobody can answer.
+func ResolveUnattended(flag, jsonOutput, stdinIsTerminal, stdoutIsTerminal bool) bool {
+	return flag || jsonOutput || !stdinIsTerminal || !stdoutIsTerminal
+}
+
+// PausesAfterFilters: search.pause_after_filters applies only with someone at
+// the terminal.
+func (o Options) PausesAfterFilters(c config.Config) bool {
+	return c.Search.PauseAfterFilters && !o.Unattended
 }
 
 // errInvalidOptions marks a mistake in the command line: the person typing it
@@ -92,31 +98,62 @@ const (
 	EventExternal   EventKind = "external"
 	EventLimit      EventKind = "limit"
 	EventWarn       EventKind = "warn"
+	EventRunEnd     EventKind = "run-end" // Summary is set
+	EventStart      EventKind = "start"   // the run's settings, before it begins
+	EventWait       EventKind = "wait"    // a non-stop session waits before the next run
 )
 
 // Event is something the user should see as it happens.
 type Event struct {
-	Kind EventKind
-	Text string
-	Card *linkedin.Card
+	Kind    EventKind
+	Text    string
+	Card    *linkedin.Card
+	Summary *Summary
 }
 
 // Summary is the run summary.
 type Summary struct {
-	RunID      int64
-	Market     string
-	DryRun     bool
-	Applied    int
-	External   int
-	Failed     int
-	Skipped    int
-	WouldApply int
+	RunID      int64  `json:"run_id"`
+	Market     string `json:"market"`
+	DryRun     bool   `json:"dry_run"`
+	Applied    int    `json:"applied"`
+	External   int    `json:"external"`
+	Failed     int    `json:"failed"`
+	Skipped    int    `json:"skipped"`
+	WouldApply int    `json:"would_apply"`
 	// Captured counts answers the user typed during help pauses and aja remembered.
-	Captured int
+	Captured int `json:"captured"`
 	// PendingAnswers is the review queue's size when the run ended.
-	PendingAnswers int
-	Reason         string
+	PendingAnswers int `json:"pending_answers"`
+	// Reason says, in words, why the run ended; End says it for code.
+	Reason string `json:"reason"`
+	End    End    `json:"end"`
 }
+
+// End classifies why a run ended.
+type End string
+
+// The ways a run ends.
+const (
+	EndAllTerms   End = "all-terms"   // every search term visited
+	EndPerRunCap  End = "per-run-cap" // pacing.max_per_run
+	EndHourlyCap  End = "hourly-cap"  // pacing.max_applications_per_hour
+	EndMax        End = "max"         // --max
+	EndDailyLimit End = "daily-limit" // LinkedIn's daily Easy Apply limit
+	EndStopped    End = "stopped"     // Ctrl-C
+	EndTimedOut   End = "timed-out"
+	EndError      End = "error"
+)
+
+// ended records how and why a run ended.
+func (s *Summary) ended(e End, reason string) {
+	s.End, s.Reason = e, reason
+}
+
+// Continues reports whether a non-stop session starts another run after one
+// that ended this way: only after a complete pass or the per-run cap. LinkedIn's
+// daily limit, the hourly cap, --max, Ctrl-C and errors end the session.
+func (e End) Continues() bool { return e == EndAllTerms || e == EndPerRunCap }
 
 // Runner holds the wiring for one run.
 type Runner struct {
@@ -138,13 +175,28 @@ type Runner struct {
 	// Notifier, when set, gets exactly one message when the run ends: the summary,
 	// or the error with what was done until then.
 	Notifier Notifier
+	// AfterFilters, when set (an attended run with search.pause_after_filters), is
+	// called once a term's filters are applied, so the user can check them in Chrome.
+	// It returns false to stop pausing for the rest of the session.
+	AfterFilters func(ctx context.Context, term string) (keepPausing bool)
+	// NonStopWait is the pause between the runs of a non-stop session (default 10 minutes,
+	// as the Python bot waited).
+	NonStopWait time.Duration
+	// Sleep waits d or until ctx ends; time-based by default, replaced in tests.
+	Sleep func(ctx context.Context, d time.Duration) error
+
+	filtersPaused bool // the user typed "off" at a filter pause
 
 	started time.Time
 }
 
 func (r *Runner) emit(kind EventKind, text string, card *linkedin.Card) {
+	r.emitEvent(Event{Kind: kind, Text: text, Card: card})
+}
+
+func (r *Runner) emitEvent(e Event) {
 	if r.Events != nil {
-		r.Events(Event{Kind: kind, Text: text, Card: card})
+		r.Events(e)
 	}
 }
 
@@ -174,7 +226,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 		// A bug must not end a run silently: report it, then let it crash as before.
 		if p := recover(); p != nil {
 			if sum.Reason == "" {
-				sum.Reason = fmt.Sprintf("crashed: %v", p)
+				sum.ended(EndError, fmt.Sprintf("crashed: %v", p))
 			}
 			r.notifyEnd(sum, fmt.Errorf("aja crashed: %v", p))
 			panic(p)
@@ -182,36 +234,29 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	}()
 	sum, err = r.run(ctx, opts)
 	if err != nil && sum.Reason == "" {
-		sum.Reason = "error: " + err.Error()
+		sum.ended(EndError, "error: "+err.Error())
 	}
-	if sum.RunID == 0 {
-		if !errors.Is(err, errInvalidOptions) {
-			r.notifyEnd(sum, err)
+	if errors.Is(err, errInvalidOptions) {
+		return sum, err // a mistake on the command line, not a run
+	}
+	if sum.RunID != 0 { // 0: the run could not even be recorded
+		if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
+			sum.PendingAnswers = n
 		}
-		return sum, err
-	}
-	if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
-		sum.PendingAnswers = n
-	}
-	_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
-		Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
-	if r.StatePath != "" {
-		RemoveState(r.StatePath)
+		_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
+			Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
+		if r.StatePath != "" {
+			RemoveState(r.StatePath)
+		}
 	}
 	r.notifyEnd(sum, err)
+	ended := sum
+	r.emitEvent(Event{Kind: EventRunEnd, Text: sum.Reason, Summary: &ended})
 	return sum, err
 }
 
 func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
-	if r.Logger == nil {
-		r.Logger = slog.New(slog.DiscardHandler)
-	}
-	if r.Now == nil {
-		r.Now = time.Now
-	}
-	if r.LoginTimeout == 0 {
-		r.LoginTimeout = 10 * time.Minute
-	}
+	r.defaults()
 	if err := opts.Validate(); err != nil {
 		return Summary{}, err
 	}
@@ -231,7 +276,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		if ctx.Err() != nil {
 			return r.stop(&sum, ctx.Err())
 		}
-		sum.Reason = "login: " + err.Error()
+		sum.ended(EndError, "login: "+err.Error())
 		return sum, err
 	}
 
@@ -266,6 +311,14 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 			}
 			r.emit(EventWarn, "filters: "+err.Error(), nil)
 		}
+		if r.AfterFilters != nil && !r.filtersPaused {
+			if !r.AfterFilters(ctx, term) {
+				r.filtersPaused = true
+			}
+			if ctx.Err() != nil {
+				return r.stop(&sum, ctx.Err())
+			}
+		}
 		if err := r.Site.WaitForCards(ctx); err != nil {
 			if ctx.Err() != nil {
 				return r.stop(&sum, ctx.Err())
@@ -287,7 +340,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 				if index >= len(cards) {
 					break
 				}
-				if perTerm >= r.Cfg.Search.SwitchNumber || (opts.Max > 0 && r.Pacer.Applied() >= opts.Max) {
+				if perTerm >= r.Cfg.Search.SwitchNumber || (opts.Max > 0 && r.Pacer.Total() >= opts.Max) {
 					break pages
 				}
 				outcome, err := r.handleCard(ctx, &sum, opts, rules, cards[index], &state)
@@ -310,13 +363,13 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 				break
 			}
 		}
-		if opts.Max > 0 && r.Pacer.Applied() >= opts.Max {
-			sum.Reason = "--max reached"
+		if opts.Max > 0 && r.Pacer.Total() >= opts.Max {
+			sum.ended(EndMax, "--max reached")
 			r.emit(EventLimit, sum.Reason, nil)
 			return sum, nil
 		}
 	}
-	sum.Reason = "all search terms visited"
+	sum.ended(EndAllTerms, "all search terms visited")
 	return sum, nil
 }
 
@@ -376,7 +429,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	switch kind {
 	case linkedin.NoApplyButton:
 		if r.Site.DailyLimitReached() {
-			sum.Reason = "LinkedIn's daily Easy Apply limit reached"
+			sum.ended(EndDailyLimit, "LinkedIn's daily Easy Apply limit reached")
 			_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
 			r.emit(EventLimit, sum.Reason, &c)
 			return cardEndsRun, nil
@@ -405,7 +458,12 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	r.Logger.Info("easy apply button found", "job", c.ID, "how", how)
 	if err := r.Pacer.Allow(); err != nil {
-		sum.Reason = err.Error()
+		end := EndError
+		var le *pacing.LimitError
+		if errors.As(err, &le) {
+			end = map[string]End{pacing.CapPerRun: EndPerRunCap, pacing.CapPerHour: EndHourlyCap}[le.Cap]
+		}
+		sum.ended(end, err.Error())
 		r.emit(EventLimit, sum.Reason, &c)
 		return cardEndsRun, nil
 	}
@@ -502,15 +560,15 @@ func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error 
 func (r *Runner) stop(sum *Summary, err error) (Summary, error) {
 	switch {
 	case errors.Is(err, context.Canceled):
-		sum.Reason = "stopped by user"
+		sum.ended(EndStopped, "stopped by user")
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	case errors.Is(err, context.DeadlineExceeded):
-		sum.Reason = "timed out"
+		sum.ended(EndTimedOut, "timed out")
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	}
-	sum.Reason = "error: " + err.Error()
+	sum.ended(EndError, "error: "+err.Error())
 	return *sum, err
 }
 

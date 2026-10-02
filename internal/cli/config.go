@@ -42,6 +42,9 @@ present or absent.`,
 			for _, nv := range l.Secrets.Values() {
 				a.ui.KV(nv[0], presence(nv[1]))
 			}
+			for _, w := range l.Warnings {
+				a.ui.Warn("config", w)
+			}
 			if len(l.Overrides) > 0 {
 				a.ui.Println()
 				a.ui.Title("Overridden by the environment")
@@ -140,6 +143,9 @@ func (a *App) configValidateCmd() *cobra.Command {
 			}
 			if !l.FileExisted {
 				a.ui.Warn("config", "no config file at "+a.paths.ConfigFile+"; validating the built-in defaults")
+			}
+			for _, w := range l.Warnings {
+				a.ui.Warn("config", w)
 			}
 			if err != nil {
 				if ve, ok := config.AsValidation(err); ok {

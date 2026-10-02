@@ -22,16 +22,19 @@ type Pacer struct {
 	now     func() time.Time
 	sleep   func(context.Context, time.Duration) error
 	rand    *rand.Rand
-	applied []time.Time
+	history []time.Time // every application in the last hour, for the hourly cap
+	inRun   int         // applications in the current run, for the per-run cap
+	total   int         // applications by this process, for --max
 }
 
 // New builds a pacer from the config. fast shortens the between-jobs pauses to
 // a tenth; callers allow it only together with --dry-run.
 func New(cfg config.Pacing, fast bool) *Pacer {
-	return &Pacer{cfg: cfg, fast: fast, now: time.Now, sleep: sleepCtx, rand: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 7))}
+	return &Pacer{cfg: cfg, fast: fast, now: time.Now, sleep: Sleep, rand: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 7))}
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) error {
+// Sleep waits d, or returns ctx's error as soon as ctx ends.
+func Sleep(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return ctx.Err()
 	}
@@ -56,27 +59,45 @@ func (e *LimitError) Unwrap() error { return ErrLimit }
 
 // Allow reports whether one more application may be made now.
 func (p *Pacer) Allow() error {
-	if len(p.applied) >= p.cfg.MaxPerRun {
-		return &LimitError{Cap: "per run", Limit: p.cfg.MaxPerRun}
+	if p.inRun >= p.cfg.MaxPerRun {
+		return &LimitError{Cap: CapPerRun, Limit: p.cfg.MaxPerRun}
 	}
 	cutoff := p.now().Add(-time.Hour)
-	recent := 0
-	for _, t := range p.applied {
+	recent := p.history[:0]
+	for _, t := range p.history {
 		if t.After(cutoff) {
-			recent++
+			recent = append(recent, t)
 		}
 	}
-	if recent >= p.cfg.MaxPerHour {
-		return &LimitError{Cap: "per hour", Limit: p.cfg.MaxPerHour}
+	p.history = recent
+	if len(recent) >= p.cfg.MaxPerHour {
+		return &LimitError{Cap: CapPerHour, Limit: p.cfg.MaxPerHour}
 	}
 	return nil
 }
 
-// RecordApplication counts one application (or, in a dry run, one that would have been made).
-func (p *Pacer) RecordApplication() { p.applied = append(p.applied, p.now()) }
+// The caps a LimitError names.
+const (
+	CapPerRun  = "per run"
+	CapPerHour = "per hour"
+)
 
-// Applied is how many applications this run made.
-func (p *Pacer) Applied() int { return len(p.applied) }
+// RecordApplication counts one application (or, in a dry run, one that would have been made).
+func (p *Pacer) RecordApplication() {
+	p.history = append(p.history, p.now())
+	p.inRun++
+	p.total++
+}
+
+// Applied is how many applications the current run made.
+func (p *Pacer) Applied() int { return p.inRun }
+
+// Total is how many applications this process made, across non-stop runs.
+func (p *Pacer) Total() int { return p.total }
+
+// NewRun starts the per-run count again; the hourly history carries over, so
+// back-to-back runs still respect the hourly cap.
+func (p *Pacer) NewRun() { p.inRun = 0 }
 
 func (p *Pacer) between(lo, hi int, unit time.Duration) time.Duration {
 	if hi < lo {

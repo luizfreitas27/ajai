@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -312,5 +313,52 @@ func mustWrite(t *testing.T, path, text string) {
 	}
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestARetiredKeyStillLoadsWithAWarningAndSetDropsIt(t *testing.T) {
+	p := tmpPaths(t)
+	if err := Write(p.ConfigFile, valid()); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(p.ConfigFile)
+	old := strings.Replace(string(data), "settings:\n", "settings:\n  click_gap: 2\n", 1)
+	mustWrite(t, p.ConfigFile, old)
+	mustWrite(t, p.EnvFile, "AJA_CFG_SETTINGS_CLICK_GAP=3\n")
+	l, err := Load(p, MapEnv(nil), nil)
+	if err != nil {
+		t.Fatalf("an old file must keep loading: %v", err)
+	}
+	if len(l.Warnings) != 2 || !strings.Contains(l.Warnings[0], "settings.click_gap is no longer used") ||
+		!strings.Contains(l.Warnings[0], "pacing.between_actions") || !strings.Contains(l.Warnings[1], "environment override") {
+		t.Errorf("%q", l.Warnings)
+	}
+	if l.Config.Search.Terms[0] != "Software Engineer" {
+		t.Error("the rest of the file must load as before")
+	}
+	// The retired key must not shift the line numbers of real errors after it,
+	// and the same name in another section is still an unknown key.
+	bad := strings.Replace(old, "  log_level: INFO\n", "  log_level: [not, a, string]\n", 1)
+	if bad == old {
+		t.Fatal("test setup: log_level not found")
+	}
+	mustWrite(t, p.ConfigFile, bad)
+	line := 1 + strings.Count(bad[:strings.Index(bad, "  log_level:")], "\n")
+	if _, err := Load(p, MapEnv(nil), nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("line %d:", line)) {
+		t.Errorf("want the error at line %d: %v", line, err)
+	}
+	mustWrite(t, p.ConfigFile, strings.Replace(old, "search:\n", "search:\n  click_gap: 2\n", 1))
+	var unknown *UnknownKeyError
+	if _, err := Load(p, MapEnv(nil), nil); !errors.As(err, &unknown) {
+		t.Errorf("search.click_gap was never a setting: %v", err)
+	}
+	mustWrite(t, p.ConfigFile, old)
+	// Rewriting the file (what config set does) drops the retired key.
+	if err := Write(p.ConfigFile, l.Config); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(p.ConfigFile)
+	if strings.Contains(string(data), "click_gap") {
+		t.Error("the rewritten file still has the retired key")
 	}
 }

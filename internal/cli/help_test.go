@@ -88,7 +88,7 @@ func TestOnlyATerminalOnBothEndsIsAttended(t *testing.T) {
 		{false, true, false, true}, // stdout piped: nobody watching
 	}
 	for _, c := range cases {
-		if got := run.ResolveUnattended(c.flag, c.in, c.out); got != c.unattended {
+		if got := run.ResolveUnattended(c.flag, false, c.in, c.out); got != c.unattended {
 			t.Errorf("%+v -> %v", c, got)
 		}
 	}

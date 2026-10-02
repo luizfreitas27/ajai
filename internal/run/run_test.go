@@ -158,7 +158,7 @@ func runner(t *testing.T, site *fakeSite, cfg config.Config) (*Runner, *store.St
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	p := pacing.New(cfg.Pacing, true)
+	p := newPacer(cfg)
 	var events []Event
 	r := &Runner{Cfg: cfg, Market: markets.Resolve(cfg), Site: site, Applier: &fakeApplier{}, Store: st, Pacer: p,
 		Events:    func(e Event) { events = append(events, e) },
@@ -457,5 +457,20 @@ func TestTermAndLocationOverridesAndOurOwnHistory(t *testing.T) {
 	}
 	if terms[0] != "QA" || terms[1] != "SRE" {
 		t.Error("the caller's slice must not be shuffled in place")
+	}
+}
+
+func newPacer(c config.Config) *pacing.Pacer { return pacing.New(c.Pacing, true) }
+
+func TestARunThatCannotBeRecordedStillEndsWithASummary(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{}, pages: [][]string{{}}}
+	r, st, events := runner(t, site, cfg())
+	_ = st.Close() // StartRun fails
+	sum, err := r.Run(context.Background(), Options{DryRun: true})
+	if err == nil || sum.End != EndError {
+		t.Fatalf("%+v %v", sum, err)
+	}
+	if ends := kinds(*events, EventRunEnd); len(ends) != 1 || ends[0].Summary == nil || ends[0].Summary.End != EndError {
+		t.Errorf("--json and the terminal need the run-end event: %+v", *events)
 	}
 }
