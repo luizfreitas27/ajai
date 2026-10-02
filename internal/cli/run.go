@@ -53,15 +53,30 @@ skipped and the question waits for you in "aja answers review".`,
 			if market != "" {
 				flags["markets.active"] = market
 			}
+			ctx := cmd.Context()
 			l, err := config.Load(a.paths, a.Env, flags)
-			if l == nil {
+			level := config.Defaults().Settings.LogLevel
+			if l != nil {
+				level = l.Config.Settings.LogLevel
+			}
+			a.openLog(level) // before the notifier, which logs its warnings through it
+			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
+			// too: an unattended run has nobody watching the terminal. The secrets come from
+			// the environment, so they are there even when the config file is broken.
+			secrets := a.secrets(l)
+			telegram := notify.New(secrets.TelegramBotToken, secrets.TelegramChatID, a.logger)
+			cannotStart := func(err error) error {
+				run.ReportStartFailure(ctx, telegram, err)
 				return err
 			}
+			if l == nil {
+				return cannotStart(err)
+			}
 			if !l.FileExisted {
-				return errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
+				return cannotStart(errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first"))
 			}
 			if err != nil {
-				return fmt.Errorf("fix the configuration first (`aja config validate`): %w", err)
+				return cannotStart(fmt.Errorf("fix the configuration first (`aja config validate`): %w", err))
 			}
 			if err := opts.Validate(); err != nil {
 				return err
@@ -75,17 +90,15 @@ skipped and the question waits for you in "aja answers review".`,
 			}
 			opts.Unattended = run.ResolveUnattended(opts.Unattended, a.stdinIsTerminal(), a.stdoutIsTerminal())
 			cfg := l.Config
-			a.openLog(cfg.Settings.LogLevel)
 			st, err := a.openStore()
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
 			resolved := markets.Resolve(cfg)
 			aiClient, err := ai.FromConfig(cfg, l.Secrets, resolved, a.logger)
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
-			telegram := notify.New(l.Secrets.TelegramBotToken, l.Secrets.TelegramChatID, a.logger)
 			a.ui.Banner(a.Version)
 			a.ui.KV("market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
 			a.ui.KV("mode", runMode(opts))
@@ -93,16 +106,15 @@ skipped and the question waits for you in "aja answers review".`,
 
 			bin, err := chrome.Find(cfg.Settings.ChromeBinary)
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
 			profile := cfg.Settings.ChromeProfileDir
 			if profile == "" {
 				profile = chrome.DefaultProfileDir()
 			}
-			ctx := cmd.Context()
 			br, err := OpenBrowser(ctx, browser.Options{Bin: bin, ProfileDir: profile, DisableExtensions: cfg.Settings.DisableExtensions, Logger: a.logger})
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
 			defer func() { _ = br.Close() }()
 
@@ -129,7 +141,7 @@ skipped and the question waits for you in "aja answers review".`,
 				}
 			}
 			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
-				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume}
+				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume, Notifier: telegram}
 
 			sum, runErr := runner.Run(ctx, opts)
 			a.printSummary(sum)
@@ -208,20 +220,9 @@ func (a *App) printEvent(e run.Event) {
 func (a *App) printSummary(s run.Summary) {
 	a.ui.Println()
 	a.ui.Title("Run summary")
-	a.ui.KV("run", fmt.Sprintf("#%d (%s)", s.RunID, s.Market))
-	if s.DryRun {
-		a.ui.KV("would apply", fmt.Sprint(s.WouldApply))
-	} else {
-		a.ui.KV("applied", fmt.Sprint(s.Applied))
-		a.ui.KV("external", fmt.Sprint(s.External))
-		a.ui.KV("failed", fmt.Sprint(s.Failed))
+	for _, kv := range s.Fields() {
+		a.ui.KV(strings.ToLower(kv[0]), kv[1])
 	}
-	a.ui.KV("skipped", fmt.Sprint(s.Skipped))
-	if s.Captured > 0 {
-		a.ui.KV("captured", fmt.Sprintf("%d answer(s) you typed, remembered", s.Captured))
-	}
-	a.ui.KV("pending", fmt.Sprintf("%d answer(s) to review", s.PendingAnswers))
-	a.ui.KV("ended", s.Reason)
 	if s.PendingAnswers > 0 {
 		a.ui.Hint("Review them with `aja answers review`.")
 	}
@@ -358,4 +359,15 @@ func (a *App) follow(ctx context.Context, path string, offset int64) error {
 		}
 		_ = f.Close()
 	}
+}
+
+// secrets returns the loaded secrets, or, when the config file could not even be
+// parsed, the ones the environment and the .env file hold.
+func (a *App) secrets(l *config.Loaded) config.Secrets {
+	if l != nil {
+		return l.Secrets
+	}
+	env := a.Env
+	_ = env.LoadDotenv(a.paths.EnvFile)
+	return env.Secrets()
 }

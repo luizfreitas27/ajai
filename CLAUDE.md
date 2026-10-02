@@ -14,11 +14,15 @@ describe the behaviour being ported.
 ## Commands
 
 ```bash
-go build ./cmd/aja          # the binary
+go build ./cmd/aja          # the binary (a pseudo-version from git; releases get the tag via -ldflags)
 go test ./...               # unit tests: heuristics, config, memory, selector checks on fixtures
 go test -tags browser ./... # also the end-to-end tests that launch a headless Chrome
 go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
+goreleaser release --snapshot --clean   # all six release binaries into dist/, nothing published
 ```
+
+Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, config in
+`.goreleaser.yaml`). CI's `release-snapshot` job builds the same targets on every PR.
 
 ## Architecture (target; see issue #1 for the spec)
 
@@ -51,7 +55,11 @@ go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
   profile and the prompt. The chat service is built without `openai.NewClient`, so the
   SDK's environment defaults (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_CUSTOM_HEADERS`...)
   never reach a provider. With a key the endpoint must be HTTPS or loopback.
-- `internal/notify`: Telegram sender (help-pause and login nudges; run summary in F1-7).
+- `internal/notify`: Telegram sender. `run.Runner` sends exactly one message per run: the
+  summary, the error with the counts, or the start failure when the run could not be recorded;
+  a panic is reported, then re-raised. The CLI calls `run.ReportStartFailure` when a run cannot
+  start (even with a broken config file: the secrets come from the environment). The log is
+  opened before the notifier is built, or its warnings would be discarded.
   The token is in the request URL, so client errors are logged without their URL.
 - Help pause: `apply.Applier.Helper` (nil when unattended) is asked once per distinct set of
   stuck questions, at most `MaxHelpPauses` times per application; the form is snapshotted

@@ -5,6 +5,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -55,8 +57,28 @@ func (h *harness) initValid() {
 
 func TestVersion(t *testing.T) {
 	_, out, _ := newHarness(t).run("version")
-	if strings.TrimSpace(out) != "aja test" {
+	if !strings.HasPrefix(strings.TrimSpace(out), "aja test "+runtime.GOOS+"/"+runtime.GOARCH) {
 		t.Errorf("got %q", out)
+	}
+}
+
+func TestResolveVersionPrefersTheReleaseTagThenTheModuleVersion(t *testing.T) {
+	withModule := func(v string) *debug.BuildInfo { return &debug.BuildInfo{Main: debug.Module{Version: v}} }
+	cases := []struct {
+		ldflag string
+		info   *debug.BuildInfo
+		want   string
+	}{
+		{"v0.1.0", withModule("v9.9.9"), "v0.1.0"},                                                      // a goreleaser build
+		{"dev", withModule("v0.2.0"), "v0.2.0"},                                                         // go install ...@v0.2.0
+		{"dev", withModule("v0.0.0-20261002025052-8017aed917c5"), "v0.0.0-20261002025052-8017aed917c5"}, // go build in a git checkout
+		{"dev", withModule("(devel)"), "dev"},                                                           // go build -buildvcs=false, or outside a git checkout
+		{"", nil, "dev"},
+	}
+	for _, tc := range cases {
+		if got := ResolveVersion(tc.ldflag, tc.info); got != tc.want {
+			t.Errorf("ResolveVersion(%q, %v) = %q, want %q", tc.ldflag, tc.info, got, tc.want)
+		}
 	}
 }
 

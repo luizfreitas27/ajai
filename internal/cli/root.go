@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -22,6 +23,7 @@ import (
 // fake environment; main builds one from the process.
 type App struct {
 	Version string
+	Commit  string // short commit of a release build, "" otherwise
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Stdin   io.Reader
@@ -128,7 +130,11 @@ func (a *App) versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version",
 		Run: func(cmd *cobra.Command, args []string) {
-			a.ui.Println("aja", a.Version)
+			line := "aja " + a.Version
+			if a.Commit != "" {
+				line += " (" + a.Commit + ")"
+			}
+			a.ui.Println(line + " " + runtime.GOOS + "/" + runtime.GOARCH)
 		},
 	}
 }
