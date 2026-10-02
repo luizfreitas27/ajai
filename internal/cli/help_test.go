@@ -18,8 +18,6 @@ import (
 	"github.com/luizfreitas27/aja/internal/ui"
 )
 
-var ioEOF = io.EOF
-
 func TestTheHelpPauseShowsTheQuestionsNudgesTelegramAndWaitsForEnter(t *testing.T) {
 	var sentText string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,14 +26,17 @@ func TestTheHelpPauseShowsTheQuestionsNudgesTelegramAndWaitsForEnter(t *testing.
 		_, _ = io.WriteString(w, `{"ok":true}`)
 	}))
 	defer srv.Close()
-	saved := notify.APIBase
-	notify.APIBase = srv.URL
-	defer func() { notify.APIBase = saved }()
 
 	var out bytes.Buffer
-	a := &App{Stdout: &out, Stderr: &out, Stdin: strings.NewReader("\n")}
+	// The Enter arrives after the pause started (an Enter typed before it is drained).
+	in, typed := io.Pipe()
+	a := &App{Stdout: &out, Stderr: &out, Stdin: in}
 	a.ui = ui.New(&out, &out, true)
-	h := &terminalHelper{app: a, notify: notify.New("1:tok", "42", nil), timeout: time.Minute}
+	h := &terminalHelper{app: a, notify: notify.New("1:tok", "42", nil).WithAPIBase(srv.URL), timeout: time.Minute}
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = io.WriteString(typed, "\n")
+	}()
 	req := apply.HelpRequest{Job: linkedin.Card{Title: "Go Dev", Company: "ACME", Link: "https://www.linkedin.com/jobs/view/1"},
 		Questions: []string{"Favourite colour? [Red, Blue]"}, Screenshot: "/tmp/shot.png"}
 	if err := h.Help(context.Background(), req); err != nil {
@@ -55,6 +56,27 @@ func TestTheHelpPauseShowsTheQuestionsNudgesTelegramAndWaitsForEnter(t *testing.
 	h = &terminalHelper{app: b, notify: notify.New("", "", nil), timeout: 20 * time.Millisecond}
 	if err := h.Help(context.Background(), req); !errors.Is(err, ErrNoAnswer) {
 		t.Errorf("%v", err)
+	}
+}
+
+func TestAnEnterTypedBeforeThePauseDoesNotAnswerItAndAClosedStdinGivesUpQuietly(t *testing.T) {
+	var out bytes.Buffer
+	// Two stale Enters (say, pressed during the login wait), then nothing.
+	a := &App{Stdout: &out, Stderr: &out, Stdin: io.MultiReader(strings.NewReader("\n\n"), blockingReader{})}
+	a.ui = ui.New(&out, &out, true)
+	h := &terminalHelper{app: a, notify: notify.New("", "", nil), timeout: 100 * time.Millisecond}
+	if err := h.Help(context.Background(), apply.HelpRequest{Questions: []string{"Q"}}); !errors.Is(err, ErrNoAnswer) {
+		t.Errorf("a stale Enter answered the pause: %v", err)
+	}
+	var shown bytes.Buffer
+	closed := &App{Stdout: &shown, Stderr: &shown, Stdin: strings.NewReader("")}
+	closed.ui = ui.New(&shown, &shown, true)
+	h = &terminalHelper{app: closed, notify: notify.New("", "", nil), timeout: time.Minute}
+	if err := h.Help(context.Background(), apply.HelpRequest{Questions: []string{"Q"}}); !errors.Is(err, io.EOF) {
+		t.Errorf("%v", err)
+	}
+	if shown.Len() != 0 {
+		t.Errorf("with stdin closed nothing is shown or sent: %q", shown.String())
 	}
 }
 

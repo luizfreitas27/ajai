@@ -40,7 +40,13 @@ at a profile aja can own), waits for you to sign in when needed, then walks ever
 term with the configured filters, screens each job and applies. Pacing is on by default.
 
 --dry-run fills every form and discards it at the Review step instead of submitting, so you
-can check the answers before applying for real.`,
+can check the answers before applying for real.
+
+With you at the terminal, a question nothing can answer pauses the job: aja shows it (and
+sends a Telegram message when configured), you fill it in Chrome and press Enter, and what
+you typed is remembered as an approved answer. The pause waits up to 15 minutes. With
+--unattended, or when stdin or stdout is not a terminal, aja never pauses: the job is
+skipped and the question waits for you in "aja answers review".`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := map[string]string{}
@@ -110,7 +116,7 @@ can check the answers before applying for real.`,
 			}
 			applier := &apply.Applier{Page: br.Main(), Pacer: pacer, Answerer: answerer, Logger: a.logger, ScreenshotDir: a.paths.ScreenshotDir}
 			if !opts.Unattended {
-				applier.Helper = &terminalHelper{app: a, notify: telegram, timeout: helpTimeout}
+				applier.Helper = &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout}
 			}
 			resume, note := run.ResolveResume(a.paths, resolved, cfg.Questions.Resume)
 			if note != "" {
@@ -270,8 +276,8 @@ func (a *App) statusCmd() *cobra.Command {
 				if ended == "" {
 					ended = "in progress"
 				}
-				a.ui.Printf("#%-4d %-25s %-5s %-14s applied %d  ext %d  failed %d  skipped %d  %s\n",
-					r.ID, r.StartedAt, mode, r.Market, r.Applied, r.External, r.Failed, r.Skipped, firstNonEmpty(r.Reason, ended))
+				a.ui.Printf("#%-4d %-25s %-5s %-14s applied %d  ext %d  failed %d  skipped %d  pending %d  %s\n",
+					r.ID, r.StartedAt, mode, r.Market, r.Applied, r.External, r.Failed, r.Skipped, r.PendingAnswers, firstNonEmpty(r.Reason, ended))
 			}
 			return nil
 		},

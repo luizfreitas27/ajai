@@ -33,7 +33,7 @@ type Settings struct {
 
 // Client answers form questions with a chat model.
 type Client struct {
-	chat    openai.Client
+	chat    openai.ChatCompletionService
 	model   string
 	profile string
 	logger  *slog.Logger
@@ -44,8 +44,10 @@ var ErrKeyOverHTTP = errors.New("an API key is only sent over HTTPS or to this m
 
 // New builds a client. With a key the endpoint must be HTTPS or loopback (the
 // SDK's own rule, checked here first for a clear message); without one, any
-// endpoint works and no Authorization header is sent, not even an
-// OPENAI_API_KEY from the environment.
+// endpoint works and no Authorization header is sent. The SDK's environment
+// defaults (OPENAI_API_KEY, OPENAI_ORG_ID, OPENAI_PROJECT_ID,
+// OPENAI_CUSTOM_HEADERS, OPENAI_BASE_URL) are never read: whatever the user's
+// shell holds for other tools does not reach a provider aja talks to.
 func New(s Settings) (*Client, error) {
 	if s.Logger == nil {
 		s.Logger = slog.New(slog.DiscardHandler)
@@ -66,26 +68,26 @@ func New(s Settings) (*Client, error) {
 	if s.Timeout == 0 {
 		s.Timeout = 60 * time.Second
 	}
+	httpClient := s.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{}
+	}
+	// The chat service built directly, not through openai.NewClient, which would
+	// prepend the environment defaults.
 	opts := []option.RequestOption{
+		option.WithHTTPClient(httpClient),
+		option.WithEnvironmentProduction(),
 		option.WithBaseURL(s.BaseURL),
 		option.WithMaxRetries(s.MaxRetries),
 		option.WithRequestTimeout(s.Timeout),
-	}
-	if s.HTTPClient != nil {
-		opts = append(opts, option.WithHTTPClient(s.HTTPClient))
 	}
 	if s.APIKey != "" {
 		if u.Scheme == "http" && !loopback(u.Hostname()) {
 			return nil, ErrKeyOverHTTP
 		}
 		opts = append(opts, option.WithAPIKey(s.APIKey), option.WithUnsafeAllowHTTP())
-	} else {
-		opts = append(opts, option.WithMiddleware(func(r *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-			r.Header.Del("Authorization")
-			return next(r)
-		}))
 	}
-	return &Client{chat: openai.NewClient(opts...), model: s.Model, profile: s.Profile, logger: s.Logger}, nil
+	return &Client{chat: openai.NewChatCompletionService(opts...), model: s.Model, profile: s.Profile, logger: s.Logger}, nil
 }
 
 func loopback(host string) bool {
@@ -118,7 +120,7 @@ func (c *Client) Answer(ctx context.Context, question string, kind questions.Kin
 	if strings.TrimSpace(question) == "" {
 		return "", nil
 	}
-	res, err := c.chat.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	res, err := c.chat.New(ctx, openai.ChatCompletionNewParams{
 		Model:    c.model,
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage(BuildPrompt(c.profile, question, jobDescription, options))},
 	})
@@ -134,14 +136,16 @@ func (c *Client) Answer(ctx context.Context, question string, kind questions.Kin
 		return "", nil
 	}
 	raw := strings.TrimSpace(msg.Content)
+	if raw == "" {
+		c.logger.Warn("the model returned an empty answer", "question", question)
+		return "", nil
+	}
 	if len(options) == 0 {
 		return raw, nil
 	}
 	if picked := SelectOption(raw, options); picked != "" {
 		return picked, nil
 	}
-	if raw != "" {
-		c.logger.Warn("the model's answer is none of the options; rejected", "question", question, "answer", raw, "options", strings.Join(options, " | "))
-	}
+	c.logger.Warn("the model's answer is none of the options; rejected", "question", question, "answer", raw, "options", strings.Join(options, " | "))
 	return "", nil
 }

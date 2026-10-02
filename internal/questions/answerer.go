@@ -75,6 +75,7 @@ type Decision struct {
 // Memory is the slice of the answer memory the answerer uses.
 type Memory interface {
 	Lookup(label, kind string, approximate bool) (*memory.Remembered, bool, error)
+	Find(label, kind string) (*memory.Remembered, error)
 	Remember(label, kind, answer, source, jobLink string) (*memory.Remembered, error)
 	RecordUse(id, jobLink string) error
 }
@@ -586,11 +587,15 @@ func rememberKey(q Question) string {
 }
 
 // Capture remembers, as approved (source user), what the user put into a
-// control by hand during a help pause. Sensitive, untitled and blank answers
-// are never captured. It reports whether something was remembered.
-func (a *Answerer) Capture(q Question, value string, jobLink string) bool {
+// control by hand during a help pause. d is the decision aja made for that
+// control before the pause: only a question the memory is consulted for
+// (d.Remember) is captured, so the email question, a configured answer that
+// matches no option, and sensitive questions never fill the memory with
+// answers it would never use. Blank and untitled answers are never captured.
+// It reports whether something was remembered.
+func (a *Answerer) Capture(q Question, d Decision, value string, jobLink string) bool {
 	label, value := rememberKey(q), strings.TrimSpace(value)
-	if a.Memory == nil || value == "" || label == "" || label == UnknownTitle || IsSensitive(label) {
+	if !a.mayRemember(label, d) || value == "" || (q.Kind == Select && IsPlaceholder(value)) {
 		return false
 	}
 	if a.remember(label, string(q.Kind), value, "user", jobLink) == nil {
@@ -605,11 +610,17 @@ func (a *Answerer) Capture(q Question, value string, jobLink string) bool {
 // queue. It never touches an existing entry for the same question.
 func (a *Answerer) RememberUnanswered(q Question, d Decision, jobLink string) bool {
 	label := rememberKey(q)
-	if a.Memory == nil || !d.Remember || label == "" || label == UnknownTitle || IsSensitive(label) {
+	if !a.mayRemember(label, d) {
 		return false
 	}
-	if existing, _, err := a.Memory.Lookup(label, string(q.Kind), false); err != nil || existing != nil {
+	if existing, err := a.Memory.Find(label, string(q.Kind)); err != nil || existing != nil {
 		return false
 	}
 	return a.remember(label, string(q.Kind), "", "form", jobLink) != nil
+}
+
+// mayRemember: there is a memory, the decision says the memory is consulted for
+// this question, and the question has a usable, non-sensitive title.
+func (a *Answerer) mayRemember(label string, d Decision) bool {
+	return a.Memory != nil && d.Remember && label != "" && label != UnknownTitle && !IsSensitive(label)
 }

@@ -103,89 +103,43 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		}
 		return a.fail(job, &out, "waiting for the Easy Apply modal", ErrModalMissing)
 	}
-	qjob := questions.Job{Link: job.Link, WorkLocation: job.Location, Description: opts.Description}
-	answered := map[string]bool{}
-	helped := map[string]bool{} // one help pause per distinct set of stuck questions
-	var previousBlocked []string
-	var stuck []stuckControl
-	for page := 1; page <= MaxPages; page++ {
+	st := &formState{job: job, modal: modal, qjob: questions.Job{Link: job.Link, WorkLocation: job.Location, Description: opts.Description},
+		answered: map[string]bool{}, helped: map[string]bool{}, userFilled: map[string]bool{}}
+	// Every turn of this loop either returns, clicks Next (at most MaxPages times) or
+	// follows a help pause (at most MaxHelpPauses times), so it always ends.
+	for pages := 0; ; {
 		if ctx.Err() != nil {
 			return a.stopped(&out), ctx.Err()
 		}
-		controls, err := ReadForm(modal)
+		blocked, stuck, stage, err := a.pass(ctx, st, &out)
 		if err != nil {
-			return a.fail(job, &out, "reading the form", err)
+			if ctx.Err() != nil {
+				return a.stopped(&out), ctx.Err()
+			}
+			return a.fail(job, &out, stage, err)
 		}
-		var blocked []string
-		stuck = stuck[:0]
-		for _, c := range controls {
-			if c.FollowCompany {
-				continue
-			}
-			d := a.Answerer.AnswerContext(ctx, c.Question, qjob)
-			if d.Action == questions.Blocked {
-				blocked = append(blocked, describe(c.Question))
-				stuck = append(stuck, stuckControl{c.Question, d})
-			}
-			if err := a.applyDecision(ctx, c, d); err != nil {
-				if ctx.Err() != nil {
-					return a.stopped(&out), ctx.Err()
-				}
-				return a.fail(job, &out, "filling "+c.Question.Label, err)
-			}
-			if d.Action == questions.Fill || d.Action == questions.Choose || d.Action == questions.Tick {
-				if line := c.Question.Label + ": " + d.Value; !answered[line] {
-					answered[line] = true
-					out.Answered = append(out.Answered, line)
-				}
-			}
-		}
-		// A date picker's "today" button, when the page has one (the Python bot clicked it after every pass).
-		if today, err := modal.Element(linkedin.TodayButtonXPath); err == nil {
-			_ = today.Click()
-		}
-		sort.Strings(blocked)
-		if len(blocked) > 0 && equal(blocked, previousBlocked) {
+		if len(blocked) > 0 && equal(blocked, st.previousBlocked) {
 			// Nothing new was answered and required questions are still empty: LinkedIn will
-			// never enable Next. In an attended run, ask the person at the keyboard once.
-			signature := strings.Join(blocked, "\n")
-			if a.Helper != nil && !helped[signature] {
-				helped[signature] = true
-				captured, err := a.askForHelp(ctx, job, modal, blocked)
-				out.Captured += captured
-				if ctx.Err() != nil {
-					return a.stopped(&out), ctx.Err()
-				}
-				if err == nil {
-					previousBlocked = nil
-					continue // a fresh pass over what the user filled in
-				}
-				a.Logger.Info("no help came; giving the job up", "job", job.ID, "why", err)
+			// never enable Next. In an attended run, ask the person at the keyboard.
+			if a.tryHelp(ctx, st, &out, blocked, stuck) {
+				st.previousBlocked = nil
+				continue // a fresh pass over what the user filled in
 			}
-			// Not guessing is right, but it needs an exit. What nothing could answer goes to the
-			// review queue, so the user answers it once and the next form like it goes through.
-			for _, sc := range stuck {
-				if a.Answerer.RememberUnanswered(sc.question, sc.decision, job.Link) {
-					out.Queued++
-				}
+			if ctx.Err() != nil {
+				return a.stopped(&out), ctx.Err()
 			}
-			out.Blocked, out.Kind = blocked, Unanswered
-			a.discard()
-			return out, nil
+			return a.giveUp(st, &out, blocked, stuck), nil
 		}
-		previousBlocked = blocked
-		if opts.ResumePath != "" && out.Resume == PreviousResume {
-			if input, err := modal.Element(linkedin.ResumeUploadInputXPath); err == nil {
-				if err := input.SetFiles([]string{opts.ResumePath}); err == nil {
-					out.Resume = filepath.Base(opts.ResumePath)
-					a.Logger.Info("resume uploaded", "job", job.ID, "file", out.Resume)
-				} else {
-					a.Logger.Warn("resume upload failed; keeping the previous one", "error", err)
-				}
-			}
-		}
+		st.previousBlocked, st.stuck = blocked, stuck
+		a.uploadResume(st, &out, opts.ResumePath)
 		if _, err := modal.Element(linkedin.SubmitButtonXPath); err == nil {
 			return a.review(ctx, job, modal, &out, opts)
+		}
+		if pages == MaxPages {
+			if len(blocked) > 0 {
+				return a.giveUp(st, &out, blocked, stuck), nil
+			}
+			return a.fail(job, &out, "walking the form", fmt.Errorf("still not at Review after %d pages", MaxPages))
 		}
 		next, err := modal.Element(linkedin.ReviewButtonXPath)
 		if err != nil {
@@ -196,11 +150,111 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		if err := next.Click(); err != nil {
 			return a.fail(job, &out, "clicking Next", err)
 		}
+		pages++
 		if err := a.Pacer.BetweenActions(ctx); err != nil {
 			return a.stopped(&out), err
 		}
 	}
-	return a.fail(job, &out, "walking the form", fmt.Errorf("still not at Review after %d pages", MaxPages))
+}
+
+// MaxHelpPauses bounds the help pauses in one application: a user who fills one
+// question per pause still gets a few rounds, but the job cannot loop forever.
+const MaxHelpPauses = 5
+
+// formState is what one application accumulates while the modal is worked.
+type formState struct {
+	job             linkedin.Card
+	modal           browser.Element
+	qjob            questions.Job
+	answered        map[string]bool // "label: value" lines already recorded
+	helped          map[string]bool // stuck-question sets the user was already asked about
+	userFilled      map[string]bool // controls the user filled during a pause: never touched again
+	previousBlocked []string
+	stuck           []stuckControl
+}
+
+// pass answers every control on the current page once and returns what stayed
+// unanswered. stage names what was being done when err is not nil.
+func (a *Applier) pass(ctx context.Context, st *formState, out *Outcome) (blocked []string, stuck []stuckControl, stage string, err error) {
+	controls, err := ReadForm(st.modal)
+	if err != nil {
+		return nil, nil, "reading the form", err
+	}
+	for _, c := range controls {
+		if c.FollowCompany || st.userFilled[snapshotKey(c.Question)] {
+			continue
+		}
+		d := a.Answerer.AnswerContext(ctx, c.Question, st.qjob)
+		if d.Action == questions.Blocked {
+			blocked = append(blocked, describe(c.Question, d))
+			stuck = append(stuck, stuckControl{c.Question, d})
+		}
+		if err := a.applyDecision(ctx, c, d); err != nil {
+			return nil, nil, "filling " + c.Question.Label, err
+		}
+		if d.Action == questions.Fill || d.Action == questions.Choose || d.Action == questions.Tick {
+			if line := c.Question.Label + ": " + d.Value; !st.answered[line] {
+				st.answered[line] = true
+				out.Answered = append(out.Answered, line)
+			}
+		}
+	}
+	// A date picker's "today" button, when the page has one (the Python bot clicked it after every pass).
+	if today, err := st.modal.Element(linkedin.TodayButtonXPath); err == nil {
+		_ = today.Click()
+	}
+	sort.Strings(blocked)
+	return blocked, stuck, "", nil
+}
+
+// tryHelp runs a help pause when one is allowed (an attended run, a set of stuck
+// questions not asked about yet, pauses left) and reports whether help came.
+func (a *Applier) tryHelp(ctx context.Context, st *formState, out *Outcome, blocked []string, stuck []stuckControl) bool {
+	signature := strings.Join(blocked, "\n")
+	if a.Helper == nil || st.helped[signature] || len(st.helped) >= MaxHelpPauses {
+		return false
+	}
+	st.helped[signature] = true
+	captured, err := a.askForHelp(ctx, st, blocked, stuck)
+	out.Captured += captured
+	if err != nil {
+		if ctx.Err() == nil {
+			a.Logger.Info("no help came; giving the job up", "job", st.job.ID, "why", err)
+		}
+		return false
+	}
+	return true
+}
+
+// giveUp ends an application whose required questions nothing could answer:
+// they go to the review queue, so the user answers each once and the next form
+// like it goes through. Not guessing is right, but it needs an exit.
+func (a *Applier) giveUp(st *formState, out *Outcome, blocked []string, stuck []stuckControl) Outcome {
+	for _, sc := range stuck {
+		if a.Answerer.RememberUnanswered(sc.question, sc.decision, st.job.Link) {
+			out.Queued++
+		}
+	}
+	out.Blocked, out.Kind = blocked, Unanswered
+	a.discard()
+	return *out
+}
+
+// uploadResume sets the resume file once per application, when the page has the input.
+func (a *Applier) uploadResume(st *formState, out *Outcome, path string) {
+	if path == "" || out.Resume != PreviousResume {
+		return
+	}
+	input, err := st.modal.Element(linkedin.ResumeUploadInputXPath)
+	if err != nil {
+		return
+	}
+	if err := input.SetFiles([]string{path}); err != nil {
+		a.Logger.Warn("resume upload failed; keeping the previous one", "error", err)
+		return
+	}
+	out.Resume = filepath.Base(path)
+	a.Logger.Info("resume uploaded", "job", st.job.ID, "file", out.Resume)
 }
 
 // review is the last page: discard in a dry run, otherwise set the follow box and submit.
@@ -357,16 +411,24 @@ type stuckControl struct {
 // filled into controls that were empty. Only controls present and empty before
 // the pause count: a control that appeared afterwards belongs to another page
 // (the user clicked Next anyway) and carries LinkedIn's prefills, not answers.
-func (a *Applier) askForHelp(ctx context.Context, job linkedin.Card, modal browser.Element, blocked []string) (int, error) {
-	before, err := ReadForm(modal)
+//
+// Only controls aja could not answer and would consult the memory for are
+// captured (see questions.Answerer.Capture); the others are shown to the user
+// with what to fix in the config instead.
+func (a *Applier) askForHelp(ctx context.Context, st *formState, blocked []string, stuck []stuckControl) (int, error) {
+	decisions := map[string]questions.Decision{}
+	for _, sc := range stuck {
+		decisions[snapshotKey(sc.question)] = sc.decision
+	}
+	before, err := ReadForm(st.modal)
 	if err != nil {
 		return 0, err
 	}
-	shot := a.screenshot(job, "help")
-	if err := a.Helper.Help(ctx, HelpRequest{Job: job, Questions: blocked, Screenshot: shot}); err != nil {
+	shot := a.screenshot(st.job, "help")
+	if err := a.Helper.Help(ctx, HelpRequest{Job: st.job, Questions: blocked, Screenshot: shot}); err != nil {
 		return 0, err
 	}
-	after, err := ReadForm(modal)
+	after, err := ReadForm(st.modal)
 	if err != nil {
 		a.Logger.Warn("could not re-read the form after the help pause; nothing captured", "error", err)
 		return 0, nil
@@ -379,10 +441,18 @@ func (a *Applier) askForHelp(ctx context.Context, job linkedin.Card, modal brows
 	}
 	captured := 0
 	for _, c := range after {
-		if c.FollowCompany || !empty[snapshotKey(c.Question)] {
+		key := snapshotKey(c.Question)
+		if c.FollowCompany || !empty[key] {
 			continue
 		}
-		if value := filled(c.Question); value != "" && a.Answerer.Capture(c.Question, value, job.Link) {
+		value := filled(c.Question)
+		if value == "" {
+			continue
+		}
+		// What the user put in stays as they left it, captured or not (a sensitive
+		// answer is not remembered, but it must not be wiped by the next pass either).
+		st.userFilled[key] = true
+		if a.Answerer.Capture(c.Question, decisions[key], value, st.job.Link) {
 			captured++
 		}
 	}
@@ -425,14 +495,21 @@ func (a *Applier) fail(job linkedin.Card, out *Outcome, stage string, err error)
 	return *out, fmt.Errorf("%s: %w", stage, err)
 }
 
-func describe(q questions.Question) string {
-	if len(q.Options) > 0 {
-		return fmt.Sprintf("%s [%s]", q.Label, strings.Join(q.Options, ", "))
+// describe is how a stuck question is shown to the user and recorded: its label,
+// its options, and, when the cause is the configuration rather than a gap in
+// what aja knows, that cause.
+func describe(q questions.Question, d questions.Decision) string {
+	text := q.Label
+	switch {
+	case len(q.Options) > 0:
+		text = fmt.Sprintf("%s [%s]", q.Label, strings.Join(q.Options, ", "))
+	case q.Kind == questions.Checkbox:
+		text = strings.TrimSpace(strings.TrimPrefix(q.GroupTitle+" ", questions.UnknownTitle+" ") + q.Label)
 	}
-	if q.Kind == questions.Checkbox {
-		return strings.TrimSpace(q.GroupTitle + " " + q.Label)
+	if strings.HasPrefix(d.Reason, "no option matched the configured answer") {
+		text += " (" + d.Reason + "; fix it in the config)"
 	}
-	return q.Label
+	return text
 }
 
 func equal(a, b []string) bool {

@@ -29,6 +29,7 @@ type fakeModel struct {
 	status  int
 	bodies  []map[string]any
 	auth    []string
+	headers []http.Header
 }
 
 func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +40,7 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(data, &body)
 	f.bodies = append(f.bodies, body)
 	f.auth = append(f.auth, r.Header.Get("Authorization"))
+	f.headers = append(f.headers, r.Header.Clone())
 	if r.URL.Path != "/v1/chat/completions" {
 		http.NotFound(w, r)
 		return
@@ -114,10 +116,15 @@ func TestATextAnswerIsTrimmedAndThePromptCarriesProfileQuestionOptionsAndJob(t *
 	}
 }
 
-func TestARefusalAndAServerErrorGiveNoAnswer(t *testing.T) {
+func TestARefusalAnEmptyReplyAndAServerErrorGiveNoAnswer(t *testing.T) {
 	model := &fakeModel{refusal: "I can't help with that."}
 	c, log := client(t, model, "")
 	if got, err := c.Answer(context.Background(), "q?", questions.Text, nil, ""); got != "" || err != nil || !strings.Contains(log.String(), "refused") {
+		t.Errorf("%q %v %s", got, err, log.String())
+	}
+	model = &fakeModel{reply: "   "}
+	c, log = client(t, model, "")
+	if got, err := c.Answer(context.Background(), "q?", questions.Select, []string{"Yes", "No"}, ""); got != "" || err != nil || !strings.Contains(log.String(), "empty answer") {
 		t.Errorf("%q %v %s", got, err, log.String())
 	}
 	model = &fakeModel{status: 500}
@@ -132,6 +139,10 @@ func TestARefusalAndAServerErrorGiveNoAnswer(t *testing.T) {
 
 func TestTheKeyIsSentOnlyWhenSetAndNeverOverPlainHTTPToAnotherHost(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-from-the-environment")
+	t.Setenv("OPENAI_ORG_ID", "org-env")
+	t.Setenv("OPENAI_PROJECT_ID", "proj-env")
+	t.Setenv("OPENAI_CUSTOM_HEADERS", "X-Env-Secret: leaked")
+	t.Setenv("OPENAI_BASE_URL", "https://elsewhere.example/v1")
 	model := &fakeModel{reply: "ok"}
 	c, _ := client(t, model, "")
 	if _, err := c.Answer(context.Background(), "q?", questions.Text, nil, ""); err != nil {
@@ -139,6 +150,11 @@ func TestTheKeyIsSentOnlyWhenSetAndNeverOverPlainHTTPToAnotherHost(t *testing.T)
 	}
 	if model.auth[0] != "" {
 		t.Errorf("a keyless provider sent %q (the environment's key must not leak)", model.auth[0])
+	}
+	for _, h := range []string{"Openai-Organization", "Openai-Project", "X-Env-Secret"} {
+		if v := model.headers[0].Get(h); v != "" {
+			t.Errorf("environment header %s leaked: %q", h, v)
+		}
 	}
 	model = &fakeModel{reply: "ok"}
 	c, _ = client(t, model, "sk-mine")
@@ -169,22 +185,67 @@ func TestTheKeyIsSentOnlyWhenSetAndNeverOverPlainHTTPToAnotherHost(t *testing.T)
 }
 
 func TestFromConfigNeedsAKeyForHostedProvidersOnly(t *testing.T) {
+	cases := []struct {
+		enabled  bool
+		provider string
+		key      string
+		baseURL  string
+		wantNil  bool
+		wantErr  error
+		anyErr   bool
+	}{
+		{enabled: false, provider: "openai", wantNil: true},
+		{enabled: true, provider: "openai", wantErr: ErrNoKey},
+		{enabled: true, provider: "gemini", wantErr: ErrNoKey},
+		{enabled: true, provider: "ollama"},
+		{enabled: true, provider: "lmstudio"},
+		{enabled: true, provider: "openai", key: "sk-x"},
+		{enabled: true, provider: "custom", baseURL: "https://proxy.example/v1"},
+		{enabled: true, provider: "custom", anyErr: true}, // no base_url
+		{enabled: true, provider: "custom", key: "sk-x", baseURL: "http://ollama.lan/v1", wantErr: ErrKeyOverHTTP},
+	}
+	for _, tc := range cases {
+		c := config.Defaults()
+		c.AI.Enabled, c.AI.Provider, c.AI.BaseURL = tc.enabled, tc.provider, tc.baseURL
+		cl, err := FromConfig(c, config.Secrets{AIAPIKey: tc.key}, markets.Resolve(c), nil)
+		switch {
+		case tc.wantErr != nil:
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("%+v: %v", tc, err)
+			}
+		case tc.anyErr:
+			if err == nil {
+				t.Errorf("%+v: no error", tc)
+			}
+		case tc.wantNil:
+			if cl != nil || err != nil {
+				t.Errorf("%+v: %v %v", tc, cl, err)
+			}
+		default:
+			if cl == nil || err != nil {
+				t.Errorf("%+v: %v", tc, err)
+			}
+		}
+	}
+}
+
+func TestFromConfigGivesTheModelTheCandidateProfile(t *testing.T) {
+	model := &fakeModel{reply: "Go"}
+	srv := httptest.NewServer(model)
+	defer srv.Close()
 	c := config.Defaults()
-	m := markets.Resolve(c)
-	if cl, err := FromConfig(c, config.Secrets{}, m, nil); cl != nil || err != nil {
-		t.Errorf("AI off: %v %v", cl, err)
+	c.Personals.FirstName, c.Personals.LastName = "Jane", "Applicant"
+	c.Questions.Headline = "Backend engineer"
+	c.AI.Enabled, c.AI.Provider, c.AI.BaseURL, c.AI.Model = true, "custom", srv.URL+"/v1/", "m"
+	cl, err := FromConfig(c, config.Secrets{}, markets.Resolve(c), nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	c.AI.Enabled = true
-	if _, err := FromConfig(c, config.Secrets{}, m, nil); !errors.Is(err, ErrNoKey) {
-		t.Errorf("openai without a key: %v", err)
+	if _, err := cl.Answer(context.Background(), "Favourite language?", questions.Text, nil, ""); err != nil {
+		t.Fatal(err)
 	}
-	c.AI.Provider = "ollama"
-	if cl, err := FromConfig(c, config.Secrets{}, m, nil); cl == nil || err != nil {
-		t.Errorf("ollama without a key: %v", err)
-	}
-	c.AI.Provider = "openai"
-	if cl, err := FromConfig(c, config.Secrets{AIAPIKey: "sk-x"}, m, nil); cl == nil || err != nil {
-		t.Errorf("%v", err)
+	if p := model.prompt(t); !strings.Contains(p, "Name: Jane Applicant") || !strings.Contains(p, "Headline: Backend engineer") {
+		t.Errorf("%s", p)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/store"
@@ -50,13 +51,21 @@ func New(st *store.Store, logger *slog.Logger) *Memory {
 // otherwise, when approximate is allowed, the most similar entry of the same
 // kind at or above SimilarityThreshold. (nil, false) when nothing fits or the
 // label normalises to nothing.
+//
+// Only entries that have an answer are returned: a question queued with no
+// answer yet answers nothing, and must not shadow a similar answered one. Use
+// Find to see whether a question is in the memory at all.
 func (m *Memory) Lookup(label, kind string, approximate bool) (*Remembered, bool, error) {
 	key := textmatch.Normalise(label)
 	if key == "" {
 		return nil, false, nil
 	}
-	if exact, err := m.st.FindAnswer(kind, key); err != nil || exact != nil {
-		return exact, false, err
+	exact, err := m.st.FindAnswer(kind, key)
+	if err != nil {
+		return nil, false, err
+	}
+	if exact != nil && strings.TrimSpace(exact.Answer) != "" {
+		return exact, false, nil
 	}
 	if !approximate {
 		return nil, false, nil
@@ -69,7 +78,7 @@ func (m *Memory) Lookup(label, kind string, approximate bool) (*Remembered, bool
 	var best *Remembered
 	bestRatio := 0.0
 	for i := len(all) - 1; i >= 0; i-- {
-		if all[i].Kind != kind {
+		if all[i].Kind != kind || strings.TrimSpace(all[i].Answer) == "" {
 			continue
 		}
 		if r := textmatch.Ratio(key, all[i].Normalised); r > bestRatio {
@@ -81,6 +90,15 @@ func (m *Memory) Lookup(label, kind string, approximate bool) (*Remembered, bool
 		return best, true, nil
 	}
 	return nil, false, nil
+}
+
+// Find returns the entry for exactly this question, answered or not, or nil.
+func (m *Memory) Find(label, kind string) (*Remembered, error) {
+	key := textmatch.Normalise(label)
+	if key == "" {
+		return nil, nil
+	}
+	return m.st.FindAnswer(kind, key)
 }
 
 // Remember stores an answer. An answer the user gave is approved; anything else
@@ -150,6 +168,9 @@ func (m *Memory) PendingCount() (int, error) { return m.st.CountAnswers("pending
 // ErrUnknownID is returned by Approve and Delete for an id that is not in the memory.
 var ErrUnknownID = errors.New("no remembered answer with that id")
 
+// ErrNothingToApprove: the entry is a question with no answer yet; give it one.
+var ErrNothingToApprove = errors.New("this question has no answer yet; give it one (aja answers edit <id> \"<answer>\")")
+
 // Approve marks an entry approved, optionally replacing its answer first (newAnswer
 // "" keeps it). Approving as-is keeps who gave the answer; a corrected answer is
 // the user's.
@@ -161,8 +182,12 @@ func (m *Memory) Approve(id, newAnswer string) (*Remembered, error) {
 	if entry == nil {
 		return nil, ErrUnknownID
 	}
+	newAnswer = strings.TrimSpace(newAnswer)
 	if newAnswer != "" && newAnswer != entry.Answer {
 		entry.Answer, entry.Source = newAnswer, "user"
+	}
+	if strings.TrimSpace(entry.Answer) == "" {
+		return nil, ErrNothingToApprove
 	}
 	entry.State = "approved"
 	entry.UpdatedAt = store.Timestamp(m.now())

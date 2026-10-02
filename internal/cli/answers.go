@@ -28,7 +28,10 @@ func (a *App) answersCmd() *cobra.Command {
 		Long: `Every answer given to a question the configuration does not cover is remembered
 with a review state. Pending answers (from the AI, or a checkbox the bot saw and left
 alone) are still used; approving confirms them, editing corrects them, deleting forgets
-them. Only an approved answer may tick a checkbox.`,
+them. Only an approved answer may tick a checkbox.
+
+Questions nothing could answer wait here too, with no answer yet: give them one with
+"edit" (or in "review") and the next form that asks goes through.`,
 	}
 	cmd.AddCommand(a.answersListCmd(), a.answersReviewCmd(), a.answersApproveCmd(), a.answersEditCmd(), a.answersDeleteCmd(), a.answersClearCmd())
 	return cmd
@@ -236,11 +239,16 @@ For a checkbox, the answer "checked" lets aja tick that box from now on.`,
 					}
 					switch strings.ToLower(strings.TrimSpace(choice)) {
 					case "a", "approve":
-						if e.Answer == "" {
+						_, err := mem.Approve(e.ID, "")
+						if errors.Is(err, memory.ErrNothingToApprove) {
 							a.ui.Warn("approve", "there is no answer to approve yet; use e to write one")
 							continue
 						}
-						if _, err := mem.Approve(e.ID, ""); err != nil {
+						if gone(err) {
+							a.ui.Warn("gone", "this answer was deleted elsewhere; moving on")
+							break
+						}
+						if err != nil {
 							return err
 						}
 						approved++
@@ -254,12 +262,15 @@ For a checkbox, the answer "checked" lets aja tick that box from now on.`,
 							a.ui.Hint("nothing typed; unchanged")
 							continue
 						}
-						if _, err := mem.Approve(e.ID, strings.TrimSpace(text)); err != nil {
+						if _, err := mem.Approve(e.ID, strings.TrimSpace(text)); gone(err) {
+							a.ui.Warn("gone", "this answer was deleted elsewhere; moving on")
+							break
+						} else if err != nil {
 							return err
 						}
 						edited++
 					case "d", "delete":
-						if err := mem.Delete(e.ID); err != nil {
+						if err := mem.Delete(e.ID); err != nil && !gone(err) {
 							return err
 						}
 						deleted++
@@ -285,3 +296,6 @@ For a checkbox, the answer "checked" lets aja tick that box from now on.`,
 		},
 	}
 }
+
+// gone reports an entry deleted by another process while it was being reviewed.
+func gone(err error) bool { return errors.Is(err, memory.ErrUnknownID) }

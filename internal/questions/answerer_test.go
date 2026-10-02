@@ -709,11 +709,61 @@ func TestMatchAnswerToOption(t *testing.T) {
 type fakeAI struct {
 	replies map[string]string
 	calls   []string
+	options [][]string
+	kinds   []Kind
 }
 
 func (f *fakeAI) Answer(_ context.Context, question string, kind Kind, options []string, _ string) (string, error) {
 	f.calls = append(f.calls, question)
+	f.options = append(f.options, options)
+	f.kinds = append(f.kinds, kind)
 	return f.replies[question], nil
+}
+
+func TestTheAIIsShownOnlyRealOptionsAndARejectedAnswerIsNotRemembered(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	ai := &fakeAI{replies: map[string]string{"Preferred shift": "Evening", "Willing to travel?": "No"}}
+	a.AI = ai
+	if d := a.Answer(dropdown("Preferred shift", "Select an option", "Day", "Night"), job); d.Action != Blocked {
+		t.Errorf("an answer that is not an option leaves the dropdown alone: %+v", d)
+	}
+	if strings.Join(ai.options[0], "|") != "Day|Night" {
+		t.Errorf("the placeholder was offered: %v", ai.options[0])
+	}
+	if found, _ := mem.Find("Preferred shift", "select"); found != nil {
+		t.Errorf("a rejected AI answer was remembered: %+v", found)
+	}
+	d := a.Answer(radio("Willing to travel?", "Yes", "No"), job)
+	if d.Action != Choose || d.Value != "No" || d.Source != "ai" {
+		t.Errorf("%+v", d)
+	}
+	found, _ := mem.Find("Willing to travel?", "radio")
+	if found == nil || found.Answer != "No" || found.State != "pending" || found.Source != "ai" || found.Uses != 1 {
+		t.Errorf("an AI radio answer is remembered as pending: %+v", found)
+	}
+}
+
+func TestMemoryIsConsultedBeforeTheAIAndAITextAnswersKeepTheirKind(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	ai := &fakeAI{replies: map[string]string{"Are you willing to relocate?": "No", "Why do you want to work here?": "The mission.", "Favourite editor?": "Vim"}}
+	a.AI = ai
+	if _, err := mem.Remember("Are you willing to relocate?", "select", "Yes", "user", ""); err != nil {
+		t.Fatal(err)
+	}
+	if d := a.Answer(dropdown("Are you willing to relocate?", "Select an option", "Yes", "No"), job); d.Value != "Yes" || d.Source != "memory" || len(ai.calls) != 0 {
+		t.Errorf("%+v calls=%v", d, ai.calls)
+	}
+	a.Answer(textarea("Why do you want to work here?"), job)
+	a.Answer(text("Favourite editor?"), job)
+	if strings.Join([]string{string(ai.kinds[0]), string(ai.kinds[1])}, ",") != "textarea,text" {
+		t.Errorf("kinds %v", ai.kinds)
+	}
+	for label, kind := range map[string]string{"Why do you want to work here?": "textarea", "Favourite editor?": "text"} {
+		found, _ := mem.Find(label, kind)
+		if found == nil || found.State != "pending" || found.Source != "ai" || found.Kind != kind {
+			t.Errorf("%s: %+v", label, found)
+		}
+	}
 }
 
 func TestTheAIFillsAnUnrecognisedControlOnlyWhenItNamesAnOptionAndIsRemembered(t *testing.T) {
@@ -766,10 +816,18 @@ func TestCaptureRemembersWhatTheUserTypedAsApprovedExceptSensitiveAndBlank(t *te
 		{text("What are your salary expectations?"), "90000", false},
 		{text(UnknownTitle), "x", false},
 		{text("Empty"), "   ", false},
+		{dropdown("Shift?", "Select an option", "Day"), "Select an option", false},
 	}
+	rememberable := Decision{Action: Blocked, Remember: true}
 	for _, tc := range cases {
-		if got := a.Capture(tc.q, tc.value, job.Link); got != tc.want {
+		if got := a.Capture(tc.q, rememberable, tc.value, job.Link); got != tc.want {
 			t.Errorf("Capture(%q, %q) = %v", tc.q.Label, tc.value, got)
+		}
+	}
+	// A question the memory is never consulted for is never captured.
+	for _, q := range []Question{text("Email address"), dropdown("Gender", "Select an option", "Male", "Female")} {
+		if a.Capture(q, Decision{Action: Blocked, Remember: false}, "x", job.Link) {
+			t.Errorf("%q captured although its answer would never be used", q.Label)
 		}
 	}
 	found, _, _ := mem.Lookup("Favourite language", "text", false)

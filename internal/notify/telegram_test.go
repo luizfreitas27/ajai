@@ -95,24 +95,42 @@ func TestHalfConfiguredSendsNothingAndWarnsOnce(t *testing.T) {
 }
 
 func TestFailuresAreWarningsAndNeverLogTheToken(t *testing.T) {
-	server(t, 401, `{"ok":false,"description":"Unauthorized"}`)
+	cases := []struct {
+		name   string
+		status int
+		reply  string
+		base   string // overrides the test server (a network failure)
+		want   []string
+	}{
+		{"rejected", 401, `{"ok":false,"description":"Unauthorized"}`, "", []string{"401", "Unauthorized"}},
+		{"server error", 500, `oops`, "", []string{"500"}},
+		// The client error would quote the URL, token included.
+		{"network failure", 0, "", "http://127.0.0.1:1", []string{"could not send"}},
+	}
+	for _, tc := range cases {
+		server(t, tc.status, tc.reply)
+		l, log := logger()
+		tg := New(token, chat, l)
+		if tc.base != "" {
+			tg.WithAPIBase(tc.base)
+		}
+		if tg.Send(context.Background(), "x") {
+			t.Errorf("%s: accepted", tc.name)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(log.String(), want) {
+				t.Errorf("%s: log lacks %q: %s", tc.name, want, log.String())
+			}
+		}
+		if strings.Contains(log.String(), token) || !strings.Contains(log.String(), "WARN") {
+			t.Errorf("%s: %s", tc.name, log.String())
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	l, log := logger()
-	if New(token, chat, l).Send(context.Background(), "x") {
-		t.Error("401 accepted")
-	}
-	if !strings.Contains(log.String(), "401") || !strings.Contains(log.String(), "Unauthorized") || strings.Contains(log.String(), token) {
-		t.Errorf("%s", log.String())
-	}
-	server(t, 500, `oops`)
-	l, log = logger()
-	if New(token, chat, l).Send(context.Background(), "x") || !strings.Contains(log.String(), "500") {
-		t.Errorf("%s", log.String())
-	}
-	// A network failure: the client error would quote the URL, token included.
-	APIBase = "http://127.0.0.1:1"
-	l, log = logger()
-	if New(token, chat, l).Send(context.Background(), "x") || !strings.Contains(log.String(), "could not send") || strings.Contains(log.String(), token) {
-		t.Errorf("%s", log.String())
+	if New(token, chat, l).WithAPIBase("http://127.0.0.1:1").Send(ctx, "x") || strings.Contains(log.String(), "WARN") {
+		t.Errorf("a send abandoned because the run ended is not a warning: %s", log.String())
 	}
 }
 

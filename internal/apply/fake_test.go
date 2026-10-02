@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -22,6 +23,8 @@ type node struct {
 	files    []string
 	visible  bool
 	onClick  func()
+	// failElements makes Elements fail, like a stale DOM after the page changed.
+	failElements bool
 }
 
 func el(text string) *node {
@@ -60,6 +63,9 @@ func (n *node) Element(xpath string) (browser.Element, error) {
 	return kids[0], nil
 }
 func (n *node) Elements(xpath string) ([]browser.Element, error) {
+	if n.failElements {
+		return nil, errors.New("stale element reference")
+	}
 	out := []browser.Element{}
 	for _, k := range n.children[xpath] {
 		out = append(out, k)

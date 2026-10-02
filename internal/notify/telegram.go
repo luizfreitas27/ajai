@@ -28,6 +28,7 @@ var APIBase = "https://api.telegram.org"
 // Telegram sends messages to one chat. The zero value is a disabled notifier.
 type Telegram struct {
 	token, chatID string
+	base          string
 	client        *http.Client
 	logger        *slog.Logger
 	halfWarn      sync.Once
@@ -38,8 +39,14 @@ func New(token, chatID string, logger *slog.Logger) *Telegram {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Telegram{token: strings.TrimSpace(token), chatID: strings.TrimSpace(chatID),
+	return &Telegram{token: strings.TrimSpace(token), chatID: strings.TrimSpace(chatID), base: APIBase,
 		client: &http.Client{Timeout: 10 * time.Second}, logger: logger}
+}
+
+// WithAPIBase points the notifier at another Bot API host (tests).
+func (t *Telegram) WithAPIBase(base string) *Telegram {
+	t.base = base
+	return t
 }
 
 // Configured reports whether both settings are present, i.e. the user opted in.
@@ -63,7 +70,7 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 		text = string(r[:MaxMessageLength])
 	}
 	body, _ := json.Marshal(map[string]any{"chat_id": t.chatID, "text": text, "disable_web_page_preview": true})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, APIBase+"/bot"+t.token+"/sendMessage", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/bot"+t.token+"/sendMessage", bytes.NewReader(body))
 	if err != nil {
 		t.logger.Warn("could not build the Telegram request", "error", redact(err))
 		return false
@@ -71,6 +78,10 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 	req.Header.Set("Content-Type", "application/json")
 	res, err := t.client.Do(req)
 	if err != nil {
+		if ctx.Err() != nil { // the run is ending; not a Telegram problem
+			t.logger.Debug("Telegram notification abandoned", "error", ctx.Err())
+			return false
+		}
 		t.logger.Warn("could not send the Telegram notification", "error", redact(err))
 		return false
 	}

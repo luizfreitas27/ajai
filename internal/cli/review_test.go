@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,14 +53,15 @@ func TestReviewApprovesEditsDeletesAndSkipsEachPendingAnswerInTurn(t *testing.T)
 		pendingAnswer("a3", "Subscribe to job alerts", "checkbox", "checked", "form"),
 		pendingAnswer("a4", "Preferred shift", "select", "Night", "ai"),
 	)
-	// a1: approve. a2: approve refused (no answer), then edit to Blue. a3: delete. a4: skip.
-	h.stdin = "a\na\ne\nBlue\nd\n\n"
+	// a1: approve. a2: approve refused (no answer), an empty edit (unchanged), then edit
+	// to Blue. a3: delete. a4: skip.
+	h.stdin = "a\na\ne\n\ne\nBlue\nd\n\n"
 	code, out, errText := h.run("answers", "review")
 	if code != 0 {
 		t.Fatal(errText)
 	}
 	for _, want := range []string{"4 pending answer(s)", "[1/4] Years with Go?", "answer: \"4\"", "(none yet)",
-		"no answer to approve yet", "1 approved, 1 edited, 1 deleted, 1 skipped; 1 still pending"} {
+		"no answer to approve yet", "nothing typed; unchanged", "1 approved, 1 edited, 1 deleted, 1 skipped; 1 still pending"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -108,7 +110,7 @@ func TestReadLineHonoursTimeoutCancellationAndEndOfInput(t *testing.T) {
 	if got, err := a.readLine(ctx, 0); got != "second" || err != nil {
 		t.Errorf("a last line without a newline still counts: %q %v", got, err)
 	}
-	if _, err := a.readLine(ctx, 0); !errors.Is(err, ioEOF) {
+	if _, err := a.readLine(ctx, 0); !errors.Is(err, io.EOF) {
 		t.Errorf("%v", err)
 	}
 	blocked := &App{Stdin: blockingReader{}}
@@ -125,3 +127,24 @@ func TestReadLineHonoursTimeoutCancellationAndEndOfInput(t *testing.T) {
 type blockingReader struct{}
 
 func (blockingReader) Read([]byte) (int, error) { select {} }
+
+func TestAnEntryDeletedElsewhereIsTreatedAsGoneNotAsAFailure(t *testing.T) {
+	h := newHarness(t)
+	h.seed(pendingAnswer("a1", "Q1", "text", "x", "ai"), pendingAnswer("a2", "Q2", "text", "y", "ai"))
+	h.stdin = "a\na\n"
+	mem := h.memory()
+	if err := mem.Delete("a1"); err != nil {
+		t.Fatal(err)
+	}
+	// What review sees when another process deleted the entry it is showing.
+	if _, err := mem.Approve("a1", ""); !gone(err) {
+		t.Errorf("%v", err)
+	}
+	if err := mem.Delete("a1"); !gone(err) {
+		t.Errorf("%v", err)
+	}
+	code, out, errText := h.run("answers", "review")
+	if code != 0 || !strings.Contains(out, "1 approved") {
+		t.Errorf("%d %s %s", code, out, errText)
+	}
+}

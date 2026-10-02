@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"strings"
 	"time"
 
@@ -9,9 +10,9 @@ import (
 	"github.com/luizfreitas27/aja/internal/notify"
 )
 
-// helpTimeout is how long the help pause waits for the person at the keyboard
-// before giving the job up (and queueing its questions for review).
-var helpTimeout = 15 * time.Minute
+// defaultHelpTimeout is how long the help pause waits for the person at the
+// keyboard before giving the job up (and queueing its questions for review).
+const defaultHelpTimeout = 15 * time.Minute
 
 // terminalHelper is the help pause in a terminal: it shows what is stuck, sends
 // a Telegram nudge, and waits for Enter.
@@ -23,6 +24,10 @@ type terminalHelper struct {
 
 // Help implements apply.Helper.
 func (h *terminalHelper) Help(ctx context.Context, req apply.HelpRequest) error {
+	h.app.drainLines()
+	if h.app.stdinClosed {
+		return io.EOF // nobody can press Enter any more: no point showing or nudging
+	}
 	ui := h.app.ui
 	title := strings.TrimSpace(req.Job.Title + " | " + req.Job.Company)
 	ui.Println()

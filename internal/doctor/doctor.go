@@ -4,6 +4,7 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -114,6 +115,8 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 		switch _, err := ai.FromConfig(cfg, sec, markets.Resolve(cfg), nil); {
 		case !cfg.AI.Enabled:
 			add("ai", OK, "off (ai.enabled: false)")
+		case errors.Is(err, ai.ErrNoKey):
+			add("ai", Fail, "ai.enabled is true but "+config.EnvAIAPIKey+" is not set in the environment or "+p.EnvFile)
 		case err != nil:
 			add("ai", Fail, err.Error())
 		case sec.AIAPIKey == "":
