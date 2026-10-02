@@ -80,9 +80,9 @@ to the tag before tagging and the workflow publishes that section as the release
   Tests drive the model synchronously (`harness_test.go`: keys, sizes, explicit ticks,
   a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
   with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them; the
-  temporary AJA_HOME is written as `$AJA_HOME`). While a tab edits a value every key but
-  Ctrl-C goes to it (`configTab.editing`). The Config tab reads and saves through
-  `config.LoadFile` (the YAML alone: no environment, no `.env`), and loads with the real
+  temporary AJA_HOME is written as `$AJA_HOME`). While a tab edits a value or asks a
+  question, every key but Ctrl-C goes to it (`Model.typing`). The Config tab reads and
+  saves through `config.LoadFile` (the YAML alone: no environment, no `.env`), and loads with the real
   environment only to mark `AJA_CFG_` overrides; secrets go through `config.SetDotenv`
   (single-quoted values, refusing quotes, backslashes and line breaks; 0600, atomic) and
   their values are never rendered or logged, nor is godotenv's error text (it quotes the
@@ -106,6 +106,10 @@ to the tag before tagging and the workflow publishes that section as the release
   the keyboard, and the reply arrives as key presses. To try it outside tests, run it in a
   pty that answers the OSC 11 query Bubble Tea's own init sends, or termenv eats the
   first keys.
+- Typed options: `questions.PickOption` (an option, or the beginning of exactly one, never a
+  guess) is the one rule for an answer a person types for a select or radio: Telegram
+  replies and the TUI's Answers tab. The Answers tab approves only the answer it showed
+  (re-read first), as `/pending`'s digest does.
 - Lock readers: `filelock.Held` takes the lock for an instant, so another reader can see it
   taken with no description; `filelock.ReadHeld` looks again a few times before believing
   an undescribed holder (otherwise a once-a-second reader like the TUI makes the daemon
@@ -186,7 +190,7 @@ to the tag before tagging and the workflow publishes that section as the release
   changed answer is shown again, never approved unseen) / `delete:<id>`, and records
   (bot, chat, message) → answer id in `telegram_messages`, which is how a reply finds its
   answer after a restart (links expire after `linkMaxAge`). A reply to a select or radio
-  must be an option or the beginning of exactly one (`pickOption`), never a guess. Every
+  must be an option or the beginning of exactly one (`questions.PickOption`), never a guess. Every
   outcome edits the message. `getUpdates` asks for `message` and `callback_query`
   (Telegram remembers that list). Tests run against an httptest fake of the Bot API with a
   real store and answer memory.

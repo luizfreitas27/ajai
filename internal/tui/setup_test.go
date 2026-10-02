@@ -47,7 +47,7 @@ func TestWithoutAConfigTheTUIOpensOnTheChecklistAndTheInitWizardFixesIt(t *testi
 	h.shows("Setup checklist") // nothing else works without a config
 	h.press("esc")
 	h.shows("Setup checklist")
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.shows("There is no config file yet") // the secrets can be set already
 	h.press("1")
 	h.shows("Setup checklist")
@@ -83,7 +83,7 @@ func TestNoLinkedInSessionOpensTheChecklistWhichOffersTheSignInAndTheConfigTab(t
 	h.selectCheck("telegram")
 	h.shows("Enter: set the secrets (or the AI settings) in the Config tab")
 	h.press("enter")
-	h.shows("2 Config", "AJA_TELEGRAM_BOT_TOKEN", "set (your environment)")
+	h.shows(tabKey(tabConfig)+" Config", "AJA_TELEGRAM_BOT_TOKEN", "set (your environment)")
 	if strings.Contains(h.screen(), "Setup checklist") {
 		t.Errorf("the Config tab is shown:\n%s", h.screen())
 	}
@@ -112,7 +112,7 @@ func TestOnlyWarningsLeaveTheDashboardAndTheChecksRunAgainEveryHalfMinute(t *tes
 func TestTheChecklistNeverOpensOverASecretBeingTyped(t *testing.T) {
 	h := newHarness(t)
 	h.open(100, 30)
-	h.press("2")
+	h.press(tabKey(tabConfig))
 	h.moveTo("AJA_AI_API_KEY")
 	h.press("enter", "sk-")
 	h.session = false

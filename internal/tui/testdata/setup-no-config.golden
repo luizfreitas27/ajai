@@ -1,4 +1,4 @@
-aja   Setup   1 Dashboard   2 Config
+aja   Setup   1 Dashboard   2 Answers   3 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Setup checklist  what a run needs, as `aja doctor` checks it
 
@@ -27,4 +27,4 @@ The other tabs open once there is a config file; the Config tab already sets the
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-↑↓ move · enter fix · i import · r check again · 2 config · q quit
+↑↓ move · enter fix · i import · r check again · 3 config · q quit

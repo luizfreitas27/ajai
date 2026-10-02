@@ -136,6 +136,15 @@ missing or in use), the TUI says why. `x` stops the run in progress, whoever sta
 is done, recorded as "stopped from the TUI". When a run ends while the TUI is open, a line
 says how it went.
 
+The **Answers** tab is the answer memory, the review queue first (its tab title counts the
+pending answers) and the approved ones a Tab away; it keeps up as runs queue questions and
+Telegram answers them. Each answer shows its question, kind,
+options, who gave it, how often it was used and the last job. `a` approves it as shown (if a
+run answered it again meanwhile, nothing is approved and the new answer is shown), `e`
+corrects it: a select or radio is picked from its options with ↑↓, or typed (an option, or
+the beginning of just one; the pick follows what you type), anything else typed; a correction is yours and approved. A checkbox
+takes only `a` or `d`; `d` deletes after asking, and aja asks the question again next time.
+
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
 - a setting with fixed values is picked from a list (several, with Space, for a list such
@@ -167,8 +176,8 @@ only the checklist and the Config tab (for the secrets) open.
 
 Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
-`NO_COLOR`, and writes paths under your home as `~/…`. More tabs (answers, schedule, jobs)
-are coming (issue #36).
+`NO_COLOR`, and writes paths under your home as `~/…`. More tabs (schedule, jobs) are
+coming (issue #36).
 
 ## Everyday commands
 
