@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,8 @@ type harness struct {
 	session bool
 	ran     [][]string
 	onRun   func(args []string)
+	started [][]string // the runs Start was asked for
+	exit    chan error // the last one's end, sent by the test
 	quit    bool
 }
 
@@ -105,6 +108,15 @@ func (h *harness) InTerminal(args []string, done func(error) tea.Msg) tea.Cmd {
 		}
 		return done(nil)
 	}
+}
+
+// Start is the fake launcher's run process: recorded; it ends when the test
+// says so on h.exit. Its pid is the test's own, the pid run.AcquireLock
+// records when the test takes the run lock in its place.
+func (h *harness) Start(args []string) (int, <-chan error, error) {
+	h.started = append(h.started, args)
+	h.exit = make(chan error, 1)
+	return os.Getpid(), h.exit, nil
 }
 
 func (h *harness) probe() doctor.Probe {
@@ -193,6 +205,7 @@ func (h *harness) golden(name string) {
 	h.t.Helper()
 	path := filepath.Join("testdata", name+".golden")
 	screen := strings.ReplaceAll(h.screen(), h.p.DataDir, "$AJA_HOME") // a new temporary directory each run (most show as ~)
+	screen = strings.ReplaceAll(screen, "pid "+strconv.Itoa(os.Getpid()), "pid $PID")
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			h.t.Fatal(err)

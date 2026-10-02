@@ -12,6 +12,7 @@ import (
 
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/notify"
+	"github.com/luizfreitas27/aja/internal/run"
 )
 
 func TestRunRefusesBeforeAValidConfigAndWithoutDryRun(t *testing.T) {
@@ -141,5 +142,33 @@ func TestRunTelegramWarningsReachTheLogAndABrokenConfigStillReports(t *testing.T
 	logs, _ = os.ReadFile(filepath.Join(h.home, "logs", mustOnlyFile(t, filepath.Join(h.home, "logs"))))
 	if !strings.Contains(string(logs), "401") || strings.Contains(string(logs), "1:tok") {
 		t.Errorf("a 401 is a warning in the log, without the token:\n%s", logs)
+	}
+}
+
+func TestRunFromTheTUIRecordsItsOriginAndLogsWhyItCouldNotStart(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	saved := OpenBrowser
+	t.Cleanup(func() { OpenBrowser = saved })
+	var holder run.Holder
+	OpenBrowser = func(ctx context.Context, o browser.Options) (browser.Browser, error) {
+		holder, _, _ = run.ReadLock(h.home) // the run holds the lock by now
+		return nil, browser.ErrProfileInUse
+	}
+	if code, _, errText := h.run("run", "--dry-run", "--unattended", "--origin", "tui"); code == 0 || !strings.Contains(errText, "profile is in use") {
+		t.Fatalf("%d %s", code, errText)
+	}
+	if holder.Origin != run.OriginTUI || holder.From() != "the TUI" {
+		t.Errorf("holder %+v", holder)
+	}
+	logs, _ := os.ReadFile(filepath.Join(h.home, "logs", mustOnlyFile(t, filepath.Join(h.home, "logs"))))
+	if !strings.Contains(string(logs), `"msg":"`+run.StartFailedMsg+`","error":"`) || !strings.Contains(string(logs), "profile is in use") {
+		t.Errorf("why it could not start is in the log:\n%s", logs)
+	}
+	if code, _, errText := h.run("run", "--dry-run", "--origin", "telegram"); code == 0 || !strings.Contains(errText, `unknown --origin "telegram"`) {
+		t.Errorf("only the TUI's origin: %d %s", code, errText)
+	}
+	if _, out, _ := h.run("run", "--help"); strings.Contains(out, "--origin") {
+		t.Error("--origin is not for people")
 	}
 }

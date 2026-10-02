@@ -25,7 +25,7 @@ var OpenBrowser browser.Opener = browser.Open
 
 func (a *App) runCmd() *cobra.Command {
 	var opts run.Options
-	var terms, market string
+	var terms, market, origin string
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Search LinkedIn and apply to Easy Apply jobs in your own Chrome",
@@ -57,19 +57,31 @@ else on stdout.`,
 			ctx := cmd.Context()
 			l, err := config.Load(a.paths, a.Env, marketFlag(market))
 			a.openLog(logLevel(l)) // before the notifier, which logs its warnings through it
+			from := run.OriginTerminal
+			switch origin {
+			case "":
+			case string(run.OriginTUI):
+				from = run.OriginTUI
+			default:
+				err := fmt.Errorf("unknown --origin %q", origin)
+				run.LogStartFailure(a.logger, err)
+				return err
+			}
 			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
 			// too: an unattended run has nobody watching the terminal. The secrets come from
 			// the environment, so they are there even when the config file is broken.
 			secrets := a.secrets(l)
 			telegram := notify.New(secrets.TelegramBotToken, secrets.TelegramChatID, a.logger)
 			cannotStart := func(err error) error {
+				run.LogStartFailure(a.logger, err)
 				run.ReportStartFailure(ctx, telegram, err)
 				return err
 			}
 			if err := a.configProblem(l, err); err != nil {
 				return cannotStart(err)
 			}
-			if err := opts.Validate(); err != nil {
+			if err := opts.Validate(); err != nil { // a mistyped flag: the log says so, Telegram need not
+				run.LogStartFailure(a.logger, err)
 				return err
 			}
 			if terms != "" {
@@ -102,7 +114,7 @@ else on stdout.`,
 				a.note(run.EventWarn, "resume", plan.ResumeNote)
 			}
 
-			opened, err := plan.Open(ctx, opts, launch.Deps{Origin: run.OriginTerminal, Paths: a.paths, Store: st, Logger: a.logger,
+			opened, err := plan.Open(ctx, opts, launch.Deps{Origin: from, Paths: a.paths, Store: st, Logger: a.logger,
 				Notifier: telegram, Events: a.report, OpenBrowser: OpenBrowser,
 				Helper:       &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout},
 				AfterFilters: a.filterPause(defaultHelpTimeout)})
@@ -122,6 +134,8 @@ else on stdout.`,
 	f.StringVar(&terms, "terms", "", "search terms for this run, comma-separated (overrides the config)")
 	f.StringVar(&opts.Location, "location", "", "search location for this run (overrides the config)")
 	f.StringVar(&market, "market", "", "market for this run: brasil or internacional")
+	f.StringVar(&origin, "origin", "", "who starts the run: tui (the TUI's own runs)")
+	_ = f.MarkHidden("origin")
 	f.BoolVar(&a.eventsAsJSON, "json", false, "print events and summaries as JSON lines (implies --unattended)")
 	return cmd
 }

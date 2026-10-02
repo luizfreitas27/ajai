@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -102,5 +104,31 @@ func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.
 	out, code = run("/bin/sh", "-c", `kill -INT 0; echo never`)
 	if !strings.Contains(out, "[aja] Press Enter") || strings.Contains(out, "never") || code == 0 {
 		t.Errorf("after Ctrl-C: %d %q", code, out)
+	}
+}
+
+// TestStartRunsAjaInASessionOfItsOwnAndReportsItsEnd uses sh for aja.
+func TestStartRunsAjaInASessionOfItsOwnAndReportsItsEnd(t *testing.T) {
+	l := launcher{executable: "/bin/sh"}
+	pid, exited, err := l.Start([]string{"-c", "sleep 0.3; exit 3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fields after the command name ")": state ppid pgrp session …
+	fields := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+1:]))
+	if fields[3] != strconv.Itoa(pid) {
+		t.Errorf("the run leads a session of its own: session %s, pid %d", fields[3], pid)
+	}
+	var exit *exec.ExitError
+	if err := <-exited; !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Errorf("its end: %v", err)
+	}
+	withFlags := launcher{executable: "aja", configFlag: "/x/c.yaml", noColor: true}.argv([]string{"run"})
+	if strings.Join(withFlags, " ") != "--config /x/c.yaml --no-color run" {
+		t.Errorf("%q", withFlags)
 	}
 }

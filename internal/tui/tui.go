@@ -65,6 +65,9 @@ type Launcher interface {
 	// InTerminal runs the aja subcommand args in the terminal, the TUI
 	// stepping aside until it ends; done turns its outcome into a message.
 	InTerminal(args []string, done func(error) tea.Msg) tea.Cmd
+	// Start runs aja args in a process of its own, which outlives the TUI;
+	// exited gets its end if it comes while the TUI runs.
+	Start(args []string) (pid int, exited <-chan error, err error)
 }
 
 func (d Deps) logger() *slog.Logger {
@@ -108,6 +111,7 @@ type Model struct {
 	doctorAgain   bool // and must run again once they end
 	refreshes     int
 	dash          dashboard
+	runs          runControl
 	conf          configTab
 	checks        checklist
 }
@@ -135,7 +139,7 @@ type tickMsg struct{}
 
 // Init reads what the Dashboard shows and runs the setup checks (Update sees
 // doctorBusy false then, so a request made meanwhile only asks for one more run).
-func (m Model) Init() tea.Cmd { return tea.Batch(m.dash.refresh(m.deps), checkAgain) }
+func (m Model) Init() tea.Cmd { return tea.Batch(m.dash.refresh(m.deps, nil), checkAgain) }
 
 // checkAgain runs the setup checks, or, while they run, asks for one more run
 // once they end: two never overlap, so an older report never wins.
@@ -159,9 +163,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tickMsg:
-		return m, m.dash.refresh(m.deps)
+		return m, m.dash.refresh(m.deps, m.runs.started)
 	case refreshedMsg:
+		before := m.dash.snap.activity
 		m.dash = m.dash.apply(msg)
+		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs, m.deps.Now())
 		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -187,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.doctorBusy = false
 		// Something a run needs is missing: open on the checklist, once, never
 		// over a value being typed.
-		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() {
+		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() && !m.runs.editing() {
 			m.setupOpened, m.setupShown, m.help = true, true, false
 		}
 		if m.doctorAgain {
@@ -202,6 +208,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openConfigMsg:
 		m.setupShown, m.tab = false, tabConfig
 		return m, loadConfig(m.deps)
+	case runStartedMsg, stopAskedMsg:
+		var cmd tea.Cmd
+		m.runs, cmd = m.runs.update(msg, m.deps)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -219,6 +229,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !m.setupShown && m.tab == tabConfig && m.conf.editing():
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
+		return m, cmd
+	case !m.setupShown && m.tab == tabDashboard && m.runs.editing():
+		var cmd tea.Cmd
+		m.runs, cmd = m.runs.update(msg, m.deps)
 		return m, cmd
 	}
 	switch key {
@@ -239,6 +253,16 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.setupShown && m.tab == tabDashboard {
 			m.setupShown, m.help = true, false
 			return m.checkAgain()
+		}
+	case "r":
+		if !m.setupShown && !m.help && m.tab == tabDashboard {
+			m.runs = m.runs.start()
+			return m, nil
+		}
+	case "x":
+		if !m.setupShown && !m.help && m.tab == tabDashboard {
+			m.runs = m.runs.stop(m.dash.snap.activity)
+			return m, nil
 		}
 	}
 	if len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < len(tabNames) {
@@ -290,7 +314,8 @@ func (m Model) View() string {
 	case m.tab == tabConfig:
 		body = m.conf.view(m.styles, m.deps, m.width)
 	default:
-		body = m.dash.view(m.styles, m.width, height, m.deps.Now(), m.checks.summary())
+		top := m.runs.lines(m.styles, m.width)
+		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
 	}
 	return strings.Join([]string{m.tabBar(), rule, fit(body, m.width, height), rule, m.hints()}, "\n")
 }
@@ -312,7 +337,7 @@ func (m Model) tabBar() string {
 }
 
 func (m Model) hints() string {
-	hint := "s setup · ? keys · q quit"
+	var hint string
 	switch {
 	case m.help:
 		hint = "esc closes the list · q quit"
@@ -326,6 +351,12 @@ func (m Model) hints() string {
 		hint = "enter saves · esc cancels"
 	case m.tab == tabConfig:
 		hint = "↑↓ move · enter edit · ? keys · q quit"
+	case m.runs.form != nil:
+		hint = "↑↓ field · ←→ change · enter starts · esc cancels"
+	case m.runs.confirm != nil:
+		hint = "y stops the run · n keeps it"
+	default:
+		hint = "r run · x stop · s setup · ? keys · q quit"
 	}
 	return m.styles.dim.Render(hint)
 }
@@ -340,7 +371,10 @@ func (m Model) helpView() string {
 	}
 	row("?", "this list; Esc closes it")
 	row("q, Ctrl-C", "quit (a run in progress keeps running)")
-	row("s", "the setup checklist (from the Dashboard)")
+	lines = append(lines, "", m.styles.section.Render("Dashboard"), "")
+	row("r", "start a run: market, dry run or live, a maximum")
+	row("x", "stop the run in progress, whoever started it")
+	row("s", "the setup checklist")
 	lines = append(lines, "", m.styles.section.Render("Setup checklist"), "")
 	row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
 	row("i", "import from the Python bot")
