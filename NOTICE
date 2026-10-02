@@ -1,0 +1,5 @@
+aja is a Go rewrite of the author's fork of Auto_job_applier_linkedIn
+(https://github.com/GodsScion/Auto_job_applier_linkedIn), by Sai Vignesh Golla,
+MIT License. The LinkedIn selectors, the question-answering heuristics, the DOM
+fixtures and the behaviour of the answer memory were ported from that project
+and its fork https://github.com/luizfreitas27/Auto_job_applier_linkedIn.

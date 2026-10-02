@@ -1,0 +1,18 @@
+# Build output
+/aja
+/dist/
+*.exe
+
+# Local runtime files; the real ones live in the OS config/data dirs, but a
+# developer may point AJA_HOME at the repo. Never commit any of them.
+.env
+*.db
+*.db-journal
+*.db-wal
+*.log
+/screenshots/
+/resumes/
+
+# Editors
+.idea/
+.vscode/

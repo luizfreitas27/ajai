@@ -1,0 +1,49 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+`aja`: a Go single-binary CLI that applies to LinkedIn Easy Apply jobs by driving the
+user's own visible Chrome. It is a port of the Python fork at
+`../Auto_job_applier_linkedIn` (also on GitHub under `luizfreitas27`). When porting
+behaviour, read the Python source and its tests first and translate them; do not
+reinvent selectors or heuristics. The Python repo's `CLAUDE.md` and `CONTEXT.md`
+describe the behaviour being ported.
+
+## Commands
+
+```bash
+go build ./cmd/aja          # the binary
+go test ./...               # unit tests: heuristics, config, memory, selector checks on fixtures
+go test -tags browser ./... # also the end-to-end tests that launch a headless Chrome
+go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
+```
+
+## Architecture (target; see issue #1 for the spec)
+
+- `cmd/aja`: cobra command tree only. No business logic.
+- `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
+  Secrets never live in the YAML.
+- `internal/browser`: go-rod attached to the user's Chrome profile (ADR 0001). The only
+  package that imports rod.
+- `internal/linkedin`: login check, search, filters, job cards, centralised selectors.
+- `internal/apply`: the Easy Apply modal loop, question heuristics, answer memory gate.
+- `internal/memory`, `internal/store`: answer memory and SQLite (pure Go driver).
+- `internal/ai`: one OpenAI-compatible client for every provider.
+- `internal/notify`, `internal/schedule`, `internal/markets`, `internal/pacing`.
+- `internal/panel` (F2): embedded web panel with the same security rules as the Python one:
+  loopback only, no CORS, a required request header on mutations, masked secrets.
+
+## Conventions
+
+- Standard Go style; `gofmt`, `go vet` and golangci-lint are the linters.
+- Exported identifiers get doc comments. Tests are table-driven where there is a table.
+- Tests that need a real Chrome go behind `//go:build browser`.
+- CLI and log text is English. Question heuristics match English and Portuguese labels.
+
+## Agent skills
+
+Issue tracker: GitHub Issues on `luizfreitas27/aja` (`docs/agents/issue-tracker.md`).
+Triage labels: the five defaults (`docs/agents/triage-labels.md`).
+Domain docs: `CONTEXT.md` and `docs/adr/` (`docs/agents/domain.md`). Read them before exploring.
