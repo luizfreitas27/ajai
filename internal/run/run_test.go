@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/linkedin"
 	"github.com/luizfreitas27/aja/internal/markets"
 	"github.com/luizfreitas27/aja/internal/pacing"
+	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/store"
 )
 
@@ -126,15 +128,15 @@ type fakeApplier struct {
 func (f *fakeApplier) Apply(_ context.Context, job linkedin.Card, _ browser.Element, opts apply.Options) (apply.Outcome, error) {
 	f.calls = append(f.calls, opts)
 	if err := f.errs[job.ID]; err != nil {
-		return apply.Outcome{Discarded: true, Reason: "clicking Submit"}, err
+		return apply.Outcome{Kind: apply.Failed, Stage: "clicking Submit", Screenshot: job.ID + "-shot.png"}, err
 	}
 	if o, ok := f.outcomes[job.ID]; ok {
 		return o, nil
 	}
 	if opts.DryRun {
-		return apply.Outcome{Discarded: true, Reason: "dry run", Answered: []string{"Phone: 555"}}, nil
+		return apply.Outcome{Kind: apply.DryRun, Answered: []string{"Phone: 555"}}, nil
 	}
-	return apply.Outcome{Applied: true, Resume: "uploaded"}, nil
+	return apply.Outcome{Kind: apply.Applied, Resume: "cv.pdf", Answered: []string{"Phone: 555"}}, nil
 }
 func (f *fakeSite) NextPage(context.Context) (bool, error) {
 	if f.page+1 < len(f.pages) {
@@ -305,7 +307,7 @@ func TestALiveRunAppliesRecordsFailuresAndUnansweredQuestions(t *testing.T) {
 	r, st, events := runner(t, site, cfg())
 	r.ResumePath = "/tmp/cv.pdf"
 	applier := &fakeApplier{errs: map[string]error{"2": errors.New("element detached")},
-		outcomes: map[string]apply.Outcome{"3": {Discarded: true, Reason: "unanswered questions", Blocked: []string{"Favourite colour [Red, Blue]"}}}}
+		outcomes: map[string]apply.Outcome{"3": {Kind: apply.Unanswered, Blocked: []string{"Favourite colour [Red, Blue]"}}}}
 	r.Applier = applier
 	sum, err := r.Run(context.Background(), Options{})
 	if err != nil || sum.Applied != 1 || sum.Failed != 1 || sum.Skipped != 1 || sum.WouldApply != 0 {
@@ -319,11 +321,11 @@ func TestALiveRunAppliesRecordsFailuresAndUnansweredQuestions(t *testing.T) {
 	for _, j := range jobs {
 		byID[j.JobID] = j
 	}
-	if j := byID["1"]; j.Outcome != store.Applied || j.Resume != "uploaded" || j.DateApplied == "" {
+	if j := byID["1"]; j.Outcome != store.Applied || j.Resume != "cv.pdf" || j.DateApplied == "" || j.Questions != "Phone: 555" {
 		t.Errorf("%+v", j)
 	}
-	if j := byID["2"]; j.Outcome != store.Failed || j.Reason != "clicking Submit" || !strings.Contains(j.StackTrace, "detached") {
-		t.Errorf("%+v", j)
+	if j := byID["2"]; j.Outcome != store.Failed || j.Reason != "clicking Submit" || !strings.Contains(j.StackTrace, "detached") || j.Screenshot != "2-shot.png" || j.Questions != "" {
+		t.Errorf("answers are kept only for applied jobs: %+v", j)
 	}
 	if j := byID["3"]; j.Outcome != store.Skipped || !strings.Contains(j.Reason, "Favourite colour") {
 		t.Errorf("%+v", j)
@@ -362,6 +364,55 @@ func TestPacingCapsMaxAndTheDailyLimitEndTheRunCleanly(t *testing.T) {
 	sum, err = r.Run(context.Background(), Options{DryRun: true, Fast: true})
 	if err != nil || sum.Reason != "LinkedIn's daily Easy Apply limit reached" {
 		t.Errorf("%+v %v", sum, err)
+	}
+}
+
+func TestAnApplicationSubmittedJustBeforeCtrlCIsStillRecorded(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
+	r, st, _ := runner(t, site, cfg())
+	ctx, cancel := context.WithCancel(context.Background())
+	r.Applier = applierFunc(func() (apply.Outcome, error) {
+		cancel() // the user hits Ctrl-C the instant Submit was clicked
+		return apply.Outcome{Kind: apply.Applied, Resume: apply.PreviousResume}, nil
+	})
+	sum, err := r.Run(ctx, Options{})
+	if err != nil || sum.Applied != 1 || sum.Reason != "stopped by user" {
+		t.Errorf("%+v %v", sum, err)
+	}
+	if jobs, _ := st.ListJobs(store.JobFilter{Outcomes: []store.Outcome{store.Applied}}); len(jobs) != 1 {
+		t.Error("the submitted application must be in the store")
+	}
+}
+
+type applierFunc func() (apply.Outcome, error)
+
+func (f applierFunc) Apply(context.Context, linkedin.Card, browser.Element, apply.Options) (apply.Outcome, error) {
+	return f()
+}
+
+func TestResolveResumePrefersTheMarketThenTheGeneralOne(t *testing.T) {
+	home := t.TempDir()
+	p := paths.Resolve("", func(k string) string {
+		if k == "AJA_HOME" {
+			return home
+		}
+		return ""
+	})
+	if err := p.EnsureDataDirs(); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string) { _ = os.WriteFile(filepath.Join(p.ResumeDir, name), []byte("%PDF"), 0o600) }
+	m := markets.Resolved{Resume: "cv-pt.pdf"}
+	if path, note := ResolveResume(p, m, "resume.pdf"); path != "" || !strings.Contains(note, "cv-pt.pdf not found") || !strings.Contains(note, "previously uploaded") {
+		t.Errorf("%q %q", path, note)
+	}
+	write("resume.pdf")
+	if path, note := ResolveResume(p, m, "resume.pdf"); path != filepath.Join(p.ResumeDir, "resume.pdf") || note != "" {
+		t.Errorf("falls back to the general resume: %q %q", path, note)
+	}
+	write("cv-pt.pdf")
+	if path, _ := ResolveResume(p, m, "resume.pdf"); path != filepath.Join(p.ResumeDir, "cv-pt.pdf") {
+		t.Errorf("the market's resume wins: %q", path)
 	}
 }
 

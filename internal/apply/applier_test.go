@@ -2,9 +2,11 @@ package apply
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/linkedin"
@@ -13,6 +15,10 @@ import (
 	"github.com/luizfreitas27/aja/internal/questions"
 	"github.com/luizfreitas27/aja/internal/store"
 )
+
+func init() {
+	DiscardWait, TypeaheadSettle = 10*time.Millisecond, 0 // the fake DOM answers at once
+}
 
 func quick() *pacing.Pacer {
 	c := config.Defaults().Pacing
@@ -136,13 +142,13 @@ func TestADryRunFillsEverythingAndDiscardsAtReview(t *testing.T) {
 
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
 	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true, ResumePath: "/tmp/cv.pdf"})
-	if err != nil || !out.Discarded || out.Reason != "dry run" || out.Applied {
+	if err != nil || out.Kind != DryRun {
 		t.Fatalf("%+v %v", out, err)
 	}
 	if button.clicks != 1 || input.typed.String() != "5551234" || !input.cleared || selEl.selected != "Yes" || inputs[1].clicks != 1 {
 		t.Errorf("form not filled: typed=%q selected=%q radio=%d", input.typed.String(), selEl.selected, inputs[1].clicks)
 	}
-	if out.Resume != "uploaded" {
+	if out.Resume != "cv.pdf" {
 		t.Errorf("resume %q", out.Resume)
 	}
 	if closeBtn.clicks != 1 || discardBtn.clicks != 1 {
@@ -167,7 +173,7 @@ func TestALiveRunSubmitsAndSetsTheFollowBox(t *testing.T) {
 
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
 	out, err := a.Apply(context.Background(), job, button, Options{FollowCompanies: false})
-	if err != nil || !out.Applied || submit.clicks != 1 || done.clicks != 1 {
+	if err != nil || out.Kind != Applied || submit.clicks != 1 || done.clicks != 1 || out.Resume != PreviousResume {
 		t.Fatalf("%+v %v submit=%d done=%d", out, err, submit.clicks, done.clicks)
 	}
 	if followLabel.clicks != 1 {
@@ -182,25 +188,80 @@ func TestUnansweredQuestionsStallTheFormAndItIsDiscarded(t *testing.T) {
 	pg, button := pageWith(modal)
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
 	out, err := a.Apply(context.Background(), job, button, Options{})
-	if err != nil || !out.Discarded || out.Reason != "unanswered questions" || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "Favourite colour? [Red, Blue]") {
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "Favourite colour? [Red, Blue]") {
 		t.Fatalf("%+v %v", out, err)
 	}
 	if pg.pressed == nil || pg.pressed[0] != "Escape" {
 		t.Errorf("with no close button the fallback is Escape: %v", pg.pressed)
+	}
+	if len(out.Answered) != 0 {
+		t.Errorf("nothing was answered, and nothing twice: %v", out.Answered)
+	}
+}
+
+func TestAnsweredLinesAreRecordedOnceAcrossPasses(t *testing.T) {
+	text, _ := textBlock("Phone", "")
+	quiz, _ := radioBlock("Favourite colour?", "Red", "Blue")
+	modal := modalWith(text, quiz).with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, _ := a.Apply(context.Background(), job, button, Options{})
+	if out.Kind != Unanswered || len(out.Answered) != 1 || out.Answered[0] != "Phone: 5551234" {
+		t.Errorf("%+v", out)
+	}
+}
+
+func TestAMultiPageFormWalksNextToReviewAndFillsATextareaAndATypeahead(t *testing.T) {
+	// Page 1 holds a textarea and a city typeahead; clicking Next swaps the modal's blocks for page 2 (Submit).
+	area := el("").with(linkedin.TextareaXPath, el("").prop("value", "")).with(linkedin.LabelForXPath, el("Summary"))
+	city, cityInput := textBlock("City", "")
+	modal := modalWith(area, city)
+	next := el("Next")
+	next.onClick = func() {
+		modal.children[linkedin.FormQuestionXPath] = nil
+		delete(modal.children, linkedin.NextButtonXPath)
+		modal.with(linkedin.SubmitButtonXPath, el("Submit application"))
+	}
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	a.Answerer.Cfg.Questions.Summary = "Summary text"
+	a.Answerer.Cfg.Personals.City = "Lisbon"
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != DryRun || next.clicks != 1 {
+		t.Fatalf("%+v %v next=%d", out, err, next.clicks)
+	}
+	if cityInput.typed.String() != "Lisbon" || strings.Join(pg.pressed, ",") != "ArrowDown,Enter,Escape" {
+		t.Errorf("typeahead: typed %q keys %v", cityInput.typed.String(), pg.pressed)
+	}
+	if strings.Join(out.Answered, "|") != "Summary: Summary text|City: Lisbon" {
+		t.Errorf("%v", out.Answered)
+	}
+}
+
+func TestReadFormReadsCheckedRadiosAndTickedBoxes(t *testing.T) {
+	radio, inputs := radioBlock("Shift", "Day", "Night")
+	inputs[1].prop("checked", "true")
+	box, input := checkboxBlock("I agree", "")
+	input.prop("checked", "true")
+	controls, _ := ReadForm(modalWith(radio, box))
+	if controls[0].Question.Current != "Night" || controls[1].Question.Current != "checked" || controls[1].Question.GroupTitle != questions.UnknownTitle {
+		t.Errorf("%+v %+v", controls[0].Question, controls[1].Question)
 	}
 }
 
 func TestAMissingModalAndAFailureAreReportedWithAScreenshot(t *testing.T) {
 	pg := &page{root: el("")}
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
-	if _, err := a.Apply(context.Background(), job, el("Apply"), Options{}); err != ErrModalMissing {
-		t.Errorf("%v", err)
+	out, err := a.Apply(context.Background(), job, el("Apply"), Options{})
+	if !errors.Is(err, ErrModalMissing) || out.Kind != Failed || out.Screenshot == "" || len(pg.shots) != 1 {
+		t.Errorf("a missing modal is a failure with a screenshot: %+v %v", out, err)
 	}
 	modal := modalWith() // no controls, no buttons at all
 	pg, button := pageWith(modal)
 	a.Page = pg
-	out, err := a.Apply(context.Background(), job, button, Options{})
-	if err == nil || !strings.Contains(err.Error(), "Next, Review or Submit") || !out.Discarded || len(pg.shots) != 1 || !strings.Contains(out.Reason, "screenshot") {
+	out, err = a.Apply(context.Background(), job, button, Options{})
+	if err == nil || !strings.Contains(err.Error(), "Next, Review or Submit") || out.Kind != Failed || out.Stage != "finding Next, Review or Submit" || len(pg.shots) != 1 || !strings.HasPrefix(out.Screenshot, "1-") {
 		t.Errorf("%+v %v shots=%v", out, err, pg.shots)
 	}
 }
@@ -213,7 +274,7 @@ func TestACancelledContextDiscardsAndReturns(t *testing.T) {
 	cancel()
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
 	out, err := a.Apply(ctx, job, button, Options{})
-	if err == nil || !out.Discarded || out.Reason != "stopped by user" {
+	if err == nil || out.Kind != Stopped {
 		t.Errorf("%+v %v", out, err)
 	}
 }

@@ -27,21 +27,21 @@ func (p *urlPage) URL() (string, error) {
 }
 
 func TestLoginIsDetectedOnlyByTheFeedURLAndWaitsForTheUser(t *testing.T) {
-	s := NewSession(&urlPage{urls: []string{"https://www.linkedin.com/feed/?trk=x"}}, pacing.New(config.Defaults().Pacing, true), nil)
+	s := NewSession(&urlPage{urls: []string{"https://www.linkedin.com/feed/?trk=x"}}, nil, pacing.New(config.Defaults().Pacing, true), nil)
 	waits := 0
 	if err := s.EnsureLoggedIn(context.Background(), time.Minute, func() { waits++ }); err != nil || waits != 0 {
 		t.Errorf("%v %d", err, waits)
 	}
 	// Signed out: LinkedIn sends the feed request to /login (or an authwall) in any language.
 	for _, signedOut := range []string{"https://www.linkedin.com/login?fromSignIn=true", "https://www.linkedin.com/authwall?trk=x", "https://br.linkedin.com/checkpoint/lg/login"} {
-		s = NewSession(&urlPage{urls: []string{signedOut}}, pacing.New(config.Defaults().Pacing, true), nil)
+		s = NewSession(&urlPage{urls: []string{signedOut}}, nil, pacing.New(config.Defaults().Pacing, true), nil)
 		if s.IsLoggedIn() {
 			t.Errorf("%s taken as logged in", signedOut)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	s = NewSession(&urlPage{urls: []string{"https://www.linkedin.com/login"}}, pacing.New(config.Defaults().Pacing, true), nil)
+	s = NewSession(&urlPage{urls: []string{"https://www.linkedin.com/login"}}, nil, pacing.New(config.Defaults().Pacing, true), nil)
 	err := s.EnsureLoggedIn(ctx, time.Minute, func() { waits++ })
 	if !errors.Is(err, context.Canceled) || waits != 1 {
 		t.Errorf("%v %d", err, waits)

@@ -20,6 +20,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/linkedin"
 	"github.com/luizfreitas27/aja/internal/markets"
 	"github.com/luizfreitas27/aja/internal/pacing"
+	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/screening"
 	"github.com/luizfreitas27/aja/internal/store"
 )
@@ -346,7 +347,10 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 				if ctx.Err() != nil {
 					return cardPassed, ctx.Err()
 				}
-				r.Logger.Warn("could not collect the external link", "job", c.ID, "error", err)
+				sum.Failed++
+				r.emit(EventFailed, "could not open the external application", &c)
+				return cardPassed, r.Store.UpsertJob(store.Job{JobID: c.ID, Outcome: store.Failed, Reason: "could not open the external application",
+					StackTrace: err.Error(), Title: c.Title, Company: c.Company, WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, RunID: sum.RunID})
 			}
 		}
 		sum.External++
@@ -369,36 +373,45 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	outcome, err := r.Applier.Apply(ctx, c, button, apply.Options{DryRun: opts.DryRun, ResumePath: r.ResumePath,
 		FollowCompanies: r.Cfg.Settings.FollowCompanies, Description: job.Description})
-	row.Resume, row.Questions = outcome.Resume, strings.Join(outcome.Answered, "; ")
-	if ctx.Err() != nil {
-		return cardPassed, ctx.Err()
-	}
-	switch {
-	case err != nil:
-		sum.Failed++
-		row.Outcome, row.Reason, row.StackTrace = store.Failed, outcome.Reason, err.Error()
-		r.emit(EventFailed, outcome.Reason, &c)
-		r.Logger.Warn("application failed", "job", c.ID, "stage", outcome.Reason, "error", err)
-	case outcome.Applied:
+	row.Resume, row.Screenshot = outcome.Resume, outcome.Screenshot
+	counted := false
+	switch outcome.Kind {
+	case apply.Applied:
+		// Recorded BEFORE the context check: a submitted application must never be lost
+		// because Ctrl-C landed a moment later.
 		sum.Applied++
-		row.Outcome, row.DateApplied = store.Applied, store.Timestamp(r.Now())
+		row.Outcome, row.DateApplied, row.Questions = store.Applied, store.Timestamp(r.Now()), strings.Join(outcome.Answered, "; ")
 		r.Pacer.RecordApplication()
 		r.emit(EventApplied, "", &c)
-	case outcome.Reason == "dry run":
+		counted = true
+	case apply.DryRun:
 		sum.WouldApply++
 		row.Outcome, row.Reason = store.Skipped, "dry run"
 		r.Pacer.RecordApplication()
 		r.emit(EventWouldApply, "", &c)
-	default: // unanswered questions
+		counted = true
+	case apply.Unanswered:
 		sum.Skipped++
 		st.rejected[c.ID] = true
-		row.Outcome, row.Reason = store.Skipped, outcome.Reason+": "+strings.Join(outcome.Blocked, " | ")
+		row.Outcome, row.Reason = store.Skipped, "unanswered questions: "+strings.Join(outcome.Blocked, " | ")
 		r.emit(EventSkip, row.Reason, &c)
+	case apply.Stopped:
+		return cardPassed, ctx.Err()
+	default: // Failed
+		sum.Failed++
+		row.Outcome, row.Reason = store.Failed, outcome.Stage
+		if err != nil {
+			row.StackTrace = err.Error()
+		}
+		r.emit(EventFailed, outcome.Stage, &c)
+		r.Logger.Warn("application failed", "job", c.ID, "stage", outcome.Stage, "error", err)
 	}
 	if err := r.Store.UpsertJob(row); err != nil {
 		return cardPassed, err
 	}
-	counted := row.Outcome == store.Applied || (row.Outcome == store.Skipped && row.Reason == "dry run")
+	if ctx.Err() != nil {
+		return cardPassed, ctx.Err()
+	}
 	if counted {
 		if err := r.Pacer.BetweenJobs(ctx); err != nil {
 			return cardPassed, err
@@ -406,6 +419,23 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardCounted, nil
 	}
 	return cardPassed, nil
+}
+
+// ResolveResume picks the file to upload: the market's resume, else the general
+// one, each relative to the resumes directory unless absolute. "" (and a note
+// why) when neither exists, in which case LinkedIn's previous upload is used.
+func ResolveResume(p paths.Paths, market markets.Resolved, general string) (path string, note string) {
+	for _, candidate := range []string{market.Resume, general} {
+		if candidate == "" {
+			continue
+		}
+		full := p.ResumePath(candidate)
+		if info, err := os.Stat(full); err == nil && !info.IsDir() {
+			return full, ""
+		}
+		note += full + " not found; "
+	}
+	return "", strings.TrimSuffix(note, "; ") + "; LinkedIn's previously uploaded resume will be used"
 }
 
 func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error {

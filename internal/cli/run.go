@@ -95,15 +95,14 @@ can check the answers before applying for real.`,
 			defer func() { _ = br.Close() }()
 
 			pacer := pacing.New(cfg.Pacing, opts.Fast)
-			session := linkedin.NewSession(br.Main(), pacer, a.logger)
-			session.Browser = br
+			session := linkedin.NewSession(br.Main(), br, pacer, a.logger)
+			session.CloseTabs = cfg.Settings.CloseTabs
 			mem := memory.New(st, a.logger)
 			answerer := questions.New(cfg, mem, nil, a.logger) // the AI client arrives with F1-6
 			applier := &apply.Applier{Page: br.Main(), Pacer: pacer, Answerer: answerer, Logger: a.logger, ScreenshotDir: a.paths.ScreenshotDir}
-			resume := a.paths.ResumePath(resolved.Resume)
-			if _, err := os.Stat(resume); err != nil {
-				a.ui.Warn("resume", resume+" not found; LinkedIn's previously uploaded resume will be used")
-				resume = ""
+			resume, note := run.ResolveResume(a.paths, resolved, cfg.Questions.Resume)
+			if note != "" {
+				a.ui.Warn("resume", note)
 			}
 			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
 				Events: a.printEvent, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume}
@@ -114,7 +113,7 @@ can check the answers before applying for real.`,
 		},
 	}
 	f := cmd.Flags()
-	f.BoolVar(&opts.DryRun, "dry-run", false, "fill nothing in, list the jobs that would be applied to")
+	f.BoolVar(&opts.DryRun, "dry-run", false, "fill every form and discard it at Review instead of submitting")
 	f.BoolVar(&opts.Unattended, "unattended", false, "never pause for help; skip and remember instead")
 	f.BoolVar(&opts.Fast, "fast", false, "shorten the long pauses (dry-run only)")
 	f.IntVar(&opts.Max, "max", 0, "stop after this many applications (0: the pacing cap)")

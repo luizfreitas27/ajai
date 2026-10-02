@@ -20,18 +20,19 @@ import (
 // job details. It knows the markup (selectors.go) and nothing about what to do
 // with a job; the run loop decides that.
 type Session struct {
-	Page    browser.Page
-	Browser browser.Browser // for tab handling; nil in tests that only need the page
-	Pacer   *pacing.Pacer
-	Logger  *slog.Logger
+	Page      browser.Page
+	Browser   browser.Browser // for tab handling; nil in tests that only need the page
+	Pacer     *pacing.Pacer
+	Logger    *slog.Logger
+	CloseTabs bool // close the tab an external application opened (settings.close_tabs)
 }
 
-// NewSession wires a session; logger may be nil.
-func NewSession(page browser.Page, pacer *pacing.Pacer, logger *slog.Logger) *Session {
+// NewSession wires a session; br and logger may be nil.
+func NewSession(page browser.Page, br browser.Browser, pacer *pacing.Pacer, logger *slog.Logger) *Session {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Session{Page: page, Pacer: pacer, Logger: logger}
+	return &Session{Page: page, Browser: br, Pacer: pacer, Logger: logger}
 }
 
 // URLs.
@@ -436,7 +437,7 @@ func (s *Session) ExternalLink(ctx context.Context, button browser.Element) (str
 	if err := button.Click(); err != nil {
 		return "", err
 	}
-	if cont, err := s.Page.WaitElement(ctx, TextXPath("span", "Continue"), time.Second); err == nil {
+	if cont, err := s.Page.WaitElement(ctx, TextXPath("span", ContinueButtonText), time.Second); err == nil {
 		_ = cont.Click()
 	}
 	_ = s.Pacer.BetweenActions(ctx)
@@ -445,11 +446,13 @@ func (s *Session) ExternalLink(ctx context.Context, button browser.Element) (str
 		return "", err
 	}
 	if len(after) <= len(before) {
-		return "", nil
+		return "", errors.New("no new tab opened")
 	}
 	tab := after[len(after)-1]
 	link, _ := tab.URL()
-	_ = tab.Close()
+	if s.CloseTabs {
+		_ = tab.Close()
+	}
 	return link, nil
 }
 

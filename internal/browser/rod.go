@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -37,6 +38,9 @@ var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (e
 func Open(ctx context.Context, opts Options) (Browser, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
+	}
+	if opts.HeadlessForTests && !testing.Testing() {
+		return nil, errors.New("a headless browser is allowed only inside a test binary (ADR 0001)")
 	}
 	l := launcher.New().
 		Headless(opts.HeadlessForTests).
@@ -78,7 +82,7 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 		return nil, err
 	}
 	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.HeadlessForTests)
-	return &rodBrowser{b: b, main: &rodPage{p: main}, launcher: l, logger: opts.Logger}, nil
+	return &rodBrowser{b: b, main: &rodPage{p: main}, launcher: l, logger: opts.Logger, owned: opts.HeadlessForTests}, nil
 }
 
 // profileLocked reports whether a LIVE Chrome holds the profile's singleton
@@ -102,6 +106,7 @@ type rodBrowser struct {
 	main     *rodPage
 	launcher *launcher.Launcher
 	logger   *slog.Logger
+	owned    bool // a headless test browser: ours to shut down
 }
 
 func (r *rodBrowser) Main() Page { return r.main }
@@ -124,6 +129,12 @@ func (r *rodBrowser) Pages() ([]Page, error) {
 // own Browser.Close would send CDP Browser.close and shut it, so it is never
 // called; dropping the connection when the process exits is the whole goodbye.
 func (r *rodBrowser) Close() error {
+	if r.owned {
+		err := r.b.Close()
+		r.launcher.Kill()
+		r.launcher.Cleanup()
+		return err
+	}
 	r.logger.Info("detached from chrome; the window stays open")
 	return nil
 }

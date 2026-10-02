@@ -14,8 +14,12 @@ import (
 
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/chrome"
+	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/linkedin"
+	"github.com/luizfreitas27/aja/internal/memory"
+	"github.com/luizfreitas27/aja/internal/pacing"
 	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/aja/internal/store"
 )
 
 // TestReadAndFillTheCapturedModalInARealChrome serves the captured Easy Apply
@@ -111,5 +115,50 @@ func TestReadAndFillTheCapturedModalInARealChrome(t *testing.T) {
 	shot := filepath.Join(t.TempDir(), "modal.png")
 	if err := pg.Screenshot(shot); err != nil {
 		t.Errorf("screenshot: %v", err)
+	}
+
+	// Now the real thing: a dry run through Applier.Apply on the same page. The capture is
+	// static (no JavaScript), so the discard dialog never appears; the applier must still
+	// come back as a dry run with the phone typed, the resume set and nothing submitted.
+	if err := pg.Navigate(ctx, srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	cfg := config.Defaults()
+	cfg.Personals.FirstName, cfg.Personals.LastName, cfg.Personals.Phone = "Jane", "Doe", "5559876543"
+	cfg.Search.Terms = []string{"x"}
+	pacer := pacing.New(config.Pacing{MaxPerHour: 15, MaxPerRun: 50, TypingDelayMinMs: 1, TypingDelayMaxMs: 2}, true)
+	DiscardWait, TypeaheadSettle = 200*time.Millisecond, 0
+	resume := filepath.Join(t.TempDir(), "cv.pdf")
+	if err := os.WriteFile(resume, []byte("%PDF-1.4"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applier := &Applier{Page: pg, Pacer: pacer, Answerer: questions.New(cfg, memory.New(st, nil), nil, nil)}
+	// The fixture is the modal alone, with no apply button on the page: clicking the dialog
+	// itself stands in for the click that opens it.
+	stub, err := pg.WaitElement(ctx, linkedin.ModalXPath, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := applier.Apply(ctx, linkedin.Card{ID: "fixture", Title: "Forward Deployed Engineer", Company: "TechNovaTime"}, stub, Options{DryRun: true, ResumePath: resume})
+	if err != nil || out.Kind != DryRun {
+		t.Fatalf("dry run through the real modal: %+v %v", out, err)
+	}
+	if out.Resume != "cv.pdf" {
+		t.Errorf("resume %q", out.Resume)
+	}
+	phone, err := pg.Element("//input[@type='text']")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := phone.Property("value"); v != "5559876543" {
+		t.Errorf("phone typed %q", v)
+	}
+	if len(out.Answered) != 1 || out.Answered[0] != "Phone: 5559876543" {
+		t.Errorf("answered %v", out.Answered)
 	}
 }

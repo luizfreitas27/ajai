@@ -43,7 +43,7 @@ func ReadForm(modal browser.Element) ([]Control, error) {
 func readBlock(block browser.Element) (Control, bool) {
 	if sel, err := block.Element(linkedin.SelectXPath); err == nil {
 		q := questions.Question{Kind: questions.Select, Label: titleOf(block, linkedin.SelectTitleXPath, false)}
-		if opts, err := sel.Elements(".//option"); err == nil {
+		if opts, err := sel.Elements(linkedin.SelectOptionsXPath); err == nil {
 			for _, o := range opts {
 				t, _ := o.Text()
 				q.Options = append(q.Options, strings.TrimSpace(t))
@@ -117,7 +117,7 @@ func titleOf(scope browser.Element, xpath string, preferHidden bool) string {
 		return questions.UnknownTitle
 	}
 	if preferHidden {
-		if hidden, err := label.Element(".//*[contains(@class,'" + linkedin.VisuallyHiddenClass + "')]"); err == nil {
+		if hidden, err := label.Element(linkedin.VisuallyHiddenAnyXPath); err == nil {
 			if t, _ := hidden.Text(); strings.TrimSpace(t) != "" {
 				return strings.TrimSpace(t)
 			}

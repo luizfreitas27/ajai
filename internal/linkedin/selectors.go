@@ -11,7 +11,10 @@
 //   - Next/Review/Submit are looked up inside the dialog, never document-wide.
 package linkedin
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // Login page.
 const (
@@ -98,6 +101,19 @@ func ClassXPath(class string) string { return "//*[contains(@class,'" + class + 
 
 // PageButtonXPath is the pager button for page n.
 func PageButtonXPath(n int) string { return ".//button[@aria-label='Page " + strconv.Itoa(n) + "']" }
+
+// Form-internal selectors the apply loop uses.
+const (
+	SelectOptionsXPath      = ".//option"
+	VisuallyHiddenAnyXPath  = ".//*[contains(@class,'visually-hidden')]"
+	FollowCompanyInputXPath = ".//input[@id='follow-company-checkbox' and @type='checkbox']"
+	FollowCompanyLabelXPath = ".//label[@for='follow-company-checkbox']"
+	DoneButtonText          = "Done"
+	ContinueButtonText      = "Continue"
+)
+
+// FromDocument turns a dialog-relative selector (".//x") into a document-wide one ("//x").
+func FromDocument(xpath string) string { return strings.TrimPrefix(xpath, ".") }
 
 // OptionLabelXPath is the label of a radio option with this input id.
 func OptionLabelXPath(inputID string) string { return `.//label[@for="` + inputID + `"]` }
