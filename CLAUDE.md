@@ -28,8 +28,15 @@ go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
 - `internal/browser`: go-rod attached to the user's Chrome profile (ADR 0001). The only
   package that imports rod.
 - `internal/linkedin`: login check, search, filters, job cards, centralised selectors.
-- `internal/apply`: the Easy Apply modal loop, question heuristics, answer memory gate.
+- `internal/questions`: the question heuristics (`Answerer.Answer(Question, Job) Decision`),
+  pure: configured answers, then the answer memory, then the AI, never a guess. Sensitive
+  questions are gated here. `internal/textmatch` is the whole-word matcher every label
+  test uses, plus `Normalise` and the difflib `Ratio`.
+- `internal/apply`: the Easy Apply modal loop (reads controls into `questions.Question`,
+  applies `Decision`s).
 - `internal/memory`, `internal/store`: answer memory and SQLite (pure Go driver).
+- `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
+  `selectors_test.go`. Update both together when LinkedIn changes.
 - `internal/ai`: one OpenAI-compatible client for every provider.
 - `internal/notify`, `internal/schedule`, `internal/markets`, `internal/pacing`.
 - `internal/panel` (F2): embedded web panel with the same security rules as the Python one:

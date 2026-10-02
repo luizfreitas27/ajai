@@ -265,17 +265,3 @@ func TestProviderMapping(t *testing.T) {
 		}
 	}
 }
-
-func TestNormaliseMatchesThePythonFunction(t *testing.T) {
-	cases := map[string]string{
-		"I consent to a background check": "i consent to a background check",
-		"  Years   of GO (total)? ":       "years of go total",
-		"Anos com Go?":                    "anos com go",
-		"":                                "",
-	}
-	for in, want := range cases {
-		if got := Normalise(in); got != want {
-			t.Errorf("Normalise(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

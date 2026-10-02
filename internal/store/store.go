@@ -310,6 +310,47 @@ func (s *Store) UpsertAnswer(a Answer) error {
 	return err
 }
 
+// GetAnswer returns the answer with this id, or nil.
+func (s *Store) GetAnswer(id string) (*Answer, error) {
+	return s.oneAnswer(`id = ?`, id)
+}
+
+// DeleteAnswer forgets an answer; true when something was removed.
+func (s *Store) DeleteAnswer(id string) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM answers WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// CountAnswers returns how many answers are in state ("" for all).
+func (s *Store) CountAnswers(state string) (int, error) {
+	var n int
+	var err error
+	if state == "" {
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM answers`).Scan(&n)
+	} else {
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM answers WHERE state = ?`, state).Scan(&n)
+	}
+	return n, err
+}
+
+func (s *Store) oneAnswer(where string, arg any) (*Answer, error) {
+	var a Answer
+	err := s.db.QueryRow(`SELECT id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at
+		FROM answers WHERE `+where, arg).
+		Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 // FindAnswer returns the answer remembered for this question, or nil.
 func (s *Store) FindAnswer(kind, normalised string) (*Answer, error) {
 	var a Answer

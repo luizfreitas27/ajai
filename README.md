@@ -39,6 +39,7 @@ go build ./cmd/aja && ./aja version
 ./aja import ~/Auto_job_applier_linkedIn   # settings, answer memory, job history and resume from the Python fork
 ./aja jobs list --failed --since 2026-10-01
 ./aja export --csv ./sheets     # the Python bot's two spreadsheets, from the database
+./aja answers list --state pending   # the review queue; approve <id>, edit <id> "<text>", delete <id>
 ```
 
 History and the answer memory live in a SQLite database (`aja.db` in the data
