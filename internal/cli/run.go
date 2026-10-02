@@ -28,9 +28,10 @@ func (a *App) runCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Search LinkedIn and apply to Easy Apply jobs in your own Chrome",
-		Long: `Attaches to your Chrome profile (close Chrome first, or point settings.chrome_profile_dir
-at a profile aja can own), waits for you to sign in when needed, then walks every search
-term with the configured filters, screens each job and applies. Pacing is on by default.
+		Long: `Opens Chrome on aja's own profile (or settings.chrome_profile_dir), waits for you to sign
+in when needed (sign in once beforehand with aja login), then walks every search term with
+the configured filters, screens each job and applies. Pacing is on by default. On aja's own
+profile, Chrome is closed when the run ends.
 
 --dry-run fills every form and discards it at the Review step instead of submitting, so you
 can check the answers before applying for real.

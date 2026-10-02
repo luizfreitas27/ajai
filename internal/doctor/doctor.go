@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/luizfreitas27/aja/internal/ai"
 	"github.com/luizfreitas27/aja/internal/chrome"
@@ -51,14 +52,17 @@ func (r Report) Failed() bool {
 
 // Probe lets tests replace the machine-dependent lookups.
 type Probe struct {
-	FindChrome        func(explicit string) (string, error)
-	ChromeVersion     func(binary string) string
-	DefaultProfileDir func() string
+	FindChrome    func(explicit string) (string, error)
+	ChromeVersion func(binary string) string
+	// EverydayProfileDir is where the user's own browser keeps its profile, for the hint.
+	EverydayProfileDir func(binary string) string
+	HasLinkedInSession func(profileDir string) (bool, error)
 }
 
 // RealProbe uses this machine.
 func RealProbe() Probe {
-	return Probe{FindChrome: chrome.Find, ChromeVersion: chrome.Version, DefaultProfileDir: chrome.DefaultProfileDir}
+	return Probe{FindChrome: chrome.Find, ChromeVersion: chrome.Version, EverydayProfileDir: chrome.EverydayProfileDir,
+		HasLinkedInSession: func(dir string) (bool, error) { return chrome.HasLinkedInSession(dir, time.Now()) }}
 }
 
 // Run performs the checks. loaded may be nil when the config failed to load, in
@@ -103,15 +107,21 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 		add("chrome", Warn, binary+" found but `--version` failed; it may still run")
 	}
 
-	// Profile
-	profile := cfg.Settings.ChromeProfileDir
-	if profile == "" {
-		profile = probe.DefaultProfileDir()
+	// Profile, and whether LinkedIn is signed in there
+	profile, own := p.ChromeProfile(cfg.Settings.ChromeProfileDir)
+	label, hint := profile, "run `aja login` to sign in once"
+	if own {
+		label += " (aja's own profile)"
+		hint += "; or set settings.chrome_profile_dir to your everyday Chrome profile (" + probe.EverydayProfileDir(binary) + ") to use that"
 	}
-	if st, err := os.Stat(profile); err == nil && st.IsDir() {
-		add("chrome profile", OK, profile)
+	if st, err := os.Stat(profile); err != nil || !st.IsDir() {
+		add("chrome profile", Warn, label+" does not exist yet; "+hint)
+	} else if signedIn, err := probe.HasLinkedInSession(profile); err != nil {
+		add("chrome profile", Warn, label+": could not check for a LinkedIn session ("+err.Error()+")")
+	} else if !signedIn {
+		add("chrome profile", Warn, label+" has no LinkedIn session; "+hint)
 	} else {
-		add("chrome profile", Warn, profile+" does not exist yet; Chrome will create an empty profile and you will log in to LinkedIn once")
+		add("chrome profile", OK, label+", signed in to LinkedIn")
 	}
 
 	if loaded != nil && loaded.FileExisted {

@@ -25,6 +25,8 @@ type Paths struct {
 	LogDir        string
 	ScreenshotDir string
 	ResumeDir     string
+	// ChromeProfileDir is aja's own Chrome profile, used when settings.chrome_profile_dir is blank.
+	ChromeProfileDir string
 }
 
 // Getenv is the environment lookup Resolve uses; os.Getenv in production.
@@ -50,7 +52,18 @@ func Resolve(configFlag string, getenv Getenv) Paths {
 	p.LogDir = filepath.Join(p.DataDir, "logs")
 	p.ScreenshotDir = filepath.Join(p.DataDir, "screenshots")
 	p.ResumeDir = filepath.Join(p.DataDir, "resumes")
+	p.ChromeProfileDir = filepath.Join(p.DataDir, "chrome-profile")
 	return p
+}
+
+// ChromeProfile resolves settings.chrome_profile_dir: blank means aja's own
+// profile. own reports whether the result is aja's own profile, which aja may
+// close Chrome on; any other profile is the user's.
+func (p Paths) ChromeProfile(setting string) (dir string, own bool) {
+	if setting == "" {
+		return p.ChromeProfileDir, true
+	}
+	return setting, filepath.Clean(setting) == filepath.Clean(p.ChromeProfileDir)
 }
 
 // EnsureDataDirs creates the data directories if they are missing.

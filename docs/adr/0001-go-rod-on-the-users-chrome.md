@@ -36,3 +36,17 @@ up the single binary) or driving Chrome through OS-level input. Revisit this ADR
 - **go-rod + go-rod/stealth**: abandoned patches that may themselves be a signal.
 - **Python sidecar with SeleniumBase UC**: best known stealth, but requires Python on the
   user's machine, which defeats the single-binary goal.
+
+## Addendum (phase 2): an aja-owned profile by default
+
+Phase 2 adds a daemon that starts runs on a schedule and from Telegram. Chrome locks a
+user-data directory to one instance, so a scheduled run on the user's everyday profile
+fails whenever that Chrome is open, which is most of the day. The default profile is
+therefore one `aja` owns, in its data directory, signed in to LinkedIn once by hand with
+`aja login`; `settings.chrome_profile_dir` can still point at the user's own profile.
+
+Because that profile is aja's, a run (and `aja login`) quits its Chrome gracefully when it
+ends, so the next run finds the profile free; on the user's own profile aja still only
+detaches and leaves the window open. Everything above holds: the same installed Chrome,
+visible, persistent, never a password typed by the tool. The cost is a profile with less
+history at first, which the pacing already assumes.

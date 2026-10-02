@@ -38,8 +38,58 @@ func probe(found bool) Probe {
 			}
 			return "", errors.New("Chrome was not found")
 		},
-		ChromeVersion:     func(string) string { return "Google Chrome 142.0" },
-		DefaultProfileDir: func() string { return "/nonexistent/profile" },
+		ChromeVersion:      func(string) string { return "Google Chrome 142.0" },
+		EverydayProfileDir: func(string) string { return "/home/u/.config/google-chrome" },
+		HasLinkedInSession: func(string) (bool, error) { return true, nil },
+	}
+}
+
+func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.T) {
+	p, l := setup(t)
+	l.Config.Settings.ChromeProfileDir = "" // aja's own
+	cases := []struct {
+		name     string
+		create   bool
+		signedIn bool
+		err      error
+		status   Status
+		want     []string
+	}{
+		{"not created", false, false, nil, Warn, []string{"(aja's own profile) does not exist yet", "aja login", "/home/u/.config/google-chrome"}},
+		{"no session", true, false, nil, Warn, []string{"has no LinkedIn session", "aja login"}},
+		{"unreadable", true, false, errors.New("locked"), Warn, []string{"could not check", "locked"}},
+		{"signed in", true, true, nil, OK, []string{"(aja's own profile), signed in to LinkedIn"}},
+	}
+	for _, tc := range cases {
+		_ = os.RemoveAll(p.ChromeProfileDir)
+		if tc.create {
+			if err := os.MkdirAll(p.ChromeProfileDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		pr := probe(true)
+		pr.HasLinkedInSession = func(dir string) (bool, error) {
+			if dir != p.ChromeProfileDir {
+				t.Errorf("checked %s", dir)
+			}
+			return tc.signedIn, tc.err
+		}
+		c := byName(Run(l, nil, p, pr), "chrome profile")
+		if c.Status != tc.status || !strings.HasPrefix(c.Detail, p.ChromeProfileDir) {
+			t.Errorf("%s: %+v", tc.name, c)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(c.Detail, w) {
+				t.Errorf("%s: %q lacks %q", tc.name, c.Detail, w)
+			}
+		}
+	}
+	// The user's own profile: no "aja's own", no hint to switch.
+	l.Config.Settings.ChromeProfileDir = t.TempDir()
+	pr := probe(true)
+	pr.HasLinkedInSession = func(string) (bool, error) { return false, nil }
+	if c := byName(Run(l, nil, p, pr), "chrome profile"); strings.Contains(c.Detail, "aja's own") || strings.Contains(c.Detail, "everyday") || !strings.Contains(c.Detail, "aja login") {
+		t.Errorf("%+v", c)
 	}
 }
 

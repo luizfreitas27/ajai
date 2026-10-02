@@ -133,7 +133,7 @@ _Avoid_: report, stats, results
 ### Running the tool
 
 **Chrome profile**:
-The user's own Chrome user-data directory that the tool attaches to, where the LinkedIn session lives. The tool never logs in with a password; the user logs in once in that profile.
+The Chrome user-data directory the tool drives, where the LinkedIn session lives. By default the **aja profile**, one the tool owns, so the user's everyday Chrome stays free during runs; it can point at the user's own profile instead. The tool never logs in with a password; the user signs in once in that profile (`aja login`).
 _Avoid_: safe mode, guest mode, incognito, session cookie
 
 **Import**:

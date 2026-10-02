@@ -1,7 +1,7 @@
 // Package browser is the only package that talks to Chrome. It exposes a small
 // interface the rest of aja works against (so the run loop and the LinkedIn
-// session are testable with fakes) and one implementation on go-rod attached
-// to the user's own Chrome profile in a visible window (ADR 0001).
+// session are testable with fakes) and one implementation on go-rod driving the
+// installed Chrome in a visible window, on aja's own profile or the user's (ADR 0001).
 package browser
 
 import (

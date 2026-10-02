@@ -30,11 +30,17 @@ type Options struct {
 	// HeadlessForTests is honoured ONLY by the browser-tagged tests; the CLI never sets it
 	// and a run is never headless (ADR 0001).
 	HeadlessForTests bool
-	Logger           *slog.Logger
+	// QuitOnClose: the profile is aja's own, so Close quits Chrome (gracefully, the
+	// profile kept) and the next run finds it free. Otherwise Close only detaches.
+	QuitOnClose bool
+	Logger      *slog.Logger
 }
 
+// quitWait bounds how long Close waits for Chrome to exit on its own.
+const quitWait = 15 * time.Second
+
 // ErrProfileInUse means the profile directory is locked by a running Chrome.
-var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or set settings.chrome_profile_dir to a profile aja can own")
+var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or leave settings.chrome_profile_dir blank to use aja's own profile")
 
 // Open launches Chrome on the given profile and connects to it.
 func Open(ctx context.Context, opts Options) (Browser, error) {
@@ -84,7 +90,8 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 		return nil, err
 	}
 	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.HeadlessForTests)
-	return &rodBrowser{b: b, main: &rodPage{p: main, smooth: opts.SmoothScroll}, launcher: l, logger: opts.Logger, owned: opts.HeadlessForTests}, nil
+	return &rodBrowser{b: b, main: &rodPage{p: main, smooth: opts.SmoothScroll}, launcher: l, logger: opts.Logger,
+		owned: opts.HeadlessForTests, quit: opts.QuitOnClose}, nil
 }
 
 // profileLocked reports whether a LIVE Chrome holds the profile's singleton
@@ -108,7 +115,8 @@ type rodBrowser struct {
 	main     *rodPage
 	launcher *launcher.Launcher
 	logger   *slog.Logger
-	owned    bool // a headless test browser: ours to shut down
+	owned    bool // a headless test browser: ours to shut down, profile and all
+	quit     bool // aja's own profile: quit Chrome on Close, keep the profile
 }
 
 func (r *rodBrowser) Main() Page { return r.main }
@@ -127,10 +135,24 @@ func (r *rodBrowser) Pages() ([]Page, error) {
 	return out, nil
 }
 
-// Close detaches from Chrome. The user's browser stays open: it is theirs. rod's
-// own Browser.Close would send CDP Browser.close and shut it, so it is never
-// called; dropping the connection when the process exits is the whole goodbye.
+// Close leaves Chrome as it should be after aja: on the user's own profile it
+// only detaches (the window is theirs; rod's Browser.Close would shut it); on
+// aja's own profile it quits Chrome gracefully, so cookies are saved and the
+// profile is free for the next run. Never launcher.Cleanup on a real profile: it
+// deletes the user-data directory.
 func (r *rodBrowser) Close() error {
+	if r.quit {
+		err := r.b.Close()
+		pid := r.launcher.PID()
+		for deadline := time.Now().Add(quitWait); procs.Alive(pid) && time.Now().Before(deadline); {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if procs.Alive(pid) {
+			r.launcher.Kill()
+		}
+		r.logger.Info("closed chrome on aja's profile")
+		return err
+	}
 	if r.owned {
 		err := r.b.Close()
 		r.launcher.Kill()

@@ -30,8 +30,14 @@ Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, c
 - `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
   Secrets never live in the YAML.
 - `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
-  attached to the user's Chrome profile (ADR 0001). The only package that imports rod.
-  Never headless outside tests.
+  (ADR 0001). The only package that imports rod. Never headless outside tests. `Close`
+  quits Chrome gracefully on aja's own profile (`Options.QuitOnClose`) and only detaches on
+  the user's; never call rod's `launcher.Cleanup` on a real profile (it deletes it).
+- Chrome profile: `paths.Paths.ChromeProfile(setting)` (blank = aja's own, in the data
+  directory) and `launch.OpenChrome` (find, create, open; `ErrOwnProfileInUse`) are the only
+  places that decide it; `aja run` and `aja login` both go through them. `aja doctor` checks
+  the LinkedIn session by reading a copy of the profile's cookie database for `li_at`
+  (`chrome.HasLinkedInSession`), never the cookie values.
 - `internal/linkedin`: `Session` over `browser.Page`: login detection (feed URL only),
   search, filters, job cards, job details, pagination; plus the centralised selectors.
 - `internal/screening`: the pure skip rules (card, company, description).

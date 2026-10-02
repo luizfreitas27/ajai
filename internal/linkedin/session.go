@@ -70,11 +70,12 @@ func (s *Session) EnsureLoggedIn(ctx context.Context, timeout time.Duration, onW
 		onWait()
 	}
 	deadline := time.Now().Add(timeout)
+	poll := min(5*time.Second, timeout) // a short timeout is not overshot by a long poll
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(5 * time.Second):
+		case <-time.After(poll):
 		}
 		if s.IsLoggedIn() {
 			s.Logger.Info("linkedin login detected")

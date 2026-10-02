@@ -97,7 +97,7 @@ type Search struct {
 // Settings mirrors the surviving parts of config/settings.py.
 type Settings struct {
 	ChromeBinary      string `yaml:"chrome_binary" doc:"Path to the Chrome or Chromium executable. Blank finds it on this machine."`
-	ChromeProfileDir  string `yaml:"chrome_profile_dir" doc:"Chrome user-data directory to attach to. Blank uses this OS's default Chrome profile, where your LinkedIn session already lives."`
+	ChromeProfileDir  string `yaml:"chrome_profile_dir" doc:"Chrome user-data directory to use. Blank uses aja's own profile in the data directory (sign in once with aja login), so your everyday Chrome stays free; set your everyday profile here to use that instead."`
 	CloseTabs         bool   `yaml:"close_tabs" doc:"Close the tabs the run opened when it ends."`
 	FollowCompanies   bool   `yaml:"follow_companies" doc:"Leave the 'follow company' checkbox ticked when applying."`
 	RunNonStop        bool   `yaml:"run_non_stop" doc:"Start another run, ten minutes later, when one visits every search term or reaches the per-run cap; stop at LinkedIn's daily limit, the hourly cap, --max or an error."`
