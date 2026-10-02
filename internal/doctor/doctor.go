@@ -6,7 +6,6 @@ package doctor
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/luizfreitas27/aja/internal/chrome"
@@ -159,11 +158,5 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	return r
 }
 
-// ResolveResume makes a resume path absolute: relative paths live in the
-// resumes directory.
-func ResolveResume(p paths.Paths, path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(p.ResumeDir, path)
-}
+// ResolveResume makes a resume path absolute (see paths.Paths.ResumePath).
+func ResolveResume(p paths.Paths, path string) string { return p.ResumePath(path) }

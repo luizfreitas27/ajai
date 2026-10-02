@@ -20,9 +20,10 @@ import (
 // job details. It knows the markup (selectors.go) and nothing about what to do
 // with a job; the run loop decides that.
 type Session struct {
-	Page   browser.Page
-	Pacer  *pacing.Pacer
-	Logger *slog.Logger
+	Page    browser.Page
+	Browser browser.Browser // for tab handling; nil in tests that only need the page
+	Pacer   *pacing.Pacer
+	Logger  *slog.Logger
 }
 
 // NewSession wires a session; logger may be nil.
@@ -420,6 +421,36 @@ func (s *Session) FindApplyButton() (browser.Element, ApplyKind, string) {
 		return el, ExternalApply, loc.How
 	}
 	return nil, NoApplyButton, ""
+}
+
+// ExternalLink clicks an off-site apply button, reads the URL of the tab it
+// opens, closes that tab and returns to LinkedIn. "" when no tab opened.
+func (s *Session) ExternalLink(ctx context.Context, button browser.Element) (string, error) {
+	if s.Browser == nil {
+		return "", errors.New("no browser handle for tabs")
+	}
+	before, err := s.Browser.Pages()
+	if err != nil {
+		return "", err
+	}
+	if err := button.Click(); err != nil {
+		return "", err
+	}
+	if cont, err := s.Page.WaitElement(ctx, TextXPath("span", "Continue"), time.Second); err == nil {
+		_ = cont.Click()
+	}
+	_ = s.Pacer.BetweenActions(ctx)
+	after, err := s.Browser.Pages()
+	if err != nil {
+		return "", err
+	}
+	if len(after) <= len(before) {
+		return "", nil
+	}
+	tab := after[len(after)-1]
+	link, _ := tab.URL()
+	_ = tab.Close()
+	return link, nil
 }
 
 // DailyLimitReached reads LinkedIn's inline notice about the Easy Apply cap.

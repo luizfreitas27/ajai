@@ -11,8 +11,10 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/luizfreitas27/aja/internal/apply"
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/linkedin"
@@ -36,8 +38,14 @@ type Site interface {
 	Description(ctx context.Context) (string, bool)
 	DatePosted(now time.Time) (posted time.Time, reposted, ok bool)
 	FindApplyButton() (browser.Element, linkedin.ApplyKind, string)
+	ExternalLink(ctx context.Context, button browser.Element) (string, error)
 	DailyLimitReached() bool
 	NextPage(ctx context.Context) (bool, error)
+}
+
+// Applier works one Easy Apply modal; apply.Applier in production.
+type Applier interface {
+	Apply(ctx context.Context, job linkedin.Card, button browser.Element, opts apply.Options) (apply.Outcome, error)
 }
 
 // Options for one run.
@@ -67,6 +75,8 @@ const (
 	EventTerm       EventKind = "term"
 	EventSkip       EventKind = "skip"
 	EventWouldApply EventKind = "would-apply"
+	EventApplied    EventKind = "applied"
+	EventFailed     EventKind = "failed"
 	EventExternal   EventKind = "external"
 	EventLimit      EventKind = "limit"
 	EventWarn       EventKind = "warn"
@@ -92,23 +102,23 @@ type Summary struct {
 	Reason     string
 }
 
-// ErrApplyNotImplemented is returned while the Easy Apply loop (F1-5) is not here yet.
-var ErrApplyNotImplemented = errors.New("applying is not implemented yet; run with --dry-run")
-
 // Runner holds the wiring for one run.
 type Runner struct {
-	Cfg    config.Config
-	Market markets.Resolved
-	Site   Site
-	Store  *store.Store
-	Pacer  *pacing.Pacer
-	Logger *slog.Logger
-	Events func(Event)
-	Now    func() time.Time
+	Cfg     config.Config
+	Market  markets.Resolved
+	Site    Site
+	Applier Applier
+	Store   *store.Store
+	Pacer   *pacing.Pacer
+	Logger  *slog.Logger
+	Events  func(Event)
+	Now     func() time.Time
 	// LoginTimeout is how long to wait for a manual login (default 10 minutes).
 	LoginTimeout time.Duration
 	// StatePath, when set, receives the live State after every change.
 	StatePath string
+	// ResumePath is the absolute resume to upload ("" keeps LinkedIn's previous one).
+	ResumePath string
 
 	started time.Time
 }
@@ -316,7 +326,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		st.rejected[c.ID] = true
 		return cardPassed, r.skip(sum, c, v)
 	}
-	_, kind, how := r.Site.FindApplyButton()
+	button, kind, how := r.Site.FindApplyButton()
 	switch kind {
 	case linkedin.NoApplyButton:
 		if r.Site.DailyLimitReached() {
@@ -330,11 +340,19 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		if r.Cfg.Search.EasyApplyOnly {
 			return cardPassed, r.skip(sum, c, screening.Verdict{Reason: "external application (easy_apply_only)"})
 		}
-		// Collected as an external job; opening the company's site is F1-5 work.
+		link := ""
+		if !opts.DryRun {
+			if link, err = r.Site.ExternalLink(ctx, button); err != nil {
+				if ctx.Err() != nil {
+					return cardPassed, ctx.Err()
+				}
+				r.Logger.Warn("could not collect the external link", "job", c.ID, "error", err)
+			}
+		}
 		sum.External++
-		r.emit(EventExternal, "", &c)
+		r.emit(EventExternal, link, &c)
 		return cardCounted, r.Store.UpsertJob(store.Job{JobID: c.ID, Outcome: store.External, Title: c.Title, Company: c.Company,
-			WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, DateApplied: "Pending", RunID: sum.RunID})
+			WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, ExternalLink: link, DateApplied: "Pending", RunID: sum.RunID})
 	}
 	r.Logger.Info("easy apply button found", "job", c.ID, "how", how)
 	if err := r.Pacer.Allow(); err != nil {
@@ -342,27 +360,52 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		r.emit(EventLimit, sum.Reason, &c)
 		return cardEndsRun, nil
 	}
-	if !opts.DryRun {
-		return cardPassed, ErrApplyNotImplemented
-	}
-	// Dry run: record what would be applied to.
 	posted, reposted, _ := r.Site.DatePosted(r.Now())
-	row := store.Job{JobID: c.ID, Outcome: store.Skipped, Reason: "dry run", Title: c.Title, Company: c.Company,
-		WorkLocation: c.Location, WorkStyle: c.Style, Description: job.Description, JobLink: c.Link,
-		ExperienceRequired: fmt.Sprint(v.ExperienceRequired), Reposted: fmt.Sprint(reposted), RunID: sum.RunID}
+	row := store.Job{JobID: c.ID, Title: c.Title, Company: c.Company, WorkLocation: c.Location, WorkStyle: c.Style,
+		Description: job.Description, JobLink: c.Link, ExperienceRequired: fmt.Sprint(v.ExperienceRequired),
+		Reposted: fmt.Sprint(reposted), RunID: sum.RunID, ConnectRequest: "In Development", HRName: "Unknown", HRLink: "Unknown"}
 	if !posted.IsZero() {
 		row.DatePosted = store.Timestamp(posted)
+	}
+	outcome, err := r.Applier.Apply(ctx, c, button, apply.Options{DryRun: opts.DryRun, ResumePath: r.ResumePath,
+		FollowCompanies: r.Cfg.Settings.FollowCompanies, Description: job.Description})
+	row.Resume, row.Questions = outcome.Resume, strings.Join(outcome.Answered, "; ")
+	if ctx.Err() != nil {
+		return cardPassed, ctx.Err()
+	}
+	switch {
+	case err != nil:
+		sum.Failed++
+		row.Outcome, row.Reason, row.StackTrace = store.Failed, outcome.Reason, err.Error()
+		r.emit(EventFailed, outcome.Reason, &c)
+		r.Logger.Warn("application failed", "job", c.ID, "stage", outcome.Reason, "error", err)
+	case outcome.Applied:
+		sum.Applied++
+		row.Outcome, row.DateApplied = store.Applied, store.Timestamp(r.Now())
+		r.Pacer.RecordApplication()
+		r.emit(EventApplied, "", &c)
+	case outcome.Reason == "dry run":
+		sum.WouldApply++
+		row.Outcome, row.Reason = store.Skipped, "dry run"
+		r.Pacer.RecordApplication()
+		r.emit(EventWouldApply, "", &c)
+	default: // unanswered questions
+		sum.Skipped++
+		st.rejected[c.ID] = true
+		row.Outcome, row.Reason = store.Skipped, outcome.Reason+": "+strings.Join(outcome.Blocked, " | ")
+		r.emit(EventSkip, row.Reason, &c)
 	}
 	if err := r.Store.UpsertJob(row); err != nil {
 		return cardPassed, err
 	}
-	sum.WouldApply++
-	r.Pacer.RecordApplication()
-	r.emit(EventWouldApply, "", &c)
-	if err := r.Pacer.BetweenJobs(ctx); err != nil {
-		return cardPassed, err
+	counted := row.Outcome == store.Applied || (row.Outcome == store.Skipped && row.Reason == "dry run")
+	if counted {
+		if err := r.Pacer.BetweenJobs(ctx); err != nil {
+			return cardPassed, err
+		}
+		return cardCounted, nil
 	}
-	return cardCounted, nil
+	return cardPassed, nil
 }
 
 func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error {

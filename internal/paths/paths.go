@@ -63,6 +63,17 @@ func (p Paths) EnsureDataDirs() error {
 	return nil
 }
 
+// ResumePath makes a resume setting absolute: relative names live in the resumes directory.
+func (p Paths) ResumePath(name string) string {
+	if name == "" {
+		return ""
+	}
+	if filepath.IsAbs(name) {
+		return name
+	}
+	return filepath.Join(p.ResumeDir, name)
+}
+
 // All lists the paths with labels, in the order doctor prints them.
 func (p Paths) All() [][2]string {
 	return [][2]string{

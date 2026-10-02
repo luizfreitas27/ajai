@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/luizfreitas27/aja/internal/apply"
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/linkedin"
@@ -110,6 +112,30 @@ func (f *fakeSite) FindApplyButton() (browser.Element, linkedin.ApplyKind, strin
 	return nil, kind, "apply button id"
 }
 func (f *fakeSite) DailyLimitReached() bool { return f.dailyLimit }
+func (f *fakeSite) ExternalLink(context.Context, browser.Element) (string, error) {
+	return "https://" + f.opened + ".example/apply", nil
+}
+
+// fakeApplier returns a scripted outcome per job id; unknown ids reach Review.
+type fakeApplier struct {
+	outcomes map[string]apply.Outcome
+	errs     map[string]error
+	calls    []apply.Options
+}
+
+func (f *fakeApplier) Apply(_ context.Context, job linkedin.Card, _ browser.Element, opts apply.Options) (apply.Outcome, error) {
+	f.calls = append(f.calls, opts)
+	if err := f.errs[job.ID]; err != nil {
+		return apply.Outcome{Discarded: true, Reason: "clicking Submit"}, err
+	}
+	if o, ok := f.outcomes[job.ID]; ok {
+		return o, nil
+	}
+	if opts.DryRun {
+		return apply.Outcome{Discarded: true, Reason: "dry run", Answered: []string{"Phone: 555"}}, nil
+	}
+	return apply.Outcome{Applied: true, Resume: "uploaded"}, nil
+}
 func (f *fakeSite) NextPage(context.Context) (bool, error) {
 	if f.page+1 < len(f.pages) {
 		f.page++
@@ -132,7 +158,7 @@ func runner(t *testing.T, site *fakeSite, cfg config.Config) (*Runner, *store.St
 	t.Cleanup(func() { _ = st.Close() })
 	p := pacing.New(cfg.Pacing, true)
 	var events []Event
-	r := &Runner{Cfg: cfg, Market: markets.Resolve(cfg), Site: site, Store: st, Pacer: p,
+	r := &Runner{Cfg: cfg, Market: markets.Resolve(cfg), Site: site, Applier: &fakeApplier{}, Store: st, Pacer: p,
 		Events:    func(e Event) { events = append(events, e) },
 		Now:       func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) },
 		StatePath: filepath.Join(t.TempDir(), "run.pid")}
@@ -228,7 +254,15 @@ func TestExternalJobsAreCollectedWhenEasyApplyOnlyIsOff(t *testing.T) {
 	if err != nil || sum.External != 1 || sum.Skipped != 0 {
 		t.Errorf("%+v %v", sum, err)
 	}
-	if jobs, _ := st.ListJobs(store.JobFilter{Outcomes: []store.Outcome{store.External}}); len(jobs) != 1 || jobs[0].DateApplied != "Pending" {
+	if jobs, _ := st.ListJobs(store.JobFilter{Outcomes: []store.Outcome{store.External}}); len(jobs) != 1 || jobs[0].DateApplied != "Pending" || jobs[0].ExternalLink != "" {
+		t.Errorf("a dry run does not open the company's site: %+v", jobs)
+	}
+	// Live: the external tab is opened and its link kept.
+	r, st, _ = runner(t, site, c)
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if jobs, _ := st.ListJobs(store.JobFilter{Outcomes: []store.Outcome{store.External}}); jobs[0].ExternalLink != "https://8.example/apply" {
 		t.Errorf("%+v", jobs)
 	}
 }
@@ -264,11 +298,38 @@ func TestTheLiveStateFileShowsProgressWhileRunning(t *testing.T) {
 	}
 }
 
-func TestWithoutDryRunTheLoopRefusesToApplyUntilF15(t *testing.T) {
-	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
-	r, _, _ := runner(t, site, cfg())
-	if _, err := r.Run(context.Background(), Options{}); !errors.Is(err, ErrApplyNotImplemented) {
-		t.Errorf("%v", err)
+func TestALiveRunAppliesRecordsFailuresAndUnansweredQuestions(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{
+		"1": job("1", "Go Dev", "ACME", "Go"), "2": job("2", "Go Dev", "Boom", "Go"), "3": job("3", "Go Dev", "Quiz", "Go"),
+	}, pages: [][]string{{"1", "2", "3"}}}
+	r, st, events := runner(t, site, cfg())
+	r.ResumePath = "/tmp/cv.pdf"
+	applier := &fakeApplier{errs: map[string]error{"2": errors.New("element detached")},
+		outcomes: map[string]apply.Outcome{"3": {Discarded: true, Reason: "unanswered questions", Blocked: []string{"Favourite colour [Red, Blue]"}}}}
+	r.Applier = applier
+	sum, err := r.Run(context.Background(), Options{})
+	if err != nil || sum.Applied != 1 || sum.Failed != 1 || sum.Skipped != 1 || sum.WouldApply != 0 {
+		t.Errorf("%+v %v", sum, err)
+	}
+	if len(applier.calls) != 3 || applier.calls[0].DryRun || applier.calls[0].ResumePath != "/tmp/cv.pdf" {
+		t.Errorf("%+v", applier.calls)
+	}
+	byID := map[string]store.Job{}
+	jobs, _ := st.ListJobs(store.JobFilter{})
+	for _, j := range jobs {
+		byID[j.JobID] = j
+	}
+	if j := byID["1"]; j.Outcome != store.Applied || j.Resume != "uploaded" || j.DateApplied == "" {
+		t.Errorf("%+v", j)
+	}
+	if j := byID["2"]; j.Outcome != store.Failed || j.Reason != "clicking Submit" || !strings.Contains(j.StackTrace, "detached") {
+		t.Errorf("%+v", j)
+	}
+	if j := byID["3"]; j.Outcome != store.Skipped || !strings.Contains(j.Reason, "Favourite colour") {
+		t.Errorf("%+v", j)
+	}
+	if len(kinds(*events, EventApplied)) != 1 || len(kinds(*events, EventFailed)) != 1 {
+		t.Errorf("%+v", *events)
 	}
 	if _, err := r.Run(context.Background(), Options{Fast: true}); err == nil {
 		t.Error("--fast without --dry-run must be refused")

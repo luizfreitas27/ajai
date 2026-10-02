@@ -11,13 +11,16 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
+	"github.com/luizfreitas27/aja/internal/apply"
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/chrome"
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/linkedin"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/markets"
+	"github.com/luizfreitas27/aja/internal/memory"
 	"github.com/luizfreitas27/aja/internal/pacing"
+	"github.com/luizfreitas27/aja/internal/questions"
 	"github.com/luizfreitas27/aja/internal/run"
 )
 
@@ -34,8 +37,8 @@ func (a *App) runCmd() *cobra.Command {
 at a profile aja can own), waits for you to sign in when needed, then walks every search
 term with the configured filters, screens each job and applies. Pacing is on by default.
 
---dry-run lists the jobs it would apply to without opening any form. Until the Easy Apply
-loop lands (F1-5), --dry-run is required.`,
+--dry-run fills every form and discards it at the Review step instead of submitting, so you
+can check the answers before applying for real.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := map[string]string{}
@@ -93,18 +96,21 @@ loop lands (F1-5), --dry-run is required.`,
 
 			pacer := pacing.New(cfg.Pacing, opts.Fast)
 			session := linkedin.NewSession(br.Main(), pacer, a.logger)
-			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Store: st, Pacer: pacer, Logger: a.logger,
-				Events: a.printEvent, StatePath: run.StatePath(a.paths.DataDir)}
+			session.Browser = br
+			mem := memory.New(st, a.logger)
+			answerer := questions.New(cfg, mem, nil, a.logger) // the AI client arrives with F1-6
+			applier := &apply.Applier{Page: br.Main(), Pacer: pacer, Answerer: answerer, Logger: a.logger, ScreenshotDir: a.paths.ScreenshotDir}
+			resume := a.paths.ResumePath(resolved.Resume)
+			if _, err := os.Stat(resume); err != nil {
+				a.ui.Warn("resume", resume+" not found; LinkedIn's previously uploaded resume will be used")
+				resume = ""
+			}
+			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
+				Events: a.printEvent, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume}
 
 			sum, runErr := runner.Run(ctx, opts)
 			a.printSummary(sum)
-			if runErr != nil && !errors.Is(runErr, run.ErrApplyNotImplemented) {
-				return runErr
-			}
-			if errors.Is(runErr, run.ErrApplyNotImplemented) {
-				return &exitError{code: 2, msg: runErr.Error()}
-			}
-			return nil
+			return runErr
 		},
 	}
 	f := cmd.Flags()
@@ -152,6 +158,10 @@ func (a *App) printEvent(e run.Event) {
 		a.ui.Title("Searching: " + e.Text)
 	case run.EventWouldApply:
 		a.ui.OK("would apply", title)
+	case run.EventApplied:
+		a.ui.OK("applied", title)
+	case run.EventFailed:
+		a.ui.Fail("failed", title+"  ("+e.Text+")")
 	case run.EventExternal:
 		a.ui.OK("external", title)
 	case run.EventSkip:

@@ -40,7 +40,8 @@ go build ./cmd/aja && ./aja version
 ./aja jobs list --failed --since 2026-10-01
 ./aja export --csv ./sheets     # the Python bot's two spreadsheets, from the database
 ./aja answers list --state pending   # the review queue; approve <id>, edit <id> "<text>", delete <id>
-./aja run --dry-run             # attach to your Chrome, wait for your login, search, screen, list what it would apply to
+./aja run --dry-run             # attach to your Chrome, wait for your login, search, screen, fill every form and discard at Review
+./aja run                       # the same, submitting; pacing caps on by default
 ./aja status && ./aja logs -f   # the run in progress and the live log
 ```
 
