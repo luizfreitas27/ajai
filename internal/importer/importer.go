@@ -20,6 +20,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/aja/internal/textmatch"
 )
 
 // Report says what the import did and what it could not do.
@@ -433,7 +434,7 @@ func importAnswers(path string, st *store.Store, rep *Report) error {
 			continue
 		}
 		if a.Normalised == "" {
-			a.Normalised = Normalise(a.Label)
+			a.Normalised = textmatch.Normalise(a.Label)
 		}
 		// aja's own copy of the same question wins when it is newer: a later
 		// re-import must not undo approvals or use counts made here.
@@ -521,21 +522,4 @@ func importJob(st *store.Store, j store.Job, rep *Report) error {
 		rep.Applied++
 	}
 	return nil
-}
-
-// Normalise is the Python memory's key function: lowercase, punctuation to
-// spaces, whitespace collapsed. It lives here until the memory package (ticket
-// F1-3) owns it.
-func Normalise(label string) string {
-	lowered := strings.ToLower(label)
-	var b strings.Builder
-	for _, r := range lowered {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		default:
-			b.WriteRune(' ')
-		}
-	}
-	return strings.Join(strings.Fields(b.String()), " ")
 }
