@@ -88,13 +88,42 @@ func TestAnswersAreUniquePerQuestionAndListedByState(t *testing.T) {
 	}
 }
 
+func TestTimestampsAreNormalisedAndBlankIdsGenerated(t *testing.T) {
+	s := open(t)
+	must(t, s.UpsertAnswer(Answer{Label: "Q", Normalised: "q", Kind: "text", Answer: "a", Source: "ai", State: "pending", CreatedAt: "2026-10-01T16:45:25", UpdatedAt: "2026-10-01 16:45:25.5"}))
+	all, _ := s.ListAnswers("")
+	if len(all[0].ID) != 12 || !strings.HasPrefix(all[0].CreatedAt, "2026-10-01T16:45:25") || !strings.HasPrefix(all[0].UpdatedAt, "2026-10-01T16:45:25") || strings.Contains(all[0].UpdatedAt, " ") {
+		t.Errorf("%+v", all[0])
+	}
+	// The same id with a new label replaces the old row instead of failing.
+	must(t, s.UpsertAnswer(Answer{ID: all[0].ID, Label: "Q2", Normalised: "q2", Kind: "text", Answer: "b", Source: "ai", State: "pending"}))
+	all, _ = s.ListAnswers("")
+	if len(all) != 1 || all[0].Normalised != "q2" {
+		t.Errorf("%+v", all)
+	}
+	must(t, s.UpsertJob(Job{JobID: "7", Outcome: Failed, RecordedAt: "2026-10-01 11:00:00.123456"}))
+	j, _ := s.GetJob("7")
+	if strings.Contains(j.RecordedAt, " ") {
+		t.Errorf("job timestamp not normalised: %q", j.RecordedAt)
+	}
+	if missing, err := s.GetJob("nope"); missing != nil || err != nil {
+		t.Errorf("%v %v", missing, err)
+	}
+	cases := map[string]bool{"2026-10-01": true, "2026-10-01 11:00:00": true, "2026-10-01T11:00:00-03:00": true, "Pending": false, "": false, "Unknown": false}
+	for in, ok := range cases {
+		if _, got := ParseTime(in); got != ok {
+			t.Errorf("ParseTime(%q) ok = %v", in, got)
+		}
+	}
+}
+
 func TestRunsRecordStartAndFinish(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
 	id, err := s.StartRun(ctx, "brasil", true)
 	must(t, err)
 	must(t, s.FinishRun(ctx, Run{ID: id, Applied: 2, Skipped: 5, PendingAnswers: 1, Reason: "pacing limit"}))
-	runs, _ := s.ListRuns(10)
+	runs, _ := s.ListRuns(0)
 	if len(runs) != 1 || !runs[0].DryRun || runs[0].Applied != 2 || runs[0].Reason != "pacing limit" || runs[0].EndedAt == "" {
 		t.Errorf("%+v", runs)
 	}

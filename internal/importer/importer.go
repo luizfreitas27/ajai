@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/joho/godotenv"
+
 	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/store"
@@ -22,26 +24,39 @@ import (
 
 // Report says what the import did and what it could not do.
 type Report struct {
-	Mapped        []string          // "python.key -> aja.key"
-	Unmapped      map[string]string // python.key -> why
-	SecretsSeen   []string          // environment variables the user must set by hand
-	ResumeCopied  string            // destination path, "" when not copied
-	ResumeMissing string            // the Python path that could not be found
-	Answers       int
-	Applied       int
-	External      int
-	Failed        int
-	ConfigWritten bool
+	Mapped         []string          // "python.key -> aja.key"
+	Unmapped       map[string]string // python.key -> why
+	SecretsSeen    []string          // aja environment variables the user must set by hand
+	ResumeCopied   string            // destination path, "" when not copied
+	ResumeMissing  string            // the Python path that could not be found
+	ResumeError    string            // the copy failed: why
+	Answers        int               // answers imported
+	AnswersKept    int               // answers skipped because aja's copy is newer
+	Applied        int
+	External       int
+	Failed         int
+	JobsKept       int // job rows skipped because a newer record already exists
+	ConfigWritten  bool
+	ConfigProblems *config.ValidationError // the written config still needs these fixes
 }
 
 // Python file names inside the checkout.
 const (
 	userConfigFile = "user_config.json"
 	answersFile    = "answers_memory.json"
+	envFile        = ".env"
 	excelsDir      = "all excels"
 )
 
-// mapping is one Python key's destination; Convert may reshape the value.
+// pythonEnvNames maps the Python .env variables to aja's. LinkedIn credentials
+// have no counterpart: aja never logs in with a password.
+var pythonEnvNames = map[string]string{
+	"LLM_API_KEY":        config.EnvAIAPIKey,
+	"TELEGRAM_BOT_TOKEN": config.EnvTelegramBotToken,
+	"TELEGRAM_CHAT_ID":   config.EnvTelegramChatID,
+}
+
+// mapping is one Python key's destination; convert may reshape the value.
 type mapping struct {
 	key     string
 	convert func(any) any
@@ -189,6 +204,31 @@ func providerFromPython(provider, url string) (string, string) {
 	return p, url
 }
 
+// Import brings the checkout at src into aja: the config file (existing one or
+// defaults, then written back when user_config.json was found), the store and
+// the resumes directory. The config is written even when it still fails
+// validation; Report.ConfigProblems says what to fix.
+func Import(src string, p paths.Paths, st *store.Store) (*Report, error) {
+	base, lerr := config.Load(p, config.MapEnv(nil), nil)
+	if base == nil {
+		return nil, lerr
+	}
+	cfg := base.Config
+	rep, err := Run(src, &cfg, st, p)
+	if err != nil {
+		return rep, err
+	}
+	if rep.ConfigWritten {
+		if verr := cfg.Validate(); verr != nil {
+			rep.ConfigProblems, _ = config.AsValidation(verr)
+		}
+		if err := config.Write(p.ConfigFile, cfg); err != nil {
+			return rep, err
+		}
+	}
+	return rep, nil
+}
+
 // Run performs the import from src (a Python checkout) into cfg (modified in
 // place), the store and the resumes directory. cfg is written by the caller.
 func Run(src string, cfg *config.Config, st *store.Store, p paths.Paths) (*Report, error) {
@@ -200,6 +240,9 @@ func Run(src string, cfg *config.Config, st *store.Store, p paths.Paths) (*Repor
 	if err := importConfig(filepath.Join(src, userConfigFile), cfg, rep); err != nil {
 		return rep, err
 	}
+	if err := noteDotenv(filepath.Join(src, envFile), rep); err != nil {
+		return rep, err
+	}
 	copyResume(src, cfg, p, rep)
 	if err := importAnswers(filepath.Join(src, answersFile), st, rep); err != nil {
 		return rep, err
@@ -208,8 +251,44 @@ func Run(src string, cfg *config.Config, st *store.Store, p paths.Paths) (*Repor
 		return rep, err
 	}
 	sort.Strings(rep.Mapped)
-	sort.Strings(rep.SecretsSeen)
+	rep.SecretsSeen = uniqueSorted(rep.SecretsSeen)
 	return rep, nil
+}
+
+// noteDotenv reads only the KEYS of the Python .env (never the values) and
+// records which aja variables the user has to set.
+func noteDotenv(path string, rep *Report) error {
+	values, err := godotenv.Read(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	for pyName, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if ajaName, ok := pythonEnvNames[pyName]; ok {
+			rep.SecretsSeen = append(rep.SecretsSeen, ajaName)
+		} else if strings.HasPrefix(pyName, "LINKEDIN_") {
+			rep.Unmapped[".env "+pyName] = "aja never logs in with a password; sign in once in your Chrome profile"
+		}
+	}
+	return nil
+}
+
+func uniqueSorted(items []string) []string {
+	seen := map[string]bool{}
+	out := items[:0]
+	for _, it := range items {
+		if !seen[it] {
+			seen[it] = true
+			out = append(out, it)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func importConfig(path string, cfg *config.Config, rep *Report) error {
@@ -284,10 +363,12 @@ func copyResume(src string, cfg *config.Config, p paths.Paths, rep *Report) {
 	for _, c := range candidates {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
 			dst := filepath.Join(p.ResumeDir, filepath.Base(c))
-			if err := copyFile(c, dst); err == nil {
-				rep.ResumeCopied = dst
+			if err := copyFile(c, dst); err != nil {
+				rep.ResumeError = err.Error()
 				return
 			}
+			rep.ResumeCopied = dst
+			return
 		}
 	}
 	rep.ResumeMissing = cfg.Questions.Resume
@@ -344,24 +425,51 @@ func importAnswers(path string, st *store.Store, rep *Report) error {
 	if err := json.Unmarshal(data, &mem); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	for _, raw := range mem.Answers {
+	for i, raw := range mem.Answers {
+		entry := fmt.Sprintf("%s entry %d", answersFile, i+1)
 		var a pythonAnswer
 		if err := json.Unmarshal(raw, &a); err != nil || a.Label == "" || a.Kind == "" {
-			rep.Unmapped[answersFile+" entry "+a.ID] = "malformed entry skipped"
+			rep.Unmapped[entry] = "malformed entry skipped"
 			continue
 		}
 		if a.Normalised == "" {
 			a.Normalised = Normalise(a.Label)
 		}
+		// aja's own copy of the same question wins when it is newer: a later
+		// re-import must not undo approvals or use counts made here.
+		existing, err := st.FindAnswer(a.Kind, a.Normalised)
+		if err != nil {
+			return err
+		}
+		if existing != nil && !newer(a.UpdatedAt, existing.UpdatedAt) {
+			rep.AnswersKept++
+			continue
+		}
 		if err := st.UpsertAnswer(store.Answer{ID: a.ID, Label: a.Label, Normalised: a.Normalised, Kind: a.Kind,
 			Answer: a.Answer, Source: a.Source, State: a.State, Uses: a.Uses, LastJobLink: a.LastJobLink,
 			CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}); err != nil {
-			rep.Unmapped[answersFile+" entry "+a.ID] = err.Error()
+			rep.Unmapped[entry] = err.Error()
 			continue
 		}
 		rep.Answers++
 	}
 	return nil
+}
+
+// newer reports whether timestamp a is strictly after b. Unparseable or blank
+// values count as oldest, so an existing dated record is never replaced by an
+// undated one.
+func newer(a, b string) bool {
+	ta, okA := store.ParseTime(a)
+	tb, okB := store.ParseTime(b)
+	switch {
+	case !okA:
+		return false
+	case !okB:
+		return true
+	default:
+		return ta.After(tb)
+	}
 }
 
 func importJobs(dir string, st *store.Store, rep *Report) error {
@@ -370,17 +478,8 @@ func importJobs(dir string, st *store.Store, rep *Report) error {
 		return err
 	}
 	for _, row := range rows {
-		j := store.JobFromAppliedRow(row)
-		if j.JobID == "" {
-			continue
-		}
-		if err := st.UpsertJob(j); err != nil {
+		if err := importJob(st, store.JobFromAppliedRow(row), rep); err != nil {
 			return err
-		}
-		if j.Outcome == store.External {
-			rep.External++
-		} else {
-			rep.Applied++
 		}
 	}
 	rows, err = store.ReadCSV(filepath.Join(dir, store.FailedCSVName))
@@ -388,14 +487,38 @@ func importJobs(dir string, st *store.Store, rep *Report) error {
 		return err
 	}
 	for _, row := range rows {
-		j := store.JobFromFailedRow(row)
-		if j.JobID == "" {
-			continue
-		}
-		if err := st.UpsertJob(j); err != nil {
+		if err := importJob(st, store.JobFromFailedRow(row), rep); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// importJob stores a row unless the database already has a record of that job
+// that is at least as recent: a job that failed and was applied to later stays
+// applied whichever CSV is read first, and a re-import changes nothing.
+func importJob(st *store.Store, j store.Job, rep *Report) error {
+	if j.JobID == "" {
+		return nil
+	}
+	existing, err := st.GetJob(j.JobID)
+	if err != nil {
+		return err
+	}
+	if existing != nil && !newer(j.RecordedAt, existing.RecordedAt) {
+		rep.JobsKept++
+		return nil
+	}
+	if err := st.UpsertJob(j); err != nil {
+		return err
+	}
+	switch j.Outcome {
+	case store.External:
+		rep.External++
+	case store.Failed:
 		rep.Failed++
+	default:
+		rep.Applied++
 	}
 	return nil
 }

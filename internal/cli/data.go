@@ -39,29 +39,16 @@ Secrets are never copied: the command lists the environment variables to set. Sa
 run more than once.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			base, lerr := config.Load(a.paths, config.MapEnv(nil), nil)
-			if base == nil {
-				return lerr
-			}
-			cfg := base.Config
 			st, err := a.openStore()
 			if err != nil {
 				return err
 			}
-			rep, err := importer.Run(args[0], &cfg, st, a.paths)
+			rep, err := importer.Import(args[0], a.paths, st)
 			if err != nil {
 				return err
 			}
-			if rep.ConfigWritten {
-				if verr := cfg.Validate(); verr != nil {
-					a.ui.Warn("config", "imported with problems; run `aja config validate`")
-				}
-				if err := config.Write(a.paths.ConfigFile, cfg); err != nil {
-					return err
-				}
-			}
-			a.openLog(cfg.Settings.LogLevel)
-			a.logger.Info("import", "source", args[0], "answers", rep.Answers, "applied", rep.Applied, "external", rep.External, "failed", rep.Failed)
+			a.openLog(config.Defaults().Settings.LogLevel)
+			a.logger.Info("import", "source", args[0], "answers", rep.Answers, "applied", rep.Applied, "external", rep.External, "failed", rep.Failed, "kept", rep.JobsKept+rep.AnswersKept)
 			a.printImportReport(rep)
 			return nil
 		},
@@ -69,16 +56,24 @@ run more than once.`,
 }
 
 func (a *App) printImportReport(rep *importer.Report) {
-	if rep.ConfigWritten {
-		a.ui.OK("config", fmt.Sprintf("%d settings mapped into %s", len(rep.Mapped), a.paths.ConfigFile))
-	} else {
+	switch {
+	case !rep.ConfigWritten:
 		a.ui.Warn("config", "no user_config.json found; the config file was left alone")
+	case rep.ConfigProblems != nil:
+		a.ui.Warn("config", fmt.Sprintf("%d settings mapped into %s, which still needs:", len(rep.Mapped), a.paths.ConfigFile))
+		for _, fe := range rep.ConfigProblems.Errors {
+			a.ui.Hint(fe.Error())
+		}
+	default:
+		a.ui.OK("config", fmt.Sprintf("%d settings mapped into %s", len(rep.Mapped), a.paths.ConfigFile))
 	}
-	a.ui.OK("answers", fmt.Sprintf("%d remembered answers", rep.Answers))
-	a.ui.OK("jobs", fmt.Sprintf("%d applied, %d external, %d failed", rep.Applied, rep.External, rep.Failed))
+	a.ui.OK("answers", fmt.Sprintf("%d remembered answers imported, %d kept (aja's copy is newer)", rep.Answers, rep.AnswersKept))
+	a.ui.OK("jobs", fmt.Sprintf("%d applied, %d external, %d failed imported, %d kept (already recorded)", rep.Applied, rep.External, rep.Failed, rep.JobsKept))
 	switch {
 	case rep.ResumeCopied != "":
 		a.ui.OK("resume", rep.ResumeCopied)
+	case rep.ResumeError != "":
+		a.ui.Fail("resume", "could not copy: "+rep.ResumeError)
 	case rep.ResumeMissing != "":
 		a.ui.Warn("resume", rep.ResumeMissing+" was not found in the checkout; copy it to "+a.paths.ResumeDir+" by hand")
 	}
@@ -118,9 +113,12 @@ func (a *App) jobsCmd() *cobra.Command {
 				return err
 			}
 			f := store.JobFilter{Limit: limit}
-			for flag, outcome := range map[*bool]store.Outcome{&applied: store.Applied, &external: store.External, &failed: store.Failed, &skipped: store.Skipped} {
-				if *flag {
-					f.Outcomes = append(f.Outcomes, outcome)
+			for _, choice := range []struct {
+				on      *bool
+				outcome store.Outcome
+			}{{&applied, store.Applied}, {&external, store.External}, {&failed, store.Failed}, {&skipped, store.Skipped}} {
+				if *choice.on {
+					f.Outcomes = append(f.Outcomes, choice.outcome)
 				}
 			}
 			if since != "" {

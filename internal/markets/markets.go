@@ -5,7 +5,9 @@
 package markets
 
 import (
+	"math"
 	"strconv"
+	"strings"
 
 	"github.com/luizfreitas27/aja/internal/config"
 )
@@ -50,11 +52,14 @@ func (r Resolved) CurrentAsEntered() float64 {
 }
 
 // Resolve builds the active market from a validated config: markets.active names
-// it; zero salaries, blank location/terms/resume fall back to the general
-// settings. For Brazil a blank salary is the general ANNUAL figure divided by 12.
+// it (case and surrounding spaces ignored); zero salaries, blank
+// currency/location/terms/resume fall back to the general settings. For Brazil a
+// blank salary is the general ANNUAL figure divided by 12. Money is rounded to
+// two decimals, as the Python version did.
 func Resolve(c config.Config) Resolved {
-	name := config.MarketName(c.Markets.Active)
-	m, ok := c.Markets.Market(c.Markets.Active)
+	active := strings.ToLower(strings.TrimSpace(c.Markets.Active))
+	name := config.MarketName(active)
+	m, ok := c.Markets.Market(active)
 	if !ok {
 		name, m = config.MarketInternacional, c.Markets.Internacional
 	}
@@ -62,26 +67,37 @@ func Resolve(c config.Config) Resolved {
 	legacyCurrent := float64(c.Questions.CurrentSalary)
 	r := Resolved{
 		Name:     name,
-		Currency: m.Currency,
+		Currency: firstNonBlank(m.Currency, defaultCurrency(name)),
 		Location: firstNonBlank(m.Location, c.Search.Location),
 		Terms:    firstNonEmpty(m.Terms, c.Search.Terms),
 		Resume:   firstNonBlank(m.Resume, c.Questions.Resume),
 	}
 	if name == config.MarketBrasil {
 		r.SalaryPeriod = Monthly
-		r.DesiredMonthly = or(float64(m.DesiredSalary), legacyDesired/12)
-		r.CurrentMonthly = or(float64(m.CurrentSalary), legacyCurrent/12)
-		r.DesiredAnnual = r.DesiredMonthly * 12
-		r.CurrentAnnual = r.CurrentMonthly * 12
+		r.DesiredMonthly = tidy(or(float64(m.DesiredSalary), legacyDesired/12))
+		r.CurrentMonthly = tidy(or(float64(m.CurrentSalary), legacyCurrent/12))
+		r.DesiredAnnual = tidy(r.DesiredMonthly * 12)
+		r.CurrentAnnual = tidy(r.CurrentMonthly * 12)
 		return r
 	}
 	r.SalaryPeriod = Annual
-	r.DesiredAnnual = or(float64(m.DesiredSalary), legacyDesired)
-	r.CurrentAnnual = or(float64(m.CurrentSalary), legacyCurrent)
-	r.DesiredMonthly = r.DesiredAnnual / 12
-	r.CurrentMonthly = r.CurrentAnnual / 12
+	r.DesiredAnnual = tidy(or(float64(m.DesiredSalary), legacyDesired))
+	r.CurrentAnnual = tidy(or(float64(m.CurrentSalary), legacyCurrent))
+	r.DesiredMonthly = tidy(r.DesiredAnnual / 12)
+	r.CurrentMonthly = tidy(r.CurrentAnnual / 12)
 	return r
 }
+
+// defaultCurrency is the market's currency when the config leaves it blank.
+func defaultCurrency(name config.MarketName) string {
+	if name == config.MarketBrasil {
+		return "BRL"
+	}
+	return "USD"
+}
+
+// tidy rounds money to two decimals.
+func tidy(v float64) float64 { return math.Round(v*100) / 100 }
 
 // FormatMoney renders an amount as it should be typed into a form: whole
 // amounts whole ("8000", never "8000.0"), otherwise two decimals.

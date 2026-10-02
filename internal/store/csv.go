@@ -47,13 +47,20 @@ func JobFromAppliedRow(row map[string]string) Job {
 	if j.ExternalLink != "" && j.DateApplied == "Pending" {
 		j.Outcome = External
 	}
+	// The moment the row was written: when it was applied, else (external, "Pending") when posted.
+	for _, candidate := range []string{j.DateApplied, j.DatePosted} {
+		if t, ok := ParseTime(candidate); ok {
+			j.RecordedAt = Timestamp(t)
+			break
+		}
+	}
 	return j
 }
 
 // JobFromFailedRow reads a row of the failed spreadsheet.
 func JobFromFailedRow(row map[string]string) Job {
 	return Job{Outcome: Failed, JobID: row["Job ID"], JobLink: row["Job Link"], Resume: row["Resume Tried"],
-		DatePosted: row["Date listed"], RecordedAt: row["Date Tried"], Reason: row["Assumed Reason"],
+		DatePosted: row["Date listed"], RecordedAt: NormalizeTimestamp(row["Date Tried"]), Reason: row["Assumed Reason"],
 		StackTrace: row["Stack Trace"], ExternalLink: row["External Job link"], Screenshot: row["Screenshot Name"]}
 }
 

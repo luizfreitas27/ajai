@@ -61,10 +61,27 @@ func TestBlankBrazilianValuesFallBackToTheLegacySettings(t *testing.T) {
 	}
 }
 
-func TestAnUnknownNameResolvesAsInternationalBecauseValidationReportsIt(t *testing.T) {
+func TestTheMarketNameIsCaseInsensitiveAndUnknownNamesResolveAsInternational(t *testing.T) {
 	c := legacy()
-	c.Markets.Active = "europa"
+	c.Markets.Active = " Brasil "
+	if m := Resolve(c); m.Name != config.MarketBrasil || m.SalaryPeriod != Monthly {
+		t.Errorf("%+v", m)
+	}
+	c.Markets.Active = "europa" // Validate reports this; Resolve stays usable
 	if m := Resolve(c); m.Name != config.MarketInternacional {
+		t.Errorf("%+v", m)
+	}
+}
+
+func TestBlankCurrenciesFallBackAndMoneyIsRoundedToCents(t *testing.T) {
+	c := legacy()
+	c.Markets.Brasil.Currency, c.Markets.Internacional.Currency = "", ""
+	c.Questions.DesiredSalary = 100000
+	if m := Resolve(c); m.Currency != "USD" || m.DesiredMonthly != 8333.33 {
+		t.Errorf("%+v", m)
+	}
+	c.Markets.Active = "brasil"
+	if m := Resolve(c); m.Currency != "BRL" || m.DesiredMonthly != 8333.33 || m.DesiredAnnual != 99999.96 {
 		t.Errorf("%+v", m)
 	}
 }

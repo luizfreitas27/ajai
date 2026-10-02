@@ -6,8 +6,10 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -80,7 +82,7 @@ func (s *Store) migrate() error {
 			_ = tx.Rollback()
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, name, s.now().Format(time.RFC3339)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, name, Timestamp(s.now())); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -97,7 +99,7 @@ func (s *Store) migrate() error {
 func (s *Store) SetState(key, value string) error {
 	_, err := s.db.Exec(`INSERT INTO state (key, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		key, value, s.now().Format(time.RFC3339))
+		key, value, Timestamp(s.now()))
 	return err
 }
 
@@ -156,7 +158,9 @@ type Job struct {
 // UpsertJob inserts or replaces a job by its LinkedIn id.
 func (s *Store) UpsertJob(j Job) error {
 	if j.RecordedAt == "" {
-		j.RecordedAt = s.now().Format(time.RFC3339)
+		j.RecordedAt = Timestamp(s.now())
+	} else {
+		j.RecordedAt = NormalizeTimestamp(j.RecordedAt)
 	}
 	_, err := s.db.Exec(`INSERT INTO jobs (job_id, outcome, reason, title, company, work_location, work_style, description,
 		experience_required, skills, hr_name, hr_link, resume, reposted, date_posted, date_applied, job_link, external_link,
@@ -173,6 +177,15 @@ func (s *Store) UpsertJob(j Job) error {
 		j.ExperienceRequired, j.Skills, j.HRName, j.HRLink, j.Resume, j.Reposted, j.DatePosted, j.DateApplied, j.JobLink,
 		j.ExternalLink, j.Questions, j.ConnectRequest, j.StackTrace, j.Screenshot, nullInt(j.RunID), j.RecordedAt)
 	return err
+}
+
+// GetJob returns the job with this LinkedIn id, or nil when unknown.
+func (s *Store) GetJob(jobID string) (*Job, error) {
+	jobs, err := s.listJobs("job_id = ?", []any{jobID}, 1)
+	if err != nil || len(jobs) == 0 {
+		return nil, err
+	}
+	return &jobs[0], nil
 }
 
 // JobFilter narrows ListJobs. Zero values mean "any".
@@ -197,12 +210,16 @@ func (s *Store) ListJobs(f JobFilter) ([]Job, error) {
 		where = append(where, "recorded_at >= ?")
 		args = append(args, f.Since.Format(time.RFC3339))
 	}
+	return s.listJobs(strings.Join(where, " AND "), args, f.Limit)
+}
+
+func (s *Store) listJobs(where string, args []any, limit int) ([]Job, error) {
 	q := `SELECT job_id, outcome, reason, title, company, work_location, work_style, description, experience_required,
 		skills, hr_name, hr_link, resume, reposted, date_posted, date_applied, job_link, external_link, questions,
 		connect_request, stack_trace, screenshot, COALESCE(run_id, 0), recorded_at FROM jobs WHERE ` +
-		strings.Join(where, " AND ") + ` ORDER BY recorded_at DESC, rowid DESC`
-	if f.Limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", f.Limit)
+		where + ` ORDER BY recorded_at DESC, rowid DESC`
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
@@ -260,30 +277,52 @@ type Answer struct {
 	UpdatedAt   string
 }
 
-// Valid answer vocabularies.
-var (
-	Kinds   = []string{"text", "textarea", "select", "radio", "checkbox"}
-	Sources = []string{"ai", "user", "form"}
-	States  = []string{"pending", "approved"}
-)
+// NewAnswerID returns a fresh 12-hex-digit id, the Python memory's shape.
+func NewAnswerID() string {
+	var b [6]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
 
 // UpsertAnswer inserts or replaces an answer. The (kind, normalised) pair is
-// unique: a second entry for the same question replaces the first.
+// unique: a second entry for the same question replaces the first. A blank id
+// gets a new one; timestamps are normalised to Timestamp's format.
 func (s *Store) UpsertAnswer(a Answer) error {
-	now := s.now().Format("2006-01-02T15:04:05")
+	now := Timestamp(s.now())
+	if a.ID == "" {
+		a.ID = NewAnswerID()
+	}
 	if a.CreatedAt == "" {
 		a.CreatedAt = now
 	}
 	if a.UpdatedAt == "" {
 		a.UpdatedAt = now
 	}
+	a.CreatedAt, a.UpdatedAt = NormalizeTimestamp(a.CreatedAt), NormalizeTimestamp(a.UpdatedAt)
+	// Two statements rather than two ON CONFLICT clauses: the same question may
+	// arrive under a new id (re-import) or the same id under a new label (edit).
+	if _, err := s.db.Exec(`DELETE FROM answers WHERE (kind = ? AND normalised = ?) OR id = ?`, a.Kind, a.Normalised, a.ID); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`INSERT INTO answers (id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(kind, normalised) DO UPDATE SET id=excluded.id, label=excluded.label, answer=excluded.answer,
-		source=excluded.source, state=excluded.state, uses=excluded.uses, last_job_link=excluded.last_job_link,
-		created_at=excluded.created_at, updated_at=excluded.updated_at`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.Label, a.Normalised, a.Kind, a.Answer, a.Source, a.State, a.Uses, a.LastJobLink, a.CreatedAt, a.UpdatedAt)
 	return err
+}
+
+// FindAnswer returns the answer remembered for this question, or nil.
+func (s *Store) FindAnswer(kind, normalised string) (*Answer, error) {
+	var a Answer
+	err := s.db.QueryRow(`SELECT id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at
+		FROM answers WHERE kind = ? AND normalised = ?`, kind, normalised).
+		Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 // ListAnswers returns answers, newest updated first; state "" means all.
@@ -330,7 +369,7 @@ type Run struct {
 // StartRun records a run beginning and returns its id.
 func (s *Store) StartRun(ctx context.Context, market string, dryRun bool) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `INSERT INTO runs (started_at, market, dry_run) VALUES (?, ?, ?)`,
-		s.now().Format(time.RFC3339), market, boolInt(dryRun))
+		Timestamp(s.now()), market, boolInt(dryRun))
 	if err != nil {
 		return 0, err
 	}
@@ -341,12 +380,15 @@ func (s *Store) StartRun(ctx context.Context, market string, dryRun bool) (int64
 func (s *Store) FinishRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE runs SET ended_at = ?, applied = ?, external = ?, failed = ?, skipped = ?,
 		pending_answers = ?, reason = ? WHERE id = ?`,
-		s.now().Format(time.RFC3339), r.Applied, r.External, r.Failed, r.Skipped, r.PendingAnswers, r.Reason, r.ID)
+		Timestamp(s.now()), r.Applied, r.External, r.Failed, r.Skipped, r.PendingAnswers, r.Reason, r.ID)
 	return err
 }
 
-// ListRuns returns runs newest first.
+// ListRuns returns runs newest first; limit 0 means all.
 func (s *Store) ListRuns(limit int) ([]Run, error) {
+	if limit <= 0 {
+		limit = -1 // SQLite: no limit
+	}
 	rows, err := s.db.Query(`SELECT id, started_at, COALESCE(ended_at, ''), market, dry_run, applied, external, failed, skipped,
 		pending_answers, COALESCE(reason, '') FROM runs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {

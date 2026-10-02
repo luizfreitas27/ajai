@@ -36,7 +36,8 @@ const pyApplied = "Job ID,Title,Company,Work Location,Work Style,About Job,Exper
 	"222,Dev Ext,Other,SP,Hybrid,desc,Unknown,,Unknown,Unknown,resume.pdf,False,2026-09-30,Pending,https://l/222,https://other/apply,,In Development\n"
 
 const pyFailed = "Job ID,Job Link,Resume Tried,Date listed,Date Tried,Assumed Reason,Stack Trace,External Job link,Screenshot Name\n" +
-	"333,https://l/333,resume.pdf,2026-09-30,2026-10-01 11:00:00,modal closed,Traceback...,,333.png\n"
+	"333,https://l/333,resume.pdf,2026-09-30,2026-10-01 11:00:00.123456,modal closed,Traceback...,,333.png\n" +
+	"111,https://l/111,resume.pdf,2026-09-30,2026-09-29 08:00:00,first attempt failed,tb,,111.png\n" // same job, applied later
 
 func pythonCheckout(t *testing.T) string {
 	t.Helper()
@@ -56,6 +57,7 @@ func pythonCheckout(t *testing.T) string {
 	write("all excels/all_applied_applications_history.csv", pyApplied)
 	write("all excels/all_failed_applications_history.csv", pyFailed)
 	write("all resumes/default/resume.pdf", "%PDF-1.4 fake")
+	write(".env", "LINKEDIN_USERNAME=me@x\nLINKEDIN_PASSWORD=pw\nLLM_API_KEY=sk-ENV-NEVER\nTELEGRAM_CHAT_ID=\n")
 	return src
 }
 
@@ -108,21 +110,29 @@ func TestImportMapsTheConfigAndNeverCopiesSecrets(t *testing.T) {
 		t.Errorf("imported config invalid: %v", err)
 	}
 	if strings.Join(rep.SecretsSeen, " ") != config.EnvAIAPIKey+" "+config.EnvTelegramBotToken {
-		t.Errorf("secrets seen %v (blank chat id must not be listed)", rep.SecretsSeen)
+		t.Errorf("secrets seen %v (from user_config.json AND .env keys; blank chat id must not be listed, no duplicates)", rep.SecretsSeen)
+	}
+	if !strings.Contains(rep.Unmapped[".env LINKEDIN_PASSWORD"], "never logs in") {
+		t.Errorf("LinkedIn credentials in .env should be explained: %v", rep.Unmapped)
 	}
 	data, _ := config.Marshal(cfg)
-	for _, never := range []string{"sk-NEVER", "tok-NEVER", "me@x", "pw"} {
+	for _, never := range []string{"sk-NEVER", "tok-NEVER", "sk-ENV-NEVER", "me@x", "pw"} {
 		if strings.Contains(string(data), never) {
 			t.Errorf("secret %q leaked into the config", never)
 		}
 	}
-	for _, key := range []string{"questions.pause_before_submit", "settings.stop_before_submit", "settings.safe_mode", "secrets.username", "secrets.password"} {
-		if _, ok := rep.Unmapped[key]; !ok {
-			t.Errorf("%s should be reported as superseded", key)
-		}
+	unmappedCases := []struct{ key, wantWhy string }{
+		{"questions.pause_before_submit", "dry-run"},
+		{"settings.stop_before_submit", "dry-run"},
+		{"settings.safe_mode", "chrome_profile_dir"},
+		{"secrets.username", "never logs in"},
+		{"secrets.password", "never logs in"},
+		{"settings.mystery", "no aja counterpart"},
 	}
-	if rep.Unmapped["settings.mystery"] != "no aja counterpart" {
-		t.Errorf("unknown key: %v", rep.Unmapped["settings.mystery"])
+	for _, tc := range unmappedCases {
+		if why, ok := rep.Unmapped[tc.key]; !ok || !strings.Contains(why, tc.wantWhy) {
+			t.Errorf("%s: %q should mention %q", tc.key, why, tc.wantWhy)
+		}
 	}
 	if rep.ResumeCopied != filepath.Join(p.ResumeDir, "resume.pdf") {
 		t.Errorf("resume copied to %q", rep.ResumeCopied)
@@ -141,11 +151,14 @@ func TestImportBringsAnswersAndJobsAndIsIdempotent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rep.Answers != 2 || rep.Applied != 1 || rep.External != 1 || rep.Failed != 1 {
-			t.Errorf("run %d counts: %+v", i, rep)
+		if i == 0 && (rep.Answers != 2 || rep.Applied != 1 || rep.External != 1 || rep.Failed != 1 || rep.JobsKept != 1) {
+			t.Errorf("first run counts: %+v", rep)
 		}
-		if _, ok := rep.Unmapped["answers_memory.json entry "]; !ok {
-			t.Error("the malformed answer should be reported")
+		if i == 1 && (rep.Answers != 0 || rep.AnswersKept != 2 || rep.Applied+rep.External+rep.Failed != 0 || rep.JobsKept != 4) {
+			t.Errorf("second run should keep everything: %+v", rep)
+		}
+		if _, ok := rep.Unmapped["answers_memory.json entry 3"]; !ok {
+			t.Error("the malformed answer should be reported by position")
 		}
 	}
 	answers, _ := st.ListAnswers("")
@@ -156,8 +169,8 @@ func TestImportBringsAnswersAndJobsAndIsIdempotent(t *testing.T) {
 	for _, a := range answers {
 		byID[a.ID] = a
 	}
-	if a := byID["15ef2bdabac3"]; a.State != "pending" || a.Source != "form" || a.Kind != "checkbox" || a.CreatedAt != "2026-10-01T16:45:25" {
-		t.Errorf("%+v", a)
+	if a := byID["15ef2bdabac3"]; a.State != "pending" || a.Source != "form" || a.Kind != "checkbox" || !strings.HasPrefix(a.CreatedAt, "2026-10-01T16:45:25") || !strings.ContainsAny(a.CreatedAt[19:], "+-Z") {
+		t.Errorf("timestamps should be normalised to RFC 3339: %+v", a)
 	}
 	if a := byID["aaa"]; a.State != "approved" || a.Uses != 4 || a.Normalised != "anos com go" || a.LastJobLink != "https://l/1" {
 		t.Errorf("normalised derived when missing: %+v", a)
@@ -167,8 +180,57 @@ func TestImportBringsAnswersAndJobsAndIsIdempotent(t *testing.T) {
 		t.Errorf("jobs %v", counts)
 	}
 	jobs, _ := st.ListJobs(store.JobFilter{Outcomes: []store.Outcome{store.Failed}})
-	if jobs[0].Screenshot != "333.png" || jobs[0].Reason != "modal closed" {
-		t.Errorf("%+v", jobs[0])
+	if len(jobs) != 1 || jobs[0].Screenshot != "333.png" || jobs[0].Reason != "modal closed" || !strings.HasPrefix(jobs[0].RecordedAt, "2026-10-01T11:00:00") {
+		t.Errorf("%+v", jobs)
+	}
+	applied, _ := st.GetJob("111")
+	if applied.Outcome != store.Applied || !strings.HasPrefix(applied.RecordedAt, "2026-10-01T10:00:00") {
+		t.Errorf("a job that failed first and was applied to later must stay applied: %+v", applied)
+	}
+	external, _ := st.GetJob("222")
+	if !strings.HasPrefix(external.RecordedAt, "2026-09-30T00:00:00") {
+		t.Errorf("an external job is dated by Date Posted: %+v", external)
+	}
+}
+
+func TestAjaSideChangesSurviveAReimport(t *testing.T) {
+	src := pythonCheckout(t)
+	p, st := setup(t)
+	cfg := config.Defaults()
+	if _, err := Run(src, &cfg, st, p); err != nil {
+		t.Fatal(err)
+	}
+	// The user approves the pending checkbox in aja, later than the Python file.
+	a, _ := st.FindAnswer("checkbox", "i consent to a background check")
+	a.State, a.Source, a.Uses, a.UpdatedAt = "approved", "user", 9, "2026-12-01T00:00:00Z"
+	if err := st.UpsertAnswer(*a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(src, &cfg, st, p); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := st.FindAnswer("checkbox", "i consent to a background check")
+	if after.State != "approved" || after.Uses != 9 {
+		t.Errorf("re-import undid aja's approval: %+v", after)
+	}
+}
+
+func TestNewerTreatsUndatedAsOldest(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z", true},
+		{"2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", false},
+		{"2026-10-01 10:00:00", "2026-10-01T10:00:00", false}, // equal instants are not newer
+		{"", "2026-10-01T00:00:00Z", false},
+		{"2026-10-01T00:00:00Z", "", true},
+		{"Pending", "", false},
+	}
+	for _, tc := range cases {
+		if got := newer(tc.a, tc.b); got != tc.want {
+			t.Errorf("newer(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
 	}
 }
 
