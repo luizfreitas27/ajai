@@ -18,5 +18,5 @@ func (a *App) openTUI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return showTUI(ctx, tui.Deps{Paths: a.paths, Store: st, Now: a.now}, a.Stdin, a.Stdout, !a.ui.Color())
+	return showTUI(ctx, tui.Deps{Paths: a.paths, Store: st, Now: a.now}, a.Stdin, a.Stdout, a.colorOff())
 }

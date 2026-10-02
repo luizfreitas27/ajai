@@ -249,34 +249,34 @@ func (a *App) statusCmd() *cobra.Command {
 		Short: "Show whether a run is in progress and the last runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			holder, held, lerr := run.ReadLock(a.paths.DataDir)
-			if lerr != nil {
-				a.ui.Warn("lock", lerr.Error())
+			act, err := run.ReadActivity(a.paths.DataDir)
+			if err != nil {
+				a.ui.Warn("run", err.Error())
 			}
-			state, err := run.ReadState(run.StatePath(a.paths.DataDir))
-			switch {
-			case errors.Is(err, run.ErrNoState) && held && holder.PID == 0:
-				a.ui.OK("running", "a run is starting")
-			case errors.Is(err, run.ErrNoState) && held:
-				a.ui.OK("running", holder.String()+", starting")
-			case errors.Is(err, run.ErrNoState):
-				a.ui.Println("No run in progress.")
-			case err != nil:
-				a.ui.Warn("state", err.Error())
-			case state.Alive() && !state.NextRun.IsZero():
-				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
-				if held {
-					a.ui.KV("started from", holder.From())
+			state := act.State
+			switch act.Kind {
+			case run.Starting:
+				if act.From() == "" {
+					a.ui.OK("running", "a run is starting")
+				} else {
+					a.ui.OK("running", act.Holder.String()+", starting")
 				}
-			case state.Alive():
+			case run.Idle:
+				a.ui.Println("No run in progress.")
+			case run.Waiting:
+				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
+				if from := act.From(); from != "" {
+					a.ui.KV("started from", from)
+				}
+			case run.Running:
 				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), run.Mode(state.DryRun), state.Market))
-				if held {
-					a.ui.KV("started from", holder.From())
+				if from := act.From(); from != "" {
+					a.ui.KV("started from", from)
 				}
 				a.ui.KV("term", state.Term)
 				a.ui.KV("applied", fmt.Sprintf("%d (external %d, failed %d, would apply %d)", state.Applied, state.External, state.Failed, state.WouldApply))
 				a.ui.KV("skipped", fmt.Sprint(state.Skipped))
-			default:
+			case run.Stale:
 				a.ui.Warn("stale", fmt.Sprintf("pid %d is gone; the last run did not exit cleanly", state.PID))
 			}
 			st, err := a.openStore()

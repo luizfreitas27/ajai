@@ -60,7 +60,10 @@ to the tag before tagging and the workflow publishes that section as the release
   everything outside the process goes through `Deps`. Refreshes are chained (a tick
   starts a read, its result schedules the next tick), so two never overlap and the
   Dashboard's `logging.Tail` is used by one at a time. The Dashboard follows the daemon's
-  log while a run the daemon started holds the lock, the terminal runs' log otherwise.
+  log while a run the daemon started (`Holder.ByDaemon`) holds the lock, the terminal
+  runs' log while another run does, and keeps the last one while no run does. What the
+  run in progress is doing comes from `run.ReadActivity`, shared with `aja status` and
+  Telegram's `/status`; never re-derive it from the lock and state file.
   Tests drive the model synchronously (`harness_test.go`: keys, sizes, explicit ticks,
   a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
   with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them). No adaptive
@@ -68,6 +71,10 @@ to the tag before tagging and the workflow publishes that section as the release
   the keyboard, and the reply arrives as key presses. To try it outside tests, run it in a
   pty that answers the OSC 11 query Bubble Tea's own init sends, or termenv eats the
   first keys.
+- Lock readers: `filelock.Held` takes the lock for an instant, so another reader can see it
+  taken with no description; `filelock.ReadHeld` looks again a few times before believing
+  an undescribed holder (otherwise a once-a-second reader like the TUI makes the daemon
+  skip schedule openings).
 - `internal/launch`: the one place a loaded configuration becomes a run: `NewPlan` (market,
   AI client, resume, Chrome; no side effects, so the caller can print it first) then
   `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `aja run`

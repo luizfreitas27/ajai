@@ -45,10 +45,22 @@ func TestTailFollowsAppendsTruncationAndMidnight(t *testing.T) {
 	if got := read(day); got != "new\n" {
 		t.Errorf("after truncation the file is read from the start: %q", got)
 	}
+	appendTo(path, "half")
+	if got := read(day); got != "half" {
+		t.Errorf("%q", got)
+	}
+	if err := os.WriteFile(path, []byte("x\n"), 0o600); err != nil { // truncated mid-line
+		t.Fatal(err)
+	}
+	if got := read(day); got != "\nx\n" {
+		t.Errorf("a half-read line is ended before the file is read again: %q", got)
+	}
+
+	appendTo(path, "just before midnight\nhalf")
 	tomorrow := day.Add(2 * time.Hour)
 	appendTo(FileName(dir, tomorrow), "saturday\n")
-	if got := read(tomorrow); got != "saturday\n" {
-		t.Errorf("after midnight the next day's file: %q", got)
+	if got := read(tomorrow); got != "just before midnight\nhalf\nsaturday\n" {
+		t.Errorf("after midnight: the rest of the day's file, its half line ended, then the next day's: %q", got)
 	}
 
 	skip := NewTail(FileName, dir, tomorrow, int64(len("saturday\n")))

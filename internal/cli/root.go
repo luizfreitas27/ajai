@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,7 +66,7 @@ try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			a.ui = ui.New(a.Stdout, a.Stderr, a.noColor || a.Env.Get("NO_COLOR") != "")
+			a.ui = ui.New(a.Stdout, a.Stderr, a.colorOff())
 			a.paths = paths.Resolve(a.configFlag, a.Env.Getenv)
 			a.logger = logging.Discard
 			return nil
@@ -84,6 +85,9 @@ try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
 			a.cleanups = nil
 		},
 	}
+	// The root runs the TUI, which would add "aja [flags]" to the help; the
+	// help stays as it was, and subcommands keep their usage line.
+	root.SetUsageTemplate(strings.Replace(root.UsageTemplate(), "{{if .Runnable}}", "{{if and .Runnable .HasParent}}", 1))
 	root.SetOut(a.Stdout)
 	root.SetErr(a.Stderr)
 	root.SetIn(a.Stdin)
@@ -92,6 +96,9 @@ try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
 	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.loginCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd(), a.scheduleCmd(), a.daemonCmd())
 	return root
 }
+
+// colorOff: --no-color or NO_COLOR.
+func (a *App) colorOff() bool { return a.noColor || a.Env.Get("NO_COLOR") != "" }
 
 // Execute runs the tree and returns the exit code.
 func (a *App) Execute(ctx context.Context, args []string) int {

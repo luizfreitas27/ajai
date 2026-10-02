@@ -19,22 +19,22 @@ import (
 // and the schedule.
 func (l *Listener) status() string {
 	var b strings.Builder
-	holder, held, _ := run.ReadLock(l.dataDir)
-	state, stateErr := run.ReadState(run.StatePath(l.dataDir))
+	act, _ := run.ReadActivity(l.dataDir)
+	state := act.State
 	switch {
-	case held:
-		fmt.Fprintf(&b, "Running: %s.\n", holder)
-		if stateErr == nil {
+	case act.Held:
+		fmt.Fprintf(&b, "Running: %s.\n", act.Holder)
+		switch act.Kind {
+		case run.Waiting:
 			fmt.Fprintf(&b, "Market %s, %s.\n", state.Market, run.Mode(state.DryRun))
-			if !state.NextRun.IsZero() {
-				fmt.Fprintf(&b, "Non-stop session: next run at %s.\n", state.NextRun.Local().Format("15:04"))
-			} else {
-				if state.Term != "" {
-					fmt.Fprintf(&b, "Searching: %s\n", state.Term)
-				}
-				fmt.Fprintf(&b, "Applied %d, external %d, failed %d, skipped %d, would apply %d.\n",
-					state.Applied, state.External, state.Failed, state.Skipped, state.WouldApply)
+			fmt.Fprintf(&b, "Non-stop session: next run at %s.\n", state.NextRun.Local().Format("15:04"))
+		case run.Running:
+			fmt.Fprintf(&b, "Market %s, %s.\n", state.Market, run.Mode(state.DryRun))
+			if state.Term != "" {
+				fmt.Fprintf(&b, "Searching: %s\n", state.Term)
 			}
+			fmt.Fprintf(&b, "Applied %d, external %d, failed %d, skipped %d, would apply %d.\n",
+				state.Applied, state.External, state.Failed, state.Skipped, state.WouldApply)
 		}
 	default:
 		b.WriteString("No run in progress.\n")

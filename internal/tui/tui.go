@@ -30,8 +30,8 @@ type Deps struct {
 
 // The smallest terminal the TUI lays out in.
 const (
-	MinWidth  = 80
-	MinHeight = 24
+	minWidth  = 80
+	minHeight = 24
 )
 
 // refreshEvery is how often the TUI re-reads what it shows.
@@ -44,9 +44,9 @@ var tabNames = []string{"Dashboard"}
 
 // Model is the TUI.
 type Model struct {
-	d     Deps
-	s     styles
-	every func(time.Duration, func(time.Time) tea.Msg) tea.Cmd // tea.Tick; tests drive ticks themselves
+	deps      Deps
+	styles    styles
+	tickAfter func(time.Duration, func(time.Time) tea.Msg) tea.Cmd // tea.Tick; tests send ticks themselves
 
 	width, height int
 	tab           tab
@@ -56,7 +56,7 @@ type Model struct {
 
 // New builds the TUI; r renders its colours (see Run).
 func New(d Deps, r *lipgloss.Renderer) Model {
-	return Model{d: d, s: newStyles(r), every: tea.Tick}
+	return Model{deps: d, styles: newStyles(r), tickAfter: tea.Tick}
 }
 
 // Run shows the TUI on the terminal in and out until the user quits or ctx
@@ -76,7 +76,7 @@ func Run(ctx context.Context, d Deps, in io.Reader, out io.Writer, noColor bool)
 type tickMsg struct{}
 
 // Init reads what the Dashboard shows.
-func (m Model) Init() tea.Cmd { return m.dash.refresh(m.d) }
+func (m Model) Init() tea.Cmd { return m.dash.refresh(m.deps) }
 
 // Update handles keys, the terminal's size and the refresh cycle: a refresh
 // reads, and the next one is scheduled only once its result is in, so two never
@@ -99,10 +99,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tickMsg:
-		return m, m.dash.refresh(m.d)
+		return m, m.dash.refresh(m.deps)
 	case refreshedMsg:
 		m.dash = m.dash.apply(msg)
-		return m, m.every(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+		return m, m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
 	}
 	return m, nil
 }
@@ -112,13 +112,13 @@ func (m Model) View() string {
 	if m.width == 0 {
 		return "" // the size is not known yet
 	}
-	if m.width < MinWidth || m.height < MinHeight {
+	if m.width < minWidth || m.height < minHeight {
 		return fmt.Sprintf("aja needs a terminal of at least %d×%d; this one is %d×%d.\nMake it larger, or press q to quit.",
-			MinWidth, MinHeight, m.width, m.height)
+			minWidth, minHeight, m.width, m.height)
 	}
-	rule := m.s.dim.Render(strings.Repeat("─", m.width))
+	rule := m.styles.dim.Render(strings.Repeat("─", m.width))
 	height := m.height - 4 // tab bar, two rules, key hints
-	body := m.dash.view(m.s, m.width, height, m.d.Now())
+	body := m.dash.view(m.styles, m.width, height, m.deps.Now())
 	if m.help {
 		body = m.helpView()
 	}
@@ -126,26 +126,26 @@ func (m Model) View() string {
 }
 
 func (m Model) tabBar() string {
-	parts := []string{m.s.brand.Render("aja")}
+	parts := []string{m.styles.brand.Render("aja")}
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if tab(i) == m.tab && !m.help {
-			parts = append(parts, m.s.activeTab.Render(label))
+			parts = append(parts, m.styles.activeTab.Render(label))
 		} else {
-			parts = append(parts, m.s.tab.Render(label))
+			parts = append(parts, m.styles.tab.Render(label))
 		}
 	}
 	return strings.Join(parts, "   ")
 }
 
 func (m Model) hints() string {
-	return m.s.dim.Render("? keys · q quit")
+	return m.styles.dim.Render("? keys · q quit")
 }
 
 func (m Model) helpView() string {
-	lines := []string{m.s.section.Render("Keys"), ""}
+	lines := []string{m.styles.section.Render("Keys"), ""}
 	row := func(key, what string) {
-		lines = append(lines, "  "+m.s.key.Render(fmt.Sprintf("%-11s", key))+" "+what)
+		lines = append(lines, "  "+m.styles.key.Render(fmt.Sprintf("%-11s", key))+" "+what)
 	}
 	for i, name := range tabNames {
 		row(fmt.Sprint(i+1), name)

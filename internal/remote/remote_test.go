@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -401,7 +402,7 @@ func TestStatusHelpAndUnknownCommands(t *testing.T) {
 	// A run in progress, as its lock and live state show it.
 	lock, _ := run.AcquireLock(w.dir, run.Holder{Origin: run.OriginSchedule, Window: 1, Started: w.now})
 	defer lock.Release()
-	_ = run.WriteState(run.StatePath(w.dir), run.State{Market: "brasil", DryRun: true, Term: "Golang", Applied: 2, Skipped: 5})
+	_ = run.WriteState(run.StatePath(w.dir), run.State{PID: os.Getpid(), Market: "brasil", DryRun: true, Term: "Golang", Applied: 2, Skipped: 5})
 	w.tg.say(chat, "/status", w.now)
 	m = w.tg.waitFor(t, 2)
 	for _, want := range []string{"Running: a run started from schedule window 1", "Market brasil, dry run.", "Searching: Golang", "Applied 2, external 0, failed 0, skipped 5"} {

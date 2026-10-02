@@ -40,6 +40,10 @@ func (h Holder) String() string {
 	return fmt.Sprintf("a run started from %s (pid %d) at %s", h.From(), h.PID, h.Started.Local().Format("15:04"))
 }
 
+// ByDaemon reports whether the daemon runs this run: a schedule window or
+// Telegram started it.
+func (h Holder) ByDaemon() bool { return h.Origin == OriginSchedule || h.Origin == OriginTelegram }
+
 // From says where the run was started: "the terminal", "schedule window 3", "Telegram".
 func (h Holder) From() string {
 	switch {

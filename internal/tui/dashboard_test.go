@@ -33,7 +33,7 @@ func (h *harness) logAt(name logging.FileNamer, at time.Time, msg string, attrs 
 	_, _ = fmt.Fprintf(f, `{"time":%q,"level":"INFO","msg":%q%s}`+"\n", at.Format(time.RFC3339Nano), msg, attrs)
 }
 
-// holdRun takes the run lock as a run started from origin would.
+// holdRun takes the run lock as holder.
 func (h *harness) holdRun(holder run.Holder) {
 	h.t.Helper()
 	lock, err := run.AcquireLock(h.p.DataDir, holder)
@@ -93,9 +93,12 @@ func TestTheDashboardFollowsARunLive(t *testing.T) {
 		"applied 2 · external 0 · failed 0 · skipped 5 · would apply 2", "1 to review",
 		"Mon 05 Oct 14:00, window 1 (Mon, Wed 14:00-16:00, market brasil)",
 		"not running: schedule windows start runs only while it runs",
-		"#2    Sun 04 Oct 19:00  internacional  live        3     1     1     9  stopped from Telegram",
+		"04 Oct 19:00  internacional  live       3    1    1    9  stopped from Telegram",
 		`09:29:00 INFO  searching term="Go developer" page=2`, `09:29:30 INFO  skipped a job reason="already applied"`)
 	h.golden("dashboard-running")
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
+	h.golden("dashboard-smallest")
+	h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	// A second later: more done, a line half written then finished.
 	h.now = h.now.Add(time.Second)
@@ -127,7 +130,7 @@ func TestTheDashboardShowsAWaitingSessionAStartAndADeadRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.refresh()
-	h.shows("waiting: non-stop session, next run at 10:15; started from the terminal", "market internacional, live")
+	h.shows("waiting: non-stop session, next run at 10:15, started from the terminal", "market internacional, live")
 
 	gone := exec.Command("true")
 	if err := gone.Run(); err != nil {
@@ -153,12 +156,24 @@ func TestARunTheDaemonStartedIsFollowedInTheDaemonLog(t *testing.T) {
 	h.open(100, 30)
 	h.shows("Daemon", "running since Mon 05 Oct 07:30", "Today's log", "a terminal run")
 
-	h.holdRun(run.Holder{PID: os.Getpid(), Origin: run.OriginSchedule, Window: 1, Started: h.now})
+	lock, err := run.AcquireLock(h.p.DataDir, run.Holder{PID: os.Getpid(), Origin: run.OriginSchedule, Window: 1, Started: h.now})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.refresh()
 	h.shows("starting, started from schedule window 1", "Today's daemon log", "window opened window=1")
 	if strings.Contains(h.screen(), "a terminal run") {
 		t.Errorf("the terminal runs' log is no longer shown:\n%s", h.screen())
 	}
+
+	// The run ends: its last lines stay until another run starts.
+	h.logAt(logging.DaemonFileName, h.now, "run ended", "")
+	lock.Release()
+	h.refresh()
+	h.shows("No run in progress.", "Today's daemon log", "window opened", "run ended")
+	h.holdRun(run.Holder{PID: os.Getpid(), Origin: run.OriginTerminal, Started: h.now})
+	h.refresh()
+	h.shows("Today's log", "a terminal run")
 }
 
 func TestTheLogIsFollowedPastMidnight(t *testing.T) {

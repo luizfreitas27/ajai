@@ -60,7 +60,7 @@ func (h *harness) open(width, height int) {
 	r := lipgloss.NewRenderer(io.Discard)
 	r.SetColorProfile(termenv.Ascii)
 	m := New(Deps{Paths: h.p, Store: h.st, Now: func() time.Time { return h.now }}, r)
-	m.every = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
+	m.tickAfter = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
 	h.m = m
 	h.do(m.Init())
 	h.send(tea.WindowSizeMsg{Width: width, Height: height})

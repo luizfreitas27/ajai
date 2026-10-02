@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -17,18 +16,19 @@ import (
 )
 
 const (
-	// lastRunsShown is how many recent runs the Dashboard lists.
-	lastRunsShown = 5
+	// lastRunsRead is how many recent runs the Dashboard reads; fewer are
+	// shown on a short terminal, so the log keeps minLogLines.
+	lastRunsRead = 5
+	minLogLines  = 4
 	// logKept is how many log lines the Dashboard keeps to show.
 	logKept = 500
+	// dayTime is how the Dashboard writes a moment.
+	dayTime = "Mon 02 Jan 15:04"
 )
 
 // snapshot is what the Dashboard shows, read in one go.
 type snapshot struct {
-	holder   run.Holder
-	held     bool
-	state    run.State
-	hasState bool
+	activity run.Activity
 	runs     []store.Run
 	pending  int
 	windows  []schedule.Window
@@ -45,14 +45,9 @@ func readSnapshot(d Deps) snapshot {
 		}
 	}
 	var err error
-	s.holder, s.held, err = run.ReadLock(d.Paths.DataDir)
-	problem("run lock", err)
-	s.state, err = run.ReadState(run.StatePath(d.Paths.DataDir))
-	s.hasState = err == nil
-	if !errors.Is(err, run.ErrNoState) {
-		problem("run state", err)
-	}
-	s.runs, err = d.Store.ListRuns(lastRunsShown)
+	s.activity, err = run.ReadActivity(d.Paths.DataDir)
+	problem("run", err)
+	s.runs, err = d.Store.ListRuns(lastRunsRead)
 	problem("runs", err)
 	s.pending, err = d.Store.CountAnswers("pending")
 	problem("answers", err)
@@ -68,15 +63,17 @@ type refreshedMsg struct {
 	snap      snapshot
 	tail      *logging.Tail
 	daemonLog bool // the daemon's log is followed, not the terminal runs' one
-	restarted bool // a different log is followed now: drop the old lines
+	switched  bool // another log is followed now: drop the old lines
 	log       []byte
 }
 
-// dashboard is the Dashboard tab: the run in progress, the last runs and the
-// log of the run in progress (the daemon's log for a run the daemon started).
+// dashboard is the Dashboard tab: the run in progress, the last runs and a
+// log: the daemon's while a run the daemon started holds the run lock, the
+// terminal runs' while one of those does, and the last one followed while no
+// run does (so a run's last lines stay when it ends).
 type dashboard struct {
 	snap      snapshot
-	read      bool // a first snapshot is in
+	loaded    bool // a first snapshot is in
 	tail      *logging.Tail
 	daemonLog bool
 	log       logLines
@@ -84,16 +81,17 @@ type dashboard struct {
 
 // refresh reads a snapshot and the followed log. The tail is used by one
 // refresh at a time (Model.Update chains them).
-func (b dashboard) refresh(d Deps) tea.Cmd {
-	tail, daemonLog := b.tail, b.daemonLog
+func (dash dashboard) refresh(d Deps) tea.Cmd {
+	tail, daemonLog := dash.tail, dash.daemonLog
 	return func() tea.Msg {
 		now := d.Now()
 		snap := readSnapshot(d)
-		wantDaemon := snap.held && (snap.holder.Origin == run.OriginSchedule || snap.holder.Origin == run.OriginTelegram)
-		restarted := tail == nil || wantDaemon != daemonLog
-		if restarted {
+		act := snap.activity
+		switched := tail == nil || (act.Held && act.Holder.ByDaemon() != daemonLog)
+		if switched {
+			daemonLog = act.Held && act.Holder.ByDaemon()
 			name := logging.FileName
-			if wantDaemon {
+			if daemonLog {
 				name = logging.DaemonFileName
 			}
 			tail = logging.NewTail(name, d.Paths.LogDir, now, 0)
@@ -102,37 +100,32 @@ func (b dashboard) refresh(d Deps) tea.Cmd {
 		if err != nil {
 			snap.problems = append(snap.problems, "log: "+err.Error())
 		}
-		return refreshedMsg{snap: snap, tail: tail, daemonLog: wantDaemon, restarted: restarted, log: data}
+		return refreshedMsg{snap: snap, tail: tail, daemonLog: daemonLog, switched: switched, log: data}
 	}
 }
 
-func (b dashboard) apply(msg refreshedMsg) dashboard {
-	b.snap, b.read, b.tail, b.daemonLog = msg.snap, true, msg.tail, msg.daemonLog
-	if msg.restarted {
-		b.log = logLines{}
+func (dash dashboard) apply(msg refreshedMsg) dashboard {
+	dash.snap, dash.loaded, dash.tail, dash.daemonLog = msg.snap, true, msg.tail, msg.daemonLog
+	if msg.switched {
+		dash.log = logLines{}
 	}
-	b.log = b.log.add(msg.log)
-	return b
+	dash.log = dash.log.add(msg.log)
+	return dash
 }
 
-func (b dashboard) view(s styles, width, height int, now time.Time) string {
-	if !b.read {
+func (dash dashboard) view(s styles, width, height int, now time.Time) string {
+	if !dash.loaded {
 		return "Reading…"
 	}
 	var top []string
 	add := func(label, text string) {
-		if label != "" {
-			label = s.section.Render(fmt.Sprintf("%-12s", label))
-		} else {
-			label = strings.Repeat(" ", 12)
-		}
-		top = append(top, label+"  "+text)
+		top = append(top, s.section.Render(fmt.Sprintf("%-12s", label))+"  "+text)
 	}
-	snap := b.snap
+	snap := dash.snap
 	for _, p := range snap.problems {
 		add("Problem", s.warn.Render(p))
 	}
-	b.runView(s, add)
+	runView(s, snap.activity, add)
 
 	pending := "none"
 	if snap.pending > 0 {
@@ -147,37 +140,42 @@ func (b dashboard) view(s styles, width, height int, now time.Time) string {
 			add("Schedule", fmt.Sprintf("window %d open until %s (%s)", o.Window.ID, o.Window.End, o.Window))
 		}
 		if o, ok := schedule.Next(snap.windows, now); ok {
-			add("Next window", fmt.Sprintf("%s, window %d (%s)", o.Start.Format("Mon 02 Jan 15:04"), o.Window.ID, o.Window))
+			add("Next opening", fmt.Sprintf("%s, window %d (%s)", o.Start.Format(dayTime), o.Window.ID, o.Window))
 		} else {
-			add("Next window", s.dim.Render("every schedule window is disabled"))
+			add("Next opening", s.dim.Render("none: every schedule window is disabled"))
 		}
 	}
 	switch {
+	case snap.daemonUp && !snap.daemon.Started.IsZero():
+		add("Daemon", s.ok.Render("running")+" since "+snap.daemon.Started.Local().Format(dayTime))
 	case snap.daemonUp:
-		add("Daemon", s.ok.Render("running")+" since "+snap.daemon.Started.Local().Format("Mon 02 Jan 15:04"))
+		add("Daemon", s.ok.Render("starting"))
 	case len(snap.windows) > 0:
 		add("Daemon", s.warn.Render("not running")+": schedule windows start runs only while it runs")
 	default:
 		add("Daemon", "not running")
 	}
 
+	// The runs table takes what the log can spare.
+	rows := min(len(snap.runs), height-len(top)-3-2-minLogLines)
 	top = append(top, "", s.section.Render("Last runs"))
-	if len(snap.runs) == 0 {
+	switch {
+	case len(snap.runs) == 0:
 		top = append(top, s.dim.Render("  none yet"))
-	} else {
-		top = append(top, s.dim.Render(fmt.Sprintf(runColumns, "#", "started", "market", "mode", "appl", "ext", "fail", "skip", "ended")))
-	}
-	for _, r := range snap.runs {
-		top = append(top, runLine(r))
+	case rows > 0:
+		top = append(top, s.dim.Render(fmt.Sprintf(runColumns, "started", "market", "mode", "appl", "ext", "fail", "skip", "ended")))
+		for _, r := range snap.runs[:rows] {
+			top = append(top, runLine(r))
+		}
 	}
 
 	logTitle := "Today's log"
-	if b.daemonLog {
+	if dash.daemonLog {
 		logTitle = "Today's daemon log"
 	}
 	top = append(top, "", s.section.Render(logTitle))
 	room := height - len(top)
-	lines := b.log.lines
+	lines := dash.log.lines
 	if room <= 0 {
 		return strings.Join(top, "\n")
 	}
@@ -193,41 +191,41 @@ func (b dashboard) view(s styles, width, height int, now time.Time) string {
 	return strings.Join(top, "\n")
 }
 
-// runView describes the run in progress, as `aja status` does.
-func (b dashboard) runView(s styles, add func(label, text string)) {
-	snap := b.snap
+// runView describes the run in progress.
+func runView(s styles, act run.Activity, add func(label, text string)) {
 	from := ""
-	if snap.held {
-		from = "started from " + snap.holder.From()
+	if f := act.From(); f != "" {
+		from = ", started from " + f
 	}
-	switch {
-	case !snap.hasState && snap.held:
-		add("Run", s.ok.Render("starting")+", "+from)
-	case !snap.hasState:
+	st := act.State
+	switch act.Kind {
+	case run.Idle:
 		add("Run", "No run in progress.")
-	case !snap.state.Alive():
-		add("Run", s.warn.Render("the last run did not exit cleanly")+fmt.Sprintf(" (it started at %s)", snap.state.Started.Local().Format("Mon 02 Jan 15:04")))
-	case !snap.state.NextRun.IsZero():
-		add("Run", s.ok.Render("waiting")+fmt.Sprintf(": non-stop session, next run at %s; %s", snap.state.NextRun.Local().Format("15:04"), from))
-		add("", fmt.Sprintf("market %s, %s", snap.state.Market, run.Mode(snap.state.DryRun)))
-	default:
-		add("Run", s.ok.Render("running")+fmt.Sprintf(" since %s, %s", snap.state.Started.Local().Format("15:04"), from))
-		add("", fmt.Sprintf("market %s, %s", snap.state.Market, run.Mode(snap.state.DryRun)))
-		if snap.state.Term != "" {
-			add("", "searching "+snap.state.Term)
+	case run.Starting:
+		add("Run", s.ok.Render("starting")+from)
+	case run.Stale:
+		add("Run", s.warn.Render("the last run did not exit cleanly")+fmt.Sprintf(" (it started at %s)", st.Started.Local().Format(dayTime)))
+	case run.Waiting:
+		add("Run", s.ok.Render("waiting")+fmt.Sprintf(": non-stop session, next run at %s%s", st.NextRun.Local().Format("15:04"), from))
+		add("", fmt.Sprintf("market %s, %s", st.Market, run.Mode(st.DryRun)))
+	case run.Running:
+		add("Run", s.ok.Render("running")+fmt.Sprintf(" since %s%s", st.Started.Local().Format("15:04"), from))
+		add("", fmt.Sprintf("market %s, %s", st.Market, run.Mode(st.DryRun)))
+		if st.Term != "" {
+			add("", "searching "+st.Term)
 		}
-		st := snap.state
 		add("", fmt.Sprintf("applied %d · external %d · failed %d · skipped %d · would apply %d", st.Applied, st.External, st.Failed, st.Skipped, st.WouldApply))
 	}
 }
 
-// runColumns lays out the last runs table.
-const runColumns = "  %-5s %-16s  %-13s  %-7s %5v %5v %5v %5v  %s"
+// runColumns lays out the last runs table: it leaves the ending reason 20
+// cells on the smallest terminal.
+const runColumns = "  %-12s  %-13s  %-7s %4v %4v %4v %4v  %s"
 
 func runLine(r store.Run) string {
 	when := r.StartedAt
 	if t, ok := store.ParseTime(r.StartedAt); ok {
-		when = t.Local().Format("Mon 02 Jan 15:04")
+		when = t.Local().Format("02 Jan 15:04")
 	}
 	ended := r.Reason
 	switch {
@@ -236,7 +234,7 @@ func runLine(r store.Run) string {
 	case ended == "":
 		ended = "ended"
 	}
-	return fmt.Sprintf(runColumns, fmt.Sprint("#", r.ID), when, r.Market, run.Mode(r.DryRun), r.Applied, r.External, r.Failed, r.Skipped, ended)
+	return fmt.Sprintf(runColumns, when, r.Market, run.Mode(r.DryRun), r.Applied, r.External, r.Failed, r.Skipped, ended)
 }
 
 // logLines are the last lines of the followed log; partial is a line still
