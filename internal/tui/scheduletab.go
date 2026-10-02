@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/schedule"
 	"github.com/luizfreitas27/aja/internal/store"
 )
@@ -97,7 +96,7 @@ func (t scheduleTab) resized(width, height int) scheduleTab {
 // listHeight is the room for windows: the tab's less its title, the notice,
 // the column names and the delete question.
 func (t scheduleTab) listHeight() int {
-	used := 2 + len(wrap(t.notice.text, max(1, t.width))) + len(t.daemon.lines(measure, t.width, daemon.Process{}, false))
+	used := 2 + len(wrap(t.notice.text, max(1, t.width))) + len(t.daemon.lines(measure, t.width, daemonProc{}))
 	if t.deleting != nil {
 		used += 3
 	}
@@ -186,8 +185,10 @@ func (t scheduleTab) browseKey(msg tea.KeyMsg, d Deps) (scheduleTab, tea.Cmd) {
 		if w, ok := t.current(); ok {
 			t.deleting = &w
 		}
-	case "i", "u", "s", "t":
-		t.daemon = t.daemon.ask(map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "s": startDaemon, "t": stopDaemon}[msg.String()], d)
+	default:
+		if a, ok := daemonKeys[msg.String()]; ok {
+			t.daemon = t.daemon.ask(a)
+		}
 	}
 	return t.settled(), nil
 }
@@ -355,7 +356,14 @@ func deleteWindow(d Deps, w schedule.Window) tea.Cmd {
 // windowRow lays out the list: it fits the smallest terminal.
 const windowRow = "  %-3s %-16s %-11s %-13s %-7s %-5s %s"
 
-func (t scheduleTab) view(s styles, width int, now time.Time, proc daemon.Process, up bool) string {
+// readUnit reads the daemon's unit, unless that is under way already.
+func (t scheduleTab) readUnit(d Deps) (scheduleTab, tea.Cmd) {
+	var cmd tea.Cmd
+	t.daemon, cmd = t.daemon.readUnit(d)
+	return t, cmd
+}
+
+func (t scheduleTab) view(s styles, width int, now time.Time, proc daemonProc) string {
 	head := s.section.Render("Schedule")
 	if t.loaded {
 		if o, ok := schedule.Current(t.windows, now); ok {
@@ -377,7 +385,7 @@ func (t scheduleTab) view(s styles, width int, now time.Time, proc daemon.Proces
 	if !t.loaded {
 		return strings.Join(append(lines, "Reading…"), "\n")
 	}
-	bottom := t.daemon.lines(s, width, proc, up)
+	bottom := t.daemon.lines(s, width, proc)
 	if len(t.windows) == 0 {
 		lines = append(lines, "", s.dim.Render("No schedule windows: a adds one. Runs start in them only while the daemon runs."))
 		return strings.Join(append(pad(lines, t.height-len(bottom)), bottom...), "\n")

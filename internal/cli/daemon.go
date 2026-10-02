@@ -173,15 +173,21 @@ func (a *App) pinnedEnv() (map[string]string, error) {
 	return env, nil
 }
 
-// installCheck refuses to install while a daemon runs outside systemd (it
-// would keep the unit's from starting), and says what reinstalling a running
-// unit ends: the run in progress, if any.
+// handStarted is a daemon running outside systemd (`aja daemon` in a terminal)
+// while the unit's is not: it keeps the unit's from starting, and the unit
+// cannot stop it.
+func (a *App) handStarted(m service.Manager) (daemon.Process, bool) {
+	d, running, _ := daemon.ReadLock(a.paths.DataDir)
+	return d, running && m.Status().Active != "active"
+}
+
+// installCheck refuses to install while a daemon runs outside systemd, and says
+// what reinstalling a running unit ends: the run in progress, if any.
 func (a *App) installCheck(m service.Manager) (restarting string, err error) {
-	unitActive := m.Status().Active == "active"
-	if d, running, _ := daemon.ReadLock(a.paths.DataDir); running && !unitActive {
+	if d, ok := a.handStarted(m); ok {
 		return "", fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
 	}
-	if h, held, _ := run.ReadLock(a.paths.DataDir); held && unitActive {
+	if h, held, _ := run.ReadLock(a.paths.DataDir); held && m.Status().Active == "active" {
 		return "restarting the daemon ends " + h.String() + "; its window resumes once the daemon is back", nil
 	}
 	return "", nil
@@ -203,19 +209,28 @@ func (a *App) installOptions() (service.Options, error) {
 	return o, err
 }
 
-// unitService is the daemon's systemd user unit for the TUI: the same checks
-// and options as `aja daemon install`.
-type unitService struct {
-	app *App
-	m   service.Manager
+// daemonUnit is the daemon's systemd user unit for the TUI, with `aja daemon
+// install`'s checks and options. The manager is made on each call: making it
+// asks systemd, which the TUI does only while it shows the unit.
+type daemonUnit struct{ app *App }
+
+// Status is the unit as systemd sees it.
+func (u daemonUnit) Status() service.Status {
+	m, err := u.app.serviceManager()
+	if err != nil {
+		return service.Status{}
+	}
+	return m.Status()
 }
 
-func (u unitService) Status() service.Status { return u.m.Status() }
-
-// Install writes, enables and starts the unit; what reinstalling ends comes
-// first among the warnings.
-func (u unitService) Install() (service.Installed, error) {
-	restarting, err := u.app.installCheck(u.m)
+// Install writes, enables and starts the unit as `aja daemon install` does;
+// what reinstalling ends comes first among the warnings.
+func (u daemonUnit) Install() (service.Installed, error) {
+	m, err := u.app.serviceManager()
+	if err != nil {
+		return service.Installed{}, err
+	}
+	restarting, err := u.app.installCheck(m)
 	if err != nil {
 		return service.Installed{}, err
 	}
@@ -223,16 +238,49 @@ func (u unitService) Install() (service.Installed, error) {
 	if err != nil {
 		return service.Installed{}, err
 	}
-	result, err := u.m.Install(o)
+	result, err := m.Install(o)
 	if restarting != "" {
 		result.Warnings = append([]string{restarting}, result.Warnings...)
 	}
 	return result, err
 }
 
-func (u unitService) Uninstall() ([]string, error) { return u.m.Uninstall() }
-func (u unitService) Start() ([]string, error)     { return u.m.Start() }
-func (u unitService) Stop() ([]string, error)      { return u.m.Stop() }
+// Uninstall stops and disables the unit and removes it.
+func (u daemonUnit) Uninstall() error {
+	m, err := u.app.serviceManager()
+	if err != nil {
+		return err
+	}
+	_, err = m.Uninstall()
+	return err
+}
+
+// Start starts the unit, unless a daemon started by hand runs (the unit's
+// would exit at once).
+func (u daemonUnit) Start() error {
+	m, err := u.app.serviceManager()
+	if err != nil {
+		return err
+	}
+	if d, ok := u.app.handStarted(m); ok {
+		return fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal) first", d)
+	}
+	_, err = m.Start()
+	return err
+}
+
+// Stop stops the unit; a daemon started by hand is not the unit's to stop.
+func (u daemonUnit) Stop() error {
+	m, err := u.app.serviceManager()
+	if err != nil {
+		return err
+	}
+	if d, ok := u.app.handStarted(m); ok {
+		return fmt.Errorf("the daemon running (%s) was started by hand, not by its unit: stop it with Ctrl-C in its terminal", d)
+	}
+	_, err = m.Stop()
+	return err
+}
 
 func (a *App) daemonInstallCmd() *cobra.Command {
 	return &cobra.Command{

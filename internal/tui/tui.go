@@ -34,8 +34,8 @@ type Deps struct {
 	Now      func() time.Time
 	Probe    doctor.Probe // the machine, as `aja doctor` looks at it
 	Launcher Launcher
-	Service  Service // the daemon's systemd unit; nil: not handled here
-	Home     string  // the user's home directory, shown as ~
+	Unit     Unit   // the daemon's systemd unit; nil: not handled here
+	Home     string // the user's home directory, shown as ~
 }
 
 // tilde writes the home directory in text as ~: in ~/… and on its own, never
@@ -185,8 +185,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			next = tea.Batch(next, loadAnswers(m.deps, m.ans.shownState()))
 		case m.tab == tabSchedule && !m.sched.editing():
 			next = tea.Batch(next, loadWindows(m.deps))
-			if m.refreshes%unitEvery == 0 && m.sched.daemon.busy == noDaemonAction {
-				next = tea.Batch(next, readUnit(m.deps))
+			if m.refreshes%unitEvery == 0 {
+				var read tea.Cmd
+				m.sched, read = m.sched.readUnit(m.deps)
+				next = tea.Batch(next, read)
 			}
 		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
@@ -235,7 +237,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, loadConfig(m.deps)) // the subcommand may have written the config
 	case openConfigMsg:
 		m.setupShown, m.tab = false, tabConfig
-		return m, m.loadTab()
+		return m.loadTab()
 	case runStartedMsg, stopAskedMsg:
 		var cmd tea.Cmd
 		m.runs, cmd = m.runs.update(msg, m.deps)
@@ -289,7 +291,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.help = false
 		case m.setupShown && !m.checks.noConfig:
 			m.setupShown = false
-			return m, m.loadTab() // it may never have loaded, or changed meanwhile
+			return m.loadTab() // it may never have loaded, or changed meanwhile
 		}
 		return m, nil
 	case "s":
@@ -315,7 +317,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.tab, m.help, m.setupShown = t, false, false
-		return m, m.loadTab()
+		return m.loadTab()
 	}
 	switch {
 	case m.help:
@@ -341,16 +343,18 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // loadTab reads what the tab shown displays: it may have changed since it was
 // last shown, or never have been read.
-func (m Model) loadTab() tea.Cmd {
+func (m Model) loadTab() (Model, tea.Cmd) {
 	switch m.tab {
 	case tabConfig:
-		return loadConfig(m.deps)
+		return m, loadConfig(m.deps)
 	case tabAnswers:
-		return loadAnswers(m.deps, m.ans.shownState())
+		return m, loadAnswers(m.deps, m.ans.shownState())
 	case tabSchedule:
-		return tea.Batch(loadWindows(m.deps), readUnit(m.deps))
+		var read tea.Cmd
+		m.sched, read = m.sched.readUnit(m.deps)
+		return m, tea.Batch(loadWindows(m.deps), read)
 	}
-	return nil
+	return m, nil
 }
 
 // bodyHeight is the room between the tab bar and the key hints.
@@ -378,7 +382,7 @@ func (m Model) View() string {
 	case m.tab == tabAnswers:
 		body = m.ans.view(m.styles, m.width)
 	case m.tab == tabSchedule:
-		body = m.sched.view(m.styles, m.width, m.deps.Now(), m.dash.snap.daemon, m.dash.snap.daemonUp)
+		body = m.sched.view(m.styles, m.width, m.deps.Now(), daemonProc{m.dash.snap.daemon, m.dash.snap.daemonUp})
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")

@@ -68,17 +68,16 @@ func (f *fakeSystemd) run(args ...string) (string, error) {
 	return f.answers[cmd], nil
 }
 
-// harnessService is the daemon's unit over a real service.Manager, in the
+// harnessUnit is the daemon's unit over a real service.Manager, in the
 // temporary AJA_HOME, with the fake systemctl.
-type harnessService struct{ m service.Manager }
+type harnessUnit struct{ service.Manager }
 
-func (s harnessService) Status() service.Status { return s.m.Status() }
-func (s harnessService) Install() (service.Installed, error) {
-	return s.m.Install(service.Options{Binary: "/usr/local/bin/aja"})
+func (u harnessUnit) Install() (service.Installed, error) {
+	return u.Manager.Install(service.Options{Binary: "/usr/local/bin/aja"})
 }
-func (s harnessService) Uninstall() ([]string, error) { return s.m.Uninstall() }
-func (s harnessService) Start() ([]string, error)     { return s.m.Start() }
-func (s harnessService) Stop() ([]string, error)      { return s.m.Stop() }
+func (u harnessUnit) Uninstall() error { _, err := u.Manager.Uninstall(); return err }
+func (u harnessUnit) Start() error     { _, err := u.Manager.Start(); return err }
+func (u harnessUnit) Stop() error      { _, err := u.Manager.Stop(); return err }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -179,7 +178,7 @@ func (h *harness) open(width, height int) {
 func (h *harness) deps() Deps {
 	return Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
 		Now: func() time.Time { return h.now }, Probe: h.probe(), Launcher: h, Home: h.p.DataDir,
-		Service: harnessService{service.Manager{UnitDir: filepath.Join(h.p.DataDir, "systemd"), Systemctl: h.systemd.run, Settle: time.Millisecond}}}
+		Unit: harnessUnit{service.Manager{UnitDir: filepath.Join(h.p.DataDir, "systemd"), Systemctl: h.systemd.run, Settle: time.Millisecond}}}
 }
 
 func (h *harness) send(msg tea.Msg) {

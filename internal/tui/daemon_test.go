@@ -2,6 +2,8 @@ package tui
 
 import (
 	"slices"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +66,7 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 	h.press("u")
 	h.shows("Stop the daemon and remove its unit? Schedule windows stop opening runs.")
 	h.press("y")
-	h.shows("Removed the daemon's unit; the daemon is stopped.", "systemd unit: not installed")
+	h.shows("Removed the daemon's unit.", "systemd unit: not installed")
 	if got := h.systemctlSince(before); !slices.Equal(got, []string{"disable --now aja.service", "daemon-reload"}) {
 		t.Errorf("uninstall ran %q", got)
 	}
@@ -76,11 +78,52 @@ func TestDaemonFailuresAndWarningsAreSaid(t *testing.T) {
 	h.open(100, 30)
 	h.scheduleTab()
 	h.press("i", "y")
-	h.shows("Installed ~/systemd/aja.service, but the daemon did not start.")
+	h.shows("Installed ~/systemd/aja.service, but the daemon did not start. Your session has not reached", // the warning, capitalised
+		"graphical-session.target")
 
 	h.systemd.fail = "start aja.service"
 	h.press("s", "y")
 	h.shows("Could not start the daemon: systemctl --user start aja.service: exit status 1")
+	if !strings.Contains(h.logs.String(), `"msg":"could not start the daemon from the TUI"`) {
+		t.Errorf("a failure is logged too: %s", h.logs)
+	}
+
+	h.systemd.fail, h.systemd.answers["is-active aja.service"] = "", "failed" // it starts, then exits
+	h.press("s", "y")
+	h.shows("Could not start the daemon: the daemon did not stay up")
+}
+
+func TestTheUnitIsReadOneReadAtATimeAndAskedOnlyOnceKnown(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	m := h.m.(Model)
+	m.tab = tabSchedule
+	m, first := m.loadTab()
+	m, second := m.loadTab() // shown again before the first read came back
+	if first == nil || !m.sched.daemon.reading {
+		t.Fatal("the first read is under way")
+	}
+	var msgs []tea.Msg
+	switch msg := second().(type) { // tea.Batch of one command is that command
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if c != nil {
+				msgs = append(msgs, c())
+			}
+		}
+	default:
+		msgs = append(msgs, msg)
+	}
+	for _, msg := range msgs {
+		if _, isRead := msg.(unitReadMsg); isRead {
+			t.Fatal("a second read while one is under way")
+		}
+	}
+	m.sched = m.sched.resized(100, 26)
+	m.sched, _ = m.sched.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")}, h.deps())
+	if m.sched.daemon.editing() || !strings.Contains(m.sched.daemon.notice.text, "Still reading the unit's state") {
+		t.Errorf("no question before the unit is known: %+v", m.sched.daemon)
+	}
 }
 
 func TestTheDaemonProcessShowsAndTheUnitIsReadEveryFewSeconds(t *testing.T) {
@@ -95,7 +138,7 @@ func TestTheDaemonProcessShowsAndTheUnitIsReadEveryFewSeconds(t *testing.T) {
 	h.shows("Daemon  running since Mon 05 Oct 08:30")
 
 	reads := func() int { return strings.Count(strings.Join(h.systemd.calls, "\n"), "is-enabled aja.service") }
-	if _, err := h.deps().Service.Install(); err != nil { // installed elsewhere: `aja daemon install`
+	if _, err := h.deps().Unit.Install(); err != nil { // installed elsewhere: `aja daemon install`
 		t.Fatal(err)
 	}
 	start := reads()

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -27,6 +28,9 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	saved := systemctl // no test reaches this machine's systemd: fakeSystemd replaces it where one is needed
+	systemctl = func(...string) (string, error) { return "", errors.New("no systemctl in tests") }
+	t.Cleanup(func() { systemctl = saved })
 	return &harness{home: t.TempDir(), env: map[string]string{}, t: t}
 }
 

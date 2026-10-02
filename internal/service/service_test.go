@@ -202,4 +202,8 @@ func TestStartAndStopTheInstalledUnit(t *testing.T) {
 	if !slices.Equal(f.calls, []string{"stop aja.service", "start aja.service"}) {
 		t.Errorf("%q", f.calls)
 	}
+	f.fail, f.answers["is-active aja.service"] = "", "failed" // it starts, then exits
+	if _, err := m.Start(); err == nil || !strings.Contains(err.Error(), "did not stay up") {
+		t.Errorf("a daemon that does not stay up is said: %v", err)
+	}
 }

@@ -11,18 +11,22 @@ import (
 	"github.com/luizfreitas27/aja/internal/service"
 )
 
-// Service is the daemon's systemd user unit, as `aja daemon install`,
-// `uninstall` and systemctl handle it.
-type Service interface {
+// Unit is the daemon's systemd user unit, as `aja daemon install` and
+// `uninstall` handle it.
+type Unit interface {
+	// Status is the unit as systemd sees it.
 	Status() service.Status
+	// Install writes, enables and starts the unit (or reinstalls it).
 	Install() (service.Installed, error)
-	Uninstall() ([]string, error)
-	Start() ([]string, error)
-	Stop() ([]string, error)
+	// Uninstall stops and disables the unit and removes it.
+	Uninstall() error
+	// Start starts the installed unit; Stop stops it.
+	Start() error
+	Stop() error
 }
 
-// unitEvery: the unit's state (systemctl, twice) is read this often while the
-// Schedule tab is shown, not every second.
+// unitEvery: the unit's state (systemctl, a few calls) is read this often
+// while the Schedule tab is shown, not every second.
 const unitEvery = 5 // refreshes
 
 // daemonAction is what the daemon section does, once confirmed.
@@ -36,42 +40,59 @@ const (
 	stopDaemon
 )
 
+// daemonKeys are the Schedule tab's keys for the daemon section.
+var daemonKeys = map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "s": startDaemon, "t": stopDaemon}
+
 // daemonSection is the Schedule tab's daemon part: whether the daemon runs
 // and how its systemd unit stands, with install, uninstall, start and stop,
-// each after a confirmation that says what it does.
+// each after a question that says what it does.
 type daemonSection struct {
 	unit      service.Status
 	read      bool
-	unhandled bool
-	asking    daemonAction // waiting for y or n
+	reading   bool // a read is under way: reads never overlap, so an old one never wins
+	unhandled bool // there is no unit to handle from here
+	asking    daemonAction
 	busy      daemonAction // under way
 	notice    notice
 }
 
+// daemonProc is the daemon process, as the Dashboard's refresh reads it.
+type daemonProc struct {
+	process daemon.Process
+	up      bool
+}
+
 type unitReadMsg struct {
 	status    service.Status
-	unhandled bool // no unit is handled from here
+	unhandled bool
 }
 
 type daemonDoneMsg struct{ notice notice }
 
-func readUnit(d Deps) tea.Cmd {
-	if d.Service == nil {
-		return func() tea.Msg { return unitReadMsg{unhandled: true} }
-	}
-	return func() tea.Msg { return unitReadMsg{status: d.Service.Status()} }
-}
-
 func (s daemonSection) editing() bool { return s.asking != noDaemonAction }
 
-// ask starts the confirmation of a, or says why a cannot be done.
-func (s daemonSection) ask(a daemonAction, d Deps) daemonSection {
+// readUnit reads the unit's state, unless a read or an action is under way.
+func (s daemonSection) readUnit(d Deps) (daemonSection, tea.Cmd) {
+	if s.reading || s.busy != noDaemonAction {
+		return s, nil
+	}
+	s.reading = true
+	if d.Unit == nil {
+		return s, func() tea.Msg { return unitReadMsg{unhandled: true} }
+	}
+	return s, func() tea.Msg { return unitReadMsg{status: d.Unit.Status()} }
+}
+
+// ask starts the question for a, or says why a cannot be done.
+func (s daemonSection) ask(a daemonAction) daemonSection {
 	switch {
-	case d.Service == nil:
+	case s.unhandled:
 		s.notice = notice{"The daemon's systemd unit cannot be handled from here.", levelWarn}
 	case s.busy != noDaemonAction:
 		s.notice = notice{"Wait: the last change to the daemon is under way.", levelWarn}
-	case a != installUnit && s.read && !s.unit.Installed:
+	case !s.read:
+		s.notice = notice{"Still reading the unit's state: try again in a moment.", levelWarn}
+	case a != installUnit && !s.unit.Installed:
 		s.notice = notice{"The daemon's unit is not installed: i installs it.", levelWarn}
 	default:
 		s.asking, s.notice = a, notice{}
@@ -82,10 +103,10 @@ func (s daemonSection) ask(a daemonAction, d Deps) daemonSection {
 func (s daemonSection) update(msg tea.Msg, d Deps) (daemonSection, tea.Cmd) {
 	switch msg := msg.(type) {
 	case unitReadMsg:
-		s.unit, s.read, s.unhandled = msg.status, true, msg.unhandled
+		s.unit, s.read, s.reading, s.unhandled = msg.status, true, false, msg.unhandled
 	case daemonDoneMsg:
 		s.busy, s.notice = noDaemonAction, msg.notice
-		return s, readUnit(d)
+		return s.readUnit(d)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "y":
@@ -99,15 +120,19 @@ func (s daemonSection) update(msg tea.Msg, d Deps) (daemonSection, tea.Cmd) {
 	return s, nil
 }
 
-// runDaemonAction does a; the unit's own commands can take seconds (Install
-// waits to see the daemon stay up), so it runs away from the screen.
+// runDaemonAction does a; the unit's commands can take seconds (Install and
+// Start wait to see the daemon stay up), so it runs away from the screen.
 func runDaemonAction(d Deps, a daemonAction) tea.Cmd {
 	return func() tea.Msg {
+		failed := func(what string, err error) tea.Msg {
+			d.logger().Warn("could not "+what+" from the TUI", "error", err)
+			return daemonDoneMsg{notice{"Could not " + what + ": " + err.Error(), levelFail}}
+		}
 		switch a {
 		case installUnit:
-			result, err := d.Service.Install()
+			result, err := d.Unit.Install()
 			if err != nil {
-				return daemonDoneMsg{notice{"Could not install the daemon's unit: " + err.Error(), levelFail}}
+				return failed("install the daemon's unit", err)
 			}
 			d.logger().Info("daemon unit installed from the TUI", "unit", result.Path, "started", result.Started)
 			n := notice{text: "Installed " + d.tilde(result.Path) + "; the daemon runs, and starts with your desktop session."}
@@ -115,31 +140,34 @@ func runDaemonAction(d Deps, a daemonAction) tea.Cmd {
 				n = notice{"Installed " + d.tilde(result.Path) + ", but the daemon did not start.", levelWarn}
 			}
 			if len(result.Warnings) > 0 {
-				n.level = levelWarn
-				n.text += " " + strings.Join(result.Warnings, "; ") + "."
+				warnings := strings.Join(result.Warnings, "; ")
+				n.level, n.text = levelWarn, n.text+" "+strings.ToUpper(warnings[:1])+warnings[1:]+"."
 			}
 			return daemonDoneMsg{n}
 		case uninstallUnit:
-			_, err := d.Service.Uninstall()
+			err := d.Unit.Uninstall()
 			switch {
 			case errors.Is(err, service.ErrNotInstalled):
 				return daemonDoneMsg{notice{"The daemon's unit is not installed.", levelWarn}}
 			case err != nil:
-				return daemonDoneMsg{notice{"Could not uninstall the daemon's unit: " + err.Error(), levelFail}}
+				return failed("uninstall the daemon's unit", err)
 			}
 			d.logger().Info("daemon unit uninstalled from the TUI")
-			return daemonDoneMsg{notice{text: "Removed the daemon's unit; the daemon is stopped."}}
+			return daemonDoneMsg{notice{text: "Removed the daemon's unit."}}
+		case startDaemon:
+			if err := d.Unit.Start(); err != nil {
+				return failed("start the daemon", err)
+			}
+			d.logger().Info("daemon started from the TUI")
+			return daemonDoneMsg{notice{text: "Started the daemon."}}
+		case stopDaemon:
+			if err := d.Unit.Stop(); err != nil {
+				return failed("stop the daemon", err)
+			}
+			d.logger().Info("daemon stopped from the TUI")
+			return daemonDoneMsg{notice{text: "Stopped the daemon."}}
 		}
-		verb, do := "start", d.Service.Start
-		if a == stopDaemon {
-			verb, do = "stop", d.Service.Stop
-		}
-		if _, err := do(); err != nil {
-			return daemonDoneMsg{notice{"Could not " + verb + " the daemon: " + err.Error(), levelFail}}
-		}
-		d.logger().Info("daemon " + verb + " from the TUI")
-		done := map[string]string{"start": "Started the daemon.", "stop": "Stopped the daemon."}[verb]
-		return daemonDoneMsg{notice{text: done}}
+		return nil
 	}
 }
 
@@ -163,10 +191,10 @@ func (s daemonSection) question(a daemonAction) string {
 
 // lines are the section: the daemon, its unit, the keys, a question or the
 // last outcome.
-func (s daemonSection) lines(st styles, width int, proc daemon.Process, up bool) []string {
+func (s daemonSection) lines(st styles, width int, proc daemonProc) []string {
 	running := st.warn.Render("not running")
-	if up {
-		running = st.ok.Render("running") + " since " + proc.Started.Local().Format(dayTime)
+	if proc.up {
+		running = st.ok.Render("running") + " since " + proc.process.Started.Local().Format(dayTime)
 	}
 	unit := "systemd unit: reading…"
 	switch {
@@ -184,7 +212,6 @@ func (s daemonSection) lines(st styles, width int, proc daemon.Process, up bool)
 	switch {
 	case s.asking != noDaemonAction:
 		out = append(out, wrapStyled(st.warn, s.question(s.asking), width)...)
-		out = append(out, st.key.Render("y")+" does it · "+st.key.Render("n")+" leaves it")
 	case s.busy != noDaemonAction:
 		out = append(out, st.dim.Render("Working…"))
 	case s.notice.text != "":

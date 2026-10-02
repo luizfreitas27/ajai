@@ -228,8 +228,15 @@ func (m Manager) Uninstall() ([]string, error) {
 	return ran, err
 }
 
-// Start starts the installed unit now.
-func (m Manager) Start() ([]string, error) { return m.installedCommand("start") }
+// Start starts the installed unit now and checks the daemon stays up, as
+// Install does.
+func (m Manager) Start() ([]string, error) {
+	ran, err := m.installedCommand("start")
+	if err == nil && !m.staysUp() {
+		err = errors.New("the daemon did not stay up; see journalctl --user -u aja.service")
+	}
+	return ran, err
+}
 
 // Stop stops the installed unit now; the daemon ends like Ctrl-C, and so does
 // a run it started. It starts again with the next desktop session.

@@ -125,7 +125,7 @@ func TestASecondDaemonExitsWithTheStatusTheUnitDoesNotRetry(t *testing.T) {
 	}
 }
 
-// TestTheTUIInstallsWithTheCommandsChecks: unitService is `aja daemon install`
+// TestTheTUIInstallsWithTheCommandsChecks: daemonUnit is `aja daemon install`
 // for the TUI, refusing and warning as the command does.
 func TestTheTUIInstallsWithTheCommandsChecks(t *testing.T) {
 	h := newHarness(t)
@@ -133,27 +133,25 @@ func TestTheTUIInstallsWithTheCommandsChecks(t *testing.T) {
 	fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
 	a := &App{Env: config.MapEnv(map[string]string{"AJA_HOME": h.home}), Stdout: io.Discard, Stderr: io.Discard}
 	a.paths = paths.Resolve("", a.Env.Getenv)
-	service := func() unitService {
-		t.Helper()
-		m, err := a.serviceManager()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return unitService{app: a, m: m}
-	}
-	svc := service()
+	unit := daemonUnit{app: a}
 
 	d, err := daemon.AcquireLock(h.home, time.Now()) // a daemon started by hand
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Install(); err == nil || !strings.Contains(err.Error(), "already running outside systemd") {
+	if _, err := unit.Install(); err == nil || !strings.Contains(err.Error(), "already running outside systemd") {
 		t.Errorf("refused like the command: %v", err)
+	}
+	if err := unit.Start(); err == nil || !strings.Contains(err.Error(), "already running outside systemd") {
+		t.Errorf("no start beside it: %v", err)
+	}
+	if err := unit.Stop(); err == nil || !strings.Contains(err.Error(), "started by hand") {
+		t.Errorf("the unit cannot stop it: %v", err)
 	}
 	d.Release()
 
 	fakeSystemd(t, configHome, nil, "") // the unit comes up and stays up
-	result, err := service().Install()
+	result, err := unit.Install()
 	if err != nil || !result.Started || !strings.Contains(result.Unit, "ExecStart=/usr/local/bin/aja daemon") || !strings.Contains(result.Unit, "AJA_HOME="+h.home) {
 		t.Fatalf("%+v %v", result, err)
 	}
@@ -164,7 +162,7 @@ func TestTheTUIInstallsWithTheCommandsChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Release()
-	if result, err := service().Install(); err != nil || len(result.Warnings) == 0 || !strings.HasPrefix(result.Warnings[0], "restarting the daemon ends a run started from schedule window 1") {
+	if result, err := unit.Install(); err != nil || len(result.Warnings) == 0 || !strings.HasPrefix(result.Warnings[0], "restarting the daemon ends a run started from schedule window 1") {
 		t.Errorf("%+v %v", result.Warnings, err)
 	}
 }
