@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/filelock"
+	"github.com/luizfreitas27/aja/internal/procs"
 )
 
 // Origin says who started a run.
@@ -30,6 +31,7 @@ type Holder struct {
 	Started time.Time `json:"started"`
 }
 
+// String describes the holder for a message: "a run started from the terminal (pid 42) at 09:30".
 func (h Holder) String() string {
 	if h.PID == 0 {
 		return "a run that is just starting"
@@ -40,6 +42,7 @@ func (h Holder) String() string {
 // HeldError: another run holds the lock.
 type HeldError struct{ Holder Holder }
 
+// Error names the run in progress and how to stop it.
 func (e *HeldError) Error() string {
 	return "another run is in progress: " + e.Holder.String() + "; stop it with `aja stop` or wait for it to end"
 }
@@ -47,43 +50,46 @@ func (e *HeldError) Error() string {
 // Lock is the machine-wide run lock: one run, or non-stop session, at a time,
 // whichever process starts it. The operating system releases it when its
 // process dies, so it can never go stale.
-type Lock struct{ f *filelock.File }
+type Lock struct {
+	f       *filelock.File
+	dataDir string
+	since   time.Time // when this lock was taken: older stop requests are not for us
+}
 
 // File names inside the data directory.
 const (
-	LockFileName = "run.lock"
-	StopFileName = "run.stop"
+	lockFileName = "run.lock"
+	stopFileName = "run.stop"
 )
 
-// LockPath is the run lock for a data directory.
-func LockPath(dataDir string) string { return filepath.Join(dataDir, LockFileName) }
+func lockPath(dataDir string) string { return filepath.Join(dataDir, lockFileName) }
 
 // StopPath is the stop-request file for a data directory.
-func StopPath(dataDir string) string { return filepath.Join(dataDir, StopFileName) }
+func StopPath(dataDir string) string { return filepath.Join(dataDir, stopFileName) }
 
 // AcquireLock takes the run lock for origin, or returns a *HeldError naming the
-// run that has it. A stop request left over from an earlier run is discarded,
-// so it cannot stop this one.
+// run that has it.
 func AcquireLock(dataDir string, origin Origin, now time.Time) (*Lock, error) {
-	path := LockPath(dataDir)
+	path := lockPath(dataDir)
 	for attempt := 0; ; attempt++ {
 		f, err := filelock.TryLock(path)
 		if err == nil {
+			since := time.Now()
 			data, _ := json.Marshal(Holder{PID: os.Getpid(), Origin: origin, Started: now})
 			if err := f.Describe(data); err != nil {
 				f.Unlock()
 				return nil, err
 			}
-			_ = os.Remove(StopPath(dataDir))
-			return &Lock{f: f}, nil
+			return &Lock{f: f, dataDir: dataDir, since: since}, nil
 		}
 		if !errors.Is(err, filelock.ErrLocked) {
 			return nil, err
 		}
 		h, held, _ := ReadLock(dataDir)
-		// An empty description is a holder between taking the lock and describing
-		// itself, or `aja status` probing the lock for an instant: look again.
-		if (!held || h.PID == 0) && attempt < 5 {
+		// Not a real holder yet: one between taking the lock and describing itself,
+		// or `aja status` probing the lock for an instant (over the description a
+		// crashed run left, naming a dead process). Look again.
+		if (!held || h.PID == 0 || !procs.Alive(h.PID)) && attempt < 5 {
 			time.Sleep(20 * time.Millisecond)
 			continue
 		}
@@ -96,7 +102,7 @@ func (l *Lock) Release() { l.f.Unlock() }
 
 // ReadLock reports whether a run holds the lock, and who.
 func ReadLock(dataDir string) (Holder, bool, error) {
-	path := LockPath(dataDir)
+	path := lockPath(dataDir)
 	held, err := filelock.Held(path)
 	if err != nil || !held {
 		return Holder{}, false, err
@@ -132,14 +138,18 @@ func RequestStop(dataDir, reason string) (Holder, error) {
 // StopRequested is the cause of a run's context when a stop request ended it.
 type StopRequested struct{ Reason string }
 
+// Error is the reason the request gave.
 func (s *StopRequested) Error() string { return s.Reason }
 
 // stopPoll is how often a run looks for a stop request.
 var stopPoll = 2 * time.Second
 
-// watchStop cancels the session's context, with a *StopRequested cause, as soon
-// as a stop request appears; it returns when ctx ends.
-func watchStop(ctx context.Context, path string, cancel context.CancelCauseFunc) {
+// WatchStops cancels ctx, with a *StopRequested cause, as soon as a stop
+// request made while this lock is held appears. A request left from before the
+// lock was taken (one that arrived as the previous run was ending) is discarded.
+// It returns when ctx ends.
+func (l *Lock) WatchStops(ctx context.Context, cancel context.CancelCauseFunc) {
+	path := StopPath(l.dataDir)
 	t := time.NewTicker(stopPoll)
 	defer t.Stop()
 	for {
@@ -148,11 +158,15 @@ func watchStop(ctx context.Context, path string, cancel context.CancelCauseFunc)
 			return
 		case <-t.C:
 		}
-		data, err := os.ReadFile(path)
+		info, err := os.Stat(path)
 		if err != nil {
 			continue
 		}
+		data, err := os.ReadFile(path)
 		_ = os.Remove(path)
+		if err != nil || info.ModTime().Before(l.since) {
+			continue
+		}
 		reason := strings.TrimSpace(string(data))
 		if reason == "" {
 			reason = "stopped by request"

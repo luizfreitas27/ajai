@@ -114,17 +114,15 @@ else on stdout.`,
 				a.note(run.EventWarn, "resume", plan.ResumeNote)
 			}
 
-			deps := launch.Deps{Origin: run.OriginTerminal, Paths: a.paths, Store: st, Logger: a.logger, Notifier: telegram,
-				Events: a.report, AfterFilters: a.filterPause(defaultHelpTimeout), OpenBrowser: OpenBrowser}
-			if !opts.Unattended {
-				deps.Helper = &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout}
-			}
-			opened, err := plan.Open(ctx, opts, deps)
+			opened, err := plan.Open(ctx, opts, launch.Deps{Origin: run.OriginTerminal, Paths: a.paths, Store: st, Logger: a.logger,
+				Notifier: telegram, Events: a.report, OpenBrowser: OpenBrowser,
+				Helper:       &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout},
+				AfterFilters: a.filterPause(defaultHelpTimeout)})
 			if err != nil {
 				return cannotStart(err)
 			}
 			defer opened.Close()
-			_, runErr := opened.Runner.Session(ctx, opts)
+			_, runErr := opened.Session(ctx)
 			return runErr
 		},
 	}
@@ -184,7 +182,7 @@ func (a *App) stopCmd() *cobra.Command {
 		Short: "Stop the run in progress, wherever it was started",
 		Long: `Asks the run in progress to end cleanly, as Ctrl-C in its terminal would: the job in
 progress is finished or discarded, the run is recorded and its summary sent. Works for a run
-started from any terminal (and, later, by the scheduler or from Telegram).`,
+started from any terminal.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			holder, err := run.RequestStop(a.paths.DataDir, stopReasonCLI)
@@ -200,7 +198,11 @@ started from any terminal (and, later, by the scheduler or from Telegram).`,
 			}
 			deadline := time.Now().Add(wait)
 			for time.Now().Before(deadline) {
-				if _, held, _ := run.ReadLock(a.paths.DataDir); !held {
+				_, held, err := run.ReadLock(a.paths.DataDir)
+				if err != nil {
+					return err
+				}
+				if !held {
 					a.ui.OK("stopped", "")
 					return nil
 				}
@@ -229,9 +231,14 @@ func (a *App) statusCmd() *cobra.Command {
 		Short: "Show whether a run is in progress and the last runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			holder, held, _ := run.ReadLock(a.paths.DataDir)
+			holder, held, lerr := run.ReadLock(a.paths.DataDir)
+			if lerr != nil {
+				a.ui.Warn("lock", lerr.Error())
+			}
 			state, err := run.ReadState(run.StatePath(a.paths.DataDir))
 			switch {
+			case errors.Is(err, run.ErrNoState) && held && holder.PID == 0:
+				a.ui.OK("running", "a run is starting")
 			case errors.Is(err, run.ErrNoState) && held:
 				a.ui.OK("running", holder.String()+", starting")
 			case errors.Is(err, run.ErrNoState):
@@ -240,6 +247,9 @@ func (a *App) statusCmd() *cobra.Command {
 				a.ui.Warn("state", err.Error())
 			case state.Alive() && !state.NextRun.IsZero():
 				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
+				if held {
+					a.ui.KV("started from", string(holder.Origin))
+				}
 			case state.Alive():
 				mode := "live"
 				if state.DryRun {

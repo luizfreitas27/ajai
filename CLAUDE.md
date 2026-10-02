@@ -43,13 +43,14 @@ Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, c
   One run at a time on the machine: `run.AcquireLock` (an OS file lock via
   `internal/filelock`, so it dies with its process and never goes stale) records the
   holder's PID, `Origin` and start time. `run.RequestStop` writes a stop-request file;
-  `Session` polls it (`StopFile`) and cancels its context with a `*StopRequested` cause,
-  whose reason the run records instead of "stopped by user". Taking the lock discards a
-  leftover request.
+  `Lock.WatchStops` (started by `launch.Opened.Session`) polls it and cancels the session's
+  context with a `*StopRequested` cause, whose reason the run records instead of "stopped
+  by user". A request older than the lock (left as the previous run ended) is discarded.
 - `internal/launch`: the one place a loaded configuration becomes a run: `NewPlan` (market,
   AI client, resume, Chrome; no side effects, so the caller can print it first) then
-  `Plan.Open` (run lock, Chrome, session, applier, runner). `aja run` and the daemon both
-  use it; never wire a runner anywhere else.
+  `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `aja run`
+  and the daemon both use it; never wire a runner anywhere else. It decides attended-only
+  hooks (help pause, filter pause) from `run.Options`, so callers always pass them.
 - `internal/config/wired_test.go` fails when a config field is read nowhere outside the
   config package: a setting must do what its comment says. It type-checks the module
   (`golang.org/x/tools/go/packages`), counts reads only (an assignment, e.g. the importer's,

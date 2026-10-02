@@ -170,8 +170,6 @@ type Runner struct {
 	LoginTimeout time.Duration
 	// StatePath, when set, receives the live State after every change.
 	StatePath string
-	// StopFile, when set, is watched by Session for a stop request (RequestStop).
-	StopFile string
 	// ResumePath is the absolute resume to upload ("" keeps LinkedIn's previous one).
 	ResumePath string
 	// Notifier, when set, gets exactly one message when the run ends: the summary,

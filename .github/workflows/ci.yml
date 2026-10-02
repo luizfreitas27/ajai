@@ -41,8 +41,9 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: release --snapshot --clean
-      - name: Six archives and the checksums
+      - name: Two Linux archives and the checksums
         run: |
-          ls dist/*.tar.gz dist/*.zip dist/checksums.txt
-          test "$(ls dist/*.tar.gz dist/*.zip | wc -l)" -eq 6
+          ls dist/*.tar.gz dist/checksums.txt
+          test "$(ls dist/*.tar.gz | wc -l)" -eq 2
+          test -z "$(ls dist/*.zip 2>/dev/null)"
           ./dist/aja_linux_amd64_v1/aja version

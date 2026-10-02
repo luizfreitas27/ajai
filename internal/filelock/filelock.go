@@ -1,5 +1,5 @@
-// Package filelock holds an operating-system lock on a file: the run lock and
-// the daemon lock. The kernel drops the lock when its process dies, so a crash
+// Package filelock holds an operating-system lock on a file (the run lock). The
+// kernel drops the lock when its process dies, so a crash
 // never leaves a stale lock behind, and two processes can never both hold it.
 package filelock
 
