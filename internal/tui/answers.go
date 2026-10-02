@@ -174,19 +174,11 @@ func (a answersTab) current() (memory.Remembered, bool) {
 }
 
 func (a answersTab) browseKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
+	if cursor, ok := moved(msg.String(), a.cursor, len(a.answers)); ok {
+		a.cursor = cursor
+		return a.scrolled(), nil
+	}
 	switch msg.String() {
-	case "up", "k":
-		a.cursor--
-	case "down", "j":
-		a.cursor++
-	case "pgup":
-		a.cursor -= 10
-	case "pgdown":
-		a.cursor += 10
-	case "home", "g":
-		a.cursor = 0
-	case "end", "G":
-		a.cursor = len(a.answers) - 1
 	case "tab":
 		a.state = otherState(a.shownState())
 		a.loaded, a.answers, a.cursor, a.top, a.notice = false, nil, 0, 0, notice{}
@@ -456,4 +448,24 @@ func clip(text string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return text
+}
+
+// moved is where a list's selection goes for key, the list being n long; ok
+// is false for a key that does not move it.
+func moved(key string, cursor, n int) (int, bool) {
+	switch key {
+	case "up", "k":
+		return cursor - 1, true
+	case "down", "j":
+		return cursor + 1, true
+	case "pgup":
+		return cursor - 10, true
+	case "pgdown":
+		return cursor + 10, true
+	case "home", "g":
+		return 0, true
+	case "end", "G":
+		return n - 1, true
+	}
+	return cursor, false
 }

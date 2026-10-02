@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -21,8 +22,29 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite" // database/sql driver
+	"modernc.org/sqlite" // the database/sql driver
 )
+
+// aja_contains(text, needle) is 1 when text holds needle, ignoring case in
+// every alphabet (SQLite's LIKE folds ASCII only: "SÃO" would miss "São");
+// needle comes lowered.
+func init() {
+	sqlite.MustRegisterDeterministicScalarFunction("aja_contains", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		text := func(v driver.Value) string {
+			switch v := v.(type) {
+			case string:
+				return v
+			case []byte:
+				return string(v)
+			}
+			return ""
+		}
+		if strings.Contains(strings.ToLower(text(args[0])), text(args[1])) {
+			return int64(1), nil
+		}
+		return int64(0), nil
+	})
+}
 
 //go:embed migrations/*.sql
 var migrations embed.FS
@@ -221,16 +243,12 @@ func (s *Store) ListJobs(f JobFilter) ([]Job, error) {
 		where = append(where, "recorded_at >= ?")
 		args = append(args, f.Since.Format(time.RFC3339))
 	}
-	if text := strings.TrimSpace(f.Text); text != "" {
-		like := "%" + likeEscaper.Replace(text) + "%"
-		where = append(where, `(title LIKE ? ESCAPE '\' OR company LIKE ? ESCAPE '\' OR work_location LIKE ? ESCAPE '\')`)
-		args = append(args, like, like, like)
+	if text := strings.ToLower(strings.TrimSpace(f.Text)); text != "" {
+		where = append(where, `(aja_contains(title, ?) OR aja_contains(company, ?) OR aja_contains(work_location, ?))`)
+		args = append(args, text, text, text)
 	}
 	return s.listJobs(strings.Join(where, " AND "), args, f.Limit, f.Offset)
 }
-
-// likeEscaper makes text match itself in a LIKE pattern: % and _ are not wildcards.
-var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 
 func (s *Store) listJobs(where string, args []any, limit, offset int) ([]Job, error) {
 	q := `SELECT job_id, outcome, reason, title, company, work_location, work_style, description, experience_required,

@@ -194,8 +194,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sched, read = m.sched.readUnit(m.deps)
 				next = tea.Batch(next, read)
 			}
-		case m.tab == tabJobs && !m.jobs.editing() && !m.jobs.paging: // a run records jobs as it goes
-			next = tea.Batch(next, m.jobs.reload(m.deps))
+		case m.tab == tabJobs && !m.jobs.editing() && m.refreshes%jobsEvery == 0: // a run records jobs as it goes
+			var read tea.Cmd
+			m.jobs, read = m.jobs.read(m.deps, readAgain)
+			next = tea.Batch(next, read)
 		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -372,7 +374,9 @@ func (m Model) loadTab() (Model, tea.Cmd) {
 		m.sched, read = m.sched.readUnit(m.deps)
 		return m, tea.Batch(loadWindows(m.deps), read)
 	case tabJobs:
-		return m, m.jobs.reload(m.deps)
+		var read tea.Cmd
+		m.jobs, read = m.jobs.read(m.deps, readAgain)
+		return m, read
 	}
 	return m, nil
 }
@@ -404,7 +408,7 @@ func (m Model) View() string {
 	case m.tab == tabSchedule:
 		body = m.sched.view(m.styles, m.width, m.deps.Now(), daemonProc{m.dash.snap.daemon, m.dash.snap.daemonUp})
 	case m.tab == tabJobs:
-		body = m.jobs.view(m.styles, m.width)
+		body = m.jobs.view(m.styles, m.deps, m.width)
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")

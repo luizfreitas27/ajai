@@ -47,9 +47,11 @@ func (a *App) openTUI(ctx context.Context) error {
 }
 
 // openInBrowser opens link in the default browser (xdg-open) without waiting
-// for it, its output on the null device so it never draws over the TUI.
+// for it, its output on the null device so it never draws over the TUI, and in
+// a session of its own so a Ctrl-C in the terminal never reaches the browser.
 func openInBrowser(link string) error {
 	cmd := exec.Command("xdg-open", link)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
 	}

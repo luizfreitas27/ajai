@@ -249,6 +249,7 @@ func TestJobsAreFoundByTextAndPaged(t *testing.T) {
 		"lisb":  "2",
 		"nope":  "",
 		"  qa ": "3",
+		"SÃO":   "3", // case folded in every alphabet
 	} {
 		if got := ids(JobFilter{Text: text}); got != want {
 			t.Errorf("text %q: %s, want %s", text, got, want)

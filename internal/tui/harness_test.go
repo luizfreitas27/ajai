@@ -49,6 +49,7 @@ type harness struct {
 	exit    chan error // the last one's end, sent by the test
 	systemd *fakeSystemd
 	opened  []string // the links opened in the "browser"
+	noOpen  error    // what opening a link fails with, if it does
 	quit    bool
 }
 
@@ -179,8 +180,14 @@ func (h *harness) open(width, height int) {
 func (h *harness) deps() Deps {
 	return Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
 		Now: func() time.Time { return h.now }, Probe: h.probe(), Launcher: h, Home: h.p.DataDir,
-		Unit:    harnessUnit{service.Manager{UnitDir: filepath.Join(h.p.DataDir, "systemd"), Systemctl: h.systemd.run, Settle: time.Millisecond}},
-		OpenURL: func(link string) error { h.opened = append(h.opened, link); return nil }}
+		Unit: harnessUnit{service.Manager{UnitDir: filepath.Join(h.p.DataDir, "systemd"), Systemctl: h.systemd.run, Settle: time.Millisecond}},
+		OpenURL: func(link string) error {
+			if h.noOpen != nil {
+				return h.noOpen
+			}
+			h.opened = append(h.opened, link)
+			return nil
+		}}
 }
 
 func (h *harness) send(msg tea.Msg) {

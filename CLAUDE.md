@@ -119,9 +119,13 @@ to the tag before tagging and the workflow publishes that section as the release
   reaches this machine's systemd. The unit's state is read when the Schedule tab is shown
   and every `unitEvery` refreshes, one read at a time, never every second.
 - The Jobs tab reads `store.ListJobs` a page (`jobsPage`) at a time (`JobFilter.Offset`;
-  `JobFilter.Text` is a LIKE on title, company and location with `%`/`_` taken literally),
-  re-reads what it shows every refresh (the selection follows the job id), and opens links
-  through `Deps.OpenURL` (`xdg-open`, not waited for, its output on the null device).
+  `JobFilter.Text` matches title, company and location through `aja_contains`, a SQLite
+  function in Go that folds case in Unicode, so "SÃO" finds "São Paulo" and `%`/`_` are
+  plain text). One read at a time, tagged with the filter it was made for; a page leaves out
+  jobs already shown; every `jobsEvery` refreshes it reads every job down to the oldest shown
+  (`Since`), so none falls off and the selection follows its job id; a failed read keeps the
+  list. Links open through `Deps.OpenURL` (`xdg-open` in its own session, not waited for, its
+  output on the null device), http and https only.
 - Schedule windows are added and turned on through `store.AddValidWindow` and
   `store.SetWindowEnabledValid` (schedule.Validate against the windows there are, in one
   place): `aja schedule` and the TUI's Schedule tab both use them.

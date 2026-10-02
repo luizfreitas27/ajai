@@ -159,11 +159,12 @@ when reinstalling ends a run in progress.
 
 The **Jobs** tab is the job history, newest first, with the counts per outcome. Tab shows
 every job or only the applied, external, failed or skipped ones; `/` searches titles,
-companies and locations (`c` clears the search). The selected job shows its outcome and
-why, when it was recorded and posted, its links, the screenshot of a failure and the first
-question answered. `o` opens it in your default browser: the company's application page for
-an external job, LinkedIn's otherwise. The list is read a page at a time as you scroll, and
-keeps up while a run records jobs.
+companies and locations, ignoring case, in accented letters too (`c` clears the search). The
+selected job shows its outcome and why, when it was recorded and posted, a failure's error
+and screenshot, its links and the questions answered. `o` opens it in your default browser:
+the company's application page for an external job, LinkedIn's otherwise (only web links
+are opened). The list is read a page at a time as you scroll, and keeps up while a run
+records jobs.
 
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
