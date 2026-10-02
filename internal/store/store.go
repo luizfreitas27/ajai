@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -21,8 +22,29 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite" // database/sql driver
+	"modernc.org/sqlite" // the database/sql driver
 )
+
+// aja_contains(text, needle) is 1 when text holds needle, ignoring case in
+// every alphabet (SQLite's LIKE folds ASCII only: "SÃO" would miss "São");
+// needle comes lowered.
+func init() {
+	sqlite.MustRegisterDeterministicScalarFunction("aja_contains", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		text := func(v driver.Value) string {
+			switch v := v.(type) {
+			case string:
+				return v
+			case []byte:
+				return string(v)
+			}
+			return ""
+		}
+		if strings.Contains(strings.ToLower(text(args[0])), text(args[1])) {
+			return int64(1), nil
+		}
+		return int64(0), nil
+	})
+}
 
 //go:embed migrations/*.sql
 var migrations embed.FS
@@ -190,7 +212,7 @@ func (s *Store) UpsertJob(j Job) error {
 
 // GetJob returns the job with this LinkedIn id, or nil when unknown.
 func (s *Store) GetJob(jobID string) (*Job, error) {
-	jobs, err := s.listJobs("job_id = ?", []any{jobID}, 1)
+	jobs, err := s.listJobs("job_id = ?", []any{jobID}, 1, 0)
 	if err != nil || len(jobs) == 0 {
 		return nil, err
 	}
@@ -201,7 +223,9 @@ func (s *Store) GetJob(jobID string) (*Job, error) {
 type JobFilter struct {
 	Outcomes []Outcome
 	Since    time.Time // recorded_at on or after
+	Text     string    // in the title, the company or the location, ignoring case
 	Limit    int
+	Offset   int // rows skipped first, for paging
 }
 
 // ListJobs returns jobs newest first.
@@ -219,16 +243,23 @@ func (s *Store) ListJobs(f JobFilter) ([]Job, error) {
 		where = append(where, "recorded_at >= ?")
 		args = append(args, f.Since.Format(time.RFC3339))
 	}
-	return s.listJobs(strings.Join(where, " AND "), args, f.Limit)
+	if text := strings.ToLower(strings.TrimSpace(f.Text)); text != "" {
+		where = append(where, `(aja_contains(title, ?) OR aja_contains(company, ?) OR aja_contains(work_location, ?))`)
+		args = append(args, text, text, text)
+	}
+	return s.listJobs(strings.Join(where, " AND "), args, f.Limit, f.Offset)
 }
 
-func (s *Store) listJobs(where string, args []any, limit int) ([]Job, error) {
+func (s *Store) listJobs(where string, args []any, limit, offset int) ([]Job, error) {
 	q := `SELECT job_id, outcome, reason, title, company, work_location, work_style, description, experience_required,
 		skills, hr_name, hr_link, resume, reposted, date_posted, date_applied, job_link, external_link, questions,
 		connect_request, stack_trace, screenshot, COALESCE(run_id, 0), recorded_at FROM jobs WHERE ` +
 		where + ` ORDER BY recorded_at DESC, rowid DESC`
-	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+	switch {
+	case limit > 0:
+		q += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, max(0, offset))
+	case offset > 0:
+		q += fmt.Sprintf(" LIMIT -1 OFFSET %d", offset)
 	}
 	rows, err := s.db.Query(q, args...)
 	if err != nil {

@@ -34,8 +34,9 @@ type Deps struct {
 	Now      func() time.Time
 	Probe    doctor.Probe // the machine, as `aja doctor` looks at it
 	Launcher Launcher
-	Unit     Unit   // the daemon's systemd unit; nil: not handled here
-	Home     string // the user's home directory, shown as ~
+	Unit     Unit               // the daemon's systemd unit; nil: not handled here
+	OpenURL  func(string) error // opens a link in the default browser
+	Home     string             // the user's home directory, shown as ~
 }
 
 // tilde writes the home directory in text as ~: in ~/… and on its own, never
@@ -94,10 +95,11 @@ const (
 	tabDashboard tab = iota
 	tabAnswers
 	tabSchedule
+	tabJobs
 	tabConfig
 )
 
-var tabNames = []string{"Dashboard", "Answers", "Schedule", "Config"}
+var tabNames = []string{"Dashboard", "Answers", "Schedule", "Jobs", "Config"}
 
 // tabKey is the number key that shows t.
 func tabKey(t tab) string { return fmt.Sprint(int(t) + 1) }
@@ -120,6 +122,7 @@ type Model struct {
 	runs          runControl
 	ans           answersTab
 	sched         scheduleTab
+	jobs          jobsTab
 	conf          configTab
 	checks        checklist
 }
@@ -170,6 +173,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.conf = m.conf.resized(m.width, m.bodyHeight())
 		m.ans = m.ans.resized(m.width, m.bodyHeight())
 		m.sched = m.sched.resized(m.width, m.bodyHeight())
+		m.jobs = m.jobs.resized(m.width, m.bodyHeight())
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tickMsg:
@@ -190,6 +194,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sched, read = m.sched.readUnit(m.deps)
 				next = tea.Batch(next, read)
 			}
+		case m.tab == tabJobs && !m.jobs.editing() && m.refreshes%jobsEvery == 0: // a run records jobs as it goes
+			var read tea.Cmd
+			m.jobs, read = m.jobs.read(m.deps, readAgain)
+			next = tea.Batch(next, read)
 		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -215,6 +223,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case windowsLoadedMsg, windowChangedMsg, unitReadMsg, daemonDoneMsg:
 		var cmd tea.Cmd
 		m.sched, cmd = m.sched.update(msg, m.deps)
+		return m, cmd
+	case jobsLoadedMsg, jobOpenedMsg:
+		var cmd tea.Cmd
+		m.jobs, cmd = m.jobs.update(msg, m.deps)
 		return m, cmd
 	case checkAgainMsg:
 		return m.checkAgain()
@@ -249,7 +261,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // typing reports whether a tab holds a value being typed or a question asked,
 // which every key but Ctrl-C goes to.
 func (m Model) typing() bool {
-	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.sched.editing() || m.checks.editing()
+	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.sched.editing() || m.jobs.editing() || m.checks.editing()
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -277,6 +289,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !m.setupShown && m.tab == tabSchedule && m.sched.editing():
 		var cmd tea.Cmd
 		m.sched, cmd = m.sched.update(msg, m.deps)
+		return m, cmd
+	case !m.setupShown && m.tab == tabJobs && m.jobs.editing():
+		var cmd tea.Cmd
+		m.jobs, cmd = m.jobs.update(msg, m.deps)
 		return m, cmd
 	}
 	switch key {
@@ -337,6 +353,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.sched, cmd = m.sched.update(msg, m.deps)
 		return m, cmd
+	case m.tab == tabJobs:
+		var cmd tea.Cmd
+		m.jobs, cmd = m.jobs.update(msg, m.deps)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -353,6 +373,10 @@ func (m Model) loadTab() (Model, tea.Cmd) {
 		var read tea.Cmd
 		m.sched, read = m.sched.readUnit(m.deps)
 		return m, tea.Batch(loadWindows(m.deps), read)
+	case tabJobs:
+		var read tea.Cmd
+		m.jobs, read = m.jobs.read(m.deps, readAgain)
+		return m, read
 	}
 	return m, nil
 }
@@ -383,6 +407,8 @@ func (m Model) View() string {
 		body = m.ans.view(m.styles, m.width)
 	case m.tab == tabSchedule:
 		body = m.sched.view(m.styles, m.width, m.deps.Now(), daemonProc{m.dash.snap.daemon, m.dash.snap.daemonUp})
+	case m.tab == tabJobs:
+		body = m.jobs.view(m.styles, m.deps, m.width)
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
@@ -438,6 +464,10 @@ func (m Model) hints() string {
 		hint = "↑↓ field · ←→ day or choice · space picks · enter adds · esc cancels"
 	case m.tab == tabSchedule:
 		hint = "↑↓ move · a add · space on/off · d delete · ? keys · q quit"
+	case m.tab == tabJobs && m.jobs.editing():
+		hint = "enter searches · esc cancels"
+	case m.tab == tabJobs:
+		hint = "↑↓ move · tab outcome · / search · o open · ? keys · q quit"
 	case m.runs.form != nil:
 		hint = "↑↓ field · ←→ change · enter starts · esc cancels"
 	case m.runs.confirm != nil:
@@ -486,6 +516,11 @@ func (m Model) helpView() string {
 		row("d", "delete it")
 		row("i, u", "install (or reinstall) or uninstall the daemon's systemd unit")
 		row("s, t", "start or stop the daemon")
+	case m.tab == tabJobs:
+		section("Jobs")
+		row("Tab", "every job, or only the applied, external, failed or skipped ones")
+		row("/", "search titles, companies and locations; c clears the search")
+		row("o", "open the job in your browser (the application page for an external job)")
 	case m.tab == tabConfig:
 		section("Config")
 		row("↑ ↓, k j", "move; PgUp PgDn, g G jump")

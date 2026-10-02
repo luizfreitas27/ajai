@@ -36,11 +36,12 @@ no such section the notes are the commit list.
   starting a run (market, dry run or live, a maximum) that runs on its own after the TUI
   closes, and stopping any run; an Answers tab to approve, correct or delete remembered
   answers; a Schedule tab to add, turn on or off and delete schedule windows and to
-  install, start, stop or uninstall the daemon's systemd unit; a Config tab that edits
-  every setting (validated, environment overrides marked) and saves the secrets in aja's
-  `.env` from hidden fields; and a setup checklist, opened when something a run needs is
-  missing, that runs the init wizard, the LinkedIn sign-in and the import from the
-  Python bot.
+  install, start, stop or uninstall the daemon's systemd unit; a Jobs tab with the job
+  history, filtered and searched, each job a key away from your browser; a Config tab
+  that edits every setting (validated, environment overrides marked) and saves the
+  secrets in aja's `.env` from hidden fields; and a setup checklist, opened when
+  something a run needs is missing, that runs the init wizard, the LinkedIn sign-in and
+  the import from the Python bot.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a
   question by replying to its message (checked against the options a select or radio
   offered). Answers remembered from now on keep those options.

@@ -218,3 +218,50 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestJobsAreFoundByTextAndPaged(t *testing.T) {
+	s := open(t)
+	for i, j := range []Job{
+		{JobID: "1", Outcome: Applied, Title: "Go Developer", Company: "Acme", WorkLocation: "Recife"},
+		{JobID: "2", Outcome: Skipped, Title: "Python dev", Company: "GoFast Ltd", WorkLocation: "Lisboa"},
+		{JobID: "3", Outcome: Failed, Title: "QA", Company: "Initech", WorkLocation: "São Paulo (go_live)"},
+		{JobID: "4", Outcome: Applied, Title: "Data 100% remote", Company: "Umbrella", WorkLocation: "Remote"},
+	} {
+		j.RecordedAt = Timestamp(time.Date(2026, 10, 1, 9, i, 0, 0, time.UTC))
+		must(t, s.UpsertJob(j))
+	}
+	ids := func(f JobFilter) string {
+		t.Helper()
+		jobs, err := s.ListJobs(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, j := range jobs {
+			out = append(out, j.JobID)
+		}
+		return strings.Join(out, ",")
+	}
+	for text, want := range map[string]string{
+		"go":    "3,2,1", // title, company and location, ignoring case
+		"GO_":   "3",     // _ is the letter, not a wildcard
+		"100%":  "4",     // % too
+		"lisb":  "2",
+		"nope":  "",
+		"  qa ": "3",
+		"SÃO":   "3", // case folded in every alphabet
+	} {
+		if got := ids(JobFilter{Text: text}); got != want {
+			t.Errorf("text %q: %s, want %s", text, got, want)
+		}
+	}
+	if got := ids(JobFilter{Text: "go", Outcomes: []Outcome{Applied}}); got != "1" {
+		t.Errorf("text and outcome: %s", got)
+	}
+	if got := ids(JobFilter{Limit: 2, Offset: 1}); got != "3,2" {
+		t.Errorf("page: %s", got)
+	}
+	if got := ids(JobFilter{Offset: 3}); got != "1" {
+		t.Errorf("offset alone: %s", got)
+	}
+}

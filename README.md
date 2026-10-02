@@ -157,6 +157,15 @@ systemd unit stands, and `i` installs (or reinstalls) the unit as `aja daemon in
 what it does. Installing warns when it could not start the daemon (no desktop session) or
 when reinstalling ends a run in progress.
 
+The **Jobs** tab is the job history, newest first, with the counts per outcome. Tab shows
+every job or only the applied, external, failed or skipped ones; `/` searches titles,
+companies and locations, ignoring case, in accented letters too (`c` clears the search). The
+selected job shows its outcome and why, when it was recorded and posted, a failure's error
+and screenshot, its links and the questions answered. `o` opens it in your default browser:
+the company's application page for an external job, LinkedIn's otherwise (only web links
+are opened). The list is read a page at a time as you scroll, and keeps up while a run
+records jobs.
+
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
 - a setting with fixed values is picked from a list (several, with Space, for a list such
@@ -189,7 +198,7 @@ only the checklist and the Config tab (for the secrets) open.
 Keys: the number keys switch tabs, `?` lists the keys that work on the screen shown, and
 `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
-`NO_COLOR`, and writes paths under your home as `~/…`. A Jobs tab is coming (issue #36).
+`NO_COLOR`, and writes paths under your home as `~/…`.
 
 ## Everyday commands
 
