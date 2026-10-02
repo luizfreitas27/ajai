@@ -35,8 +35,8 @@ func TestRunReportsAProfileInUseInsteadOfHanging(t *testing.T) {
 	if code == 0 || !strings.Contains(errText, "profile is in use") {
 		t.Errorf("%d %s %s", code, out, errText)
 	}
-	if !strings.Contains(out, "dry run") {
-		t.Errorf("mode line missing:\n%s", out)
+	if !strings.Contains(out, "dry run, unattended") {
+		t.Errorf("a run whose stdout is not a terminal is unattended:\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(h.home, "run.pid")); err == nil {
 		t.Error("no pid file should be left when the browser never opened")

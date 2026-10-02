@@ -2,6 +2,7 @@ package memory
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -217,5 +218,32 @@ func TestPendingCountListApproveAndDelete(t *testing.T) {
 	}
 	if got, _ := m.Get(b.ID); got != nil {
 		t.Error("still there")
+	}
+}
+
+func TestAQueuedQuestionWithNoAnswerIsFoundButNeverAnswersOrShadows(t *testing.T) {
+	m, _ := fresh(t)
+	answered := rem(t, m, "How many years of experience do you have with Python?", "text", "4", "user", "")
+	queued := rem(t, m, "How many years experience do you have with Python?", "text", "", "form", "")
+	if got, _ := m.Find("How many years experience do you have with Python?", "text"); got == nil || got.ID != queued.ID {
+		t.Errorf("Find must see the queued question: %+v", got)
+	}
+	found, approximate, _ := m.Lookup("How many years experience do you have with Python?", "text", true)
+	if found == nil || found.ID != answered.ID || !approximate {
+		t.Errorf("the queued entry shadowed the answered one: %+v", found)
+	}
+	if found, _, _ := m.Lookup("How many years experience do you have with Python?", "text", false); found != nil {
+		t.Errorf("an exact lookup of a queued question answers nothing: %+v", found)
+	}
+	if _, err := m.Approve(queued.ID, ""); !errors.Is(err, ErrNothingToApprove) {
+		t.Errorf("approving a question with no answer must be refused: %v", err)
+	}
+	if e, err := m.Approve(queued.ID, "  5 "); err != nil || e.Answer != "5" || e.State != "approved" || e.Source != "user" {
+		t.Errorf("%+v %v", e, err)
+	}
+	// An AI answer for a queued question fills it in (still pending).
+	q2 := rem(t, m, "Favourite colour?", "radio", "", "form", "")
+	if e := rem(t, m, "Favourite colour?", "radio", "Blue", "ai", ""); e.ID != q2.ID || e.Answer != "Blue" || e.State != "pending" {
+		t.Errorf("%+v", e)
 	}
 }

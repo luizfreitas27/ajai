@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
+	"github.com/luizfreitas27/aja/internal/ai"
 	"github.com/luizfreitas27/aja/internal/apply"
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/chrome"
@@ -19,6 +20,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/markets"
 	"github.com/luizfreitas27/aja/internal/memory"
+	"github.com/luizfreitas27/aja/internal/notify"
 	"github.com/luizfreitas27/aja/internal/pacing"
 	"github.com/luizfreitas27/aja/internal/questions"
 	"github.com/luizfreitas27/aja/internal/run"
@@ -38,7 +40,13 @@ at a profile aja can own), waits for you to sign in when needed, then walks ever
 term with the configured filters, screens each job and applies. Pacing is on by default.
 
 --dry-run fills every form and discards it at the Review step instead of submitting, so you
-can check the answers before applying for real.`,
+can check the answers before applying for real.
+
+With you at the terminal, a question nothing can answer pauses the job: aja shows it (and
+sends a Telegram message when configured), you fill it in Chrome and press Enter, and what
+you typed is remembered as an approved answer. The pause waits up to 15 minutes. With
+--unattended, or when stdin or stdout is not a terminal, aja never pauses: the job is
+skipped and the question waits for you in "aja answers review".`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := map[string]string{}
@@ -65,9 +73,7 @@ can check the answers before applying for real.`,
 					}
 				}
 			}
-			if !opts.Unattended && !a.stdoutIsTerminal() {
-				opts.Unattended = true
-			}
+			opts.Unattended = run.ResolveUnattended(opts.Unattended, a.stdinIsTerminal(), a.stdoutIsTerminal())
 			cfg := l.Config
 			a.openLog(cfg.Settings.LogLevel)
 			st, err := a.openStore()
@@ -75,9 +81,15 @@ can check the answers before applying for real.`,
 				return err
 			}
 			resolved := markets.Resolve(cfg)
+			aiClient, err := ai.FromConfig(cfg, l.Secrets, resolved, a.logger)
+			if err != nil {
+				return err
+			}
+			telegram := notify.New(l.Secrets.TelegramBotToken, l.Secrets.TelegramChatID, a.logger)
 			a.ui.Banner(a.Version)
 			a.ui.KV("market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
 			a.ui.KV("mode", runMode(opts))
+			a.ui.KV("ai", aiMode(cfg, aiClient != nil))
 
 			bin, err := chrome.Find(cfg.Settings.ChromeBinary)
 			if err != nil {
@@ -98,14 +110,26 @@ can check the answers before applying for real.`,
 			session := linkedin.NewSession(br.Main(), br, pacer, a.logger)
 			session.CloseTabs = cfg.Settings.CloseTabs
 			mem := memory.New(st, a.logger)
-			answerer := questions.New(cfg, mem, nil, a.logger) // the AI client arrives with F1-6
+			answerer := questions.New(cfg, mem, nil, a.logger)
+			if aiClient != nil {
+				answerer.AI = aiClient
+			}
 			applier := &apply.Applier{Page: br.Main(), Pacer: pacer, Answerer: answerer, Logger: a.logger, ScreenshotDir: a.paths.ScreenshotDir}
+			if !opts.Unattended {
+				applier.Helper = &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout}
+			}
 			resume, note := run.ResolveResume(a.paths, resolved, cfg.Questions.Resume)
 			if note != "" {
 				a.ui.Warn("resume", note)
 			}
+			events := func(e run.Event) {
+				a.printEvent(e)
+				if e.Kind == run.EventLogin {
+					telegram.Send(ctx, "aja is waiting for you to sign in to LinkedIn in the Chrome window.")
+				}
+			}
 			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
-				Events: a.printEvent, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume}
+				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume}
 
 			sum, runErr := runner.Run(ctx, opts)
 			a.printSummary(sum)
@@ -121,6 +145,13 @@ can check the answers before applying for real.`,
 	f.StringVar(&opts.Location, "location", "", "search location for this run (overrides the config)")
 	f.StringVar(&market, "market", "", "market for this run: brasil or internacional")
 	return cmd
+}
+
+func aiMode(c config.Config, on bool) string {
+	if !on {
+		return "off"
+	}
+	return c.AI.Provider + " " + c.AI.Model
 }
 
 func runMode(o run.Options) string {
@@ -186,7 +217,14 @@ func (a *App) printSummary(s run.Summary) {
 		a.ui.KV("failed", fmt.Sprint(s.Failed))
 	}
 	a.ui.KV("skipped", fmt.Sprint(s.Skipped))
+	if s.Captured > 0 {
+		a.ui.KV("captured", fmt.Sprintf("%d answer(s) you typed, remembered", s.Captured))
+	}
+	a.ui.KV("pending", fmt.Sprintf("%d answer(s) to review", s.PendingAnswers))
 	a.ui.KV("ended", s.Reason)
+	if s.PendingAnswers > 0 {
+		a.ui.Hint("Review them with `aja answers review`.")
+	}
 }
 
 // ------------------------------------------------------------------ status / logs
@@ -238,8 +276,8 @@ func (a *App) statusCmd() *cobra.Command {
 				if ended == "" {
 					ended = "in progress"
 				}
-				a.ui.Printf("#%-4d %-25s %-5s %-14s applied %d  ext %d  failed %d  skipped %d  %s\n",
-					r.ID, r.StartedAt, mode, r.Market, r.Applied, r.External, r.Failed, r.Skipped, firstNonEmpty(r.Reason, ended))
+				a.ui.Printf("#%-4d %-25s %-5s %-14s applied %d  ext %d  failed %d  skipped %d  pending %d  %s\n",
+					r.ID, r.StartedAt, mode, r.Market, r.Applied, r.External, r.Failed, r.Skipped, r.PendingAnswers, firstNonEmpty(r.Reason, ended))
 			}
 			return nil
 		},

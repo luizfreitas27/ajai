@@ -65,11 +65,11 @@ A question whose label matches none of the tool's known kinds, so no configured 
 _Avoid_: unknown, failed question, missing answer
 
 **Answer memory**:
-The tool's persistent record of answers it has given to unrecognised questions, kept so each question has to be resolved once.
+The tool's persistent record of answers it has given to unrecognised questions, and of the questions it could not answer yet, kept so each question has to be resolved once.
 _Avoid_: cache, learned answers, Q&A store
 
 **Remembered answer**:
-One answer in the answer memory: a question (normalised label plus control kind), the answer text, where it came from (the AI, the user, or a form control the tool saw and left alone) and its review state.
+One answer in the answer memory: a question (normalised label plus control kind), the answer text, where it came from (the AI, the user, or a form control the tool saw and left alone) and its review state. A question nothing could answer is remembered with no answer yet, so the user can supply one; until then it answers nothing.
 _Avoid_: memory entry, record, saved answer, learned answer
 
 **Review state**:
@@ -77,11 +77,11 @@ Whether a remembered answer is **pending** (not yet confirmed by the user) or **
 _Avoid_: status, verified, confirmed
 
 **Review queue**:
-The list of pending remembered answers the user works through, approving, correcting or deleting each one, in the terminal or the control panel.
+The list of pending remembered answers the user works through, approving, correcting or deleting each one, in the terminal (`aja answers review`) or the control panel. It also holds the questions nothing could answer, waiting for the user's answer.
 _Avoid_: inbox, backlog, pending list
 
 **Help pause**:
-The stop the tool makes, in an attended run, when a question has no answer: it prints the question, notifies the user, and waits for them to fill the form in Chrome and confirm in the terminal before continuing.
+The stop the tool makes, in an attended run, when required questions have no answer: it prints them, notifies the user, and waits (up to 15 minutes) for them to fill the form in Chrome and confirm in the terminal before continuing. With no confirmation, the job is skipped and the questions go to the review queue.
 _Avoid_: dialog, help needed popup, manual mode
 
 **Captured answer**:
@@ -89,7 +89,7 @@ A remembered answer taken from what the user typed into the form by hand during 
 _Avoid_: manual answer, learned from user
 
 **Unattended run**:
-A run where nobody is at the terminal (the panel, the scheduler, `--unattended`): no help pause; a job with an unanswerable question is skipped and the question remembered as pending.
+A run where nobody is at the terminal (the panel, the scheduler, `--unattended`, or a terminal missing on either end): no help pause; a job with an unanswerable question is skipped and the question goes to the review queue.
 _Avoid_: background mode, headless, silent
 
 **Sensitive question**:

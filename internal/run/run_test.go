@@ -241,6 +241,15 @@ func TestADryRunScreensEveryCardAndRecordsWhatItWouldApplyTo(t *testing.T) {
 	if len(runs) != 1 || !runs[0].DryRun || runs[0].Skipped != 8 || runs[0].Reason != "all search terms visited" || runs[0].EndedAt == "" {
 		t.Errorf("%+v", runs)
 	}
+	if err := st.UpsertAnswer(store.Answer{Label: "Q", Normalised: "q", Kind: "text", Source: "form", State: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	site.page = 0
+	sum, _ = r.Run(context.Background(), Options{DryRun: true, Fast: true})
+	runs, _ = st.ListRuns(1)
+	if sum.PendingAnswers != 1 || runs[0].PendingAnswers != 1 {
+		t.Errorf("the run summary reports the review queue: %+v %+v", sum, runs[0])
+	}
 	if _, err := ReadState(r.StatePath); !errors.Is(err, ErrNoState) {
 		t.Errorf("the state file must be removed when the run ends: %v", err)
 	}
@@ -307,7 +316,7 @@ func TestALiveRunAppliesRecordsFailuresAndUnansweredQuestions(t *testing.T) {
 	r, st, events := runner(t, site, cfg())
 	r.ResumePath = "/tmp/cv.pdf"
 	applier := &fakeApplier{errs: map[string]error{"2": errors.New("element detached")},
-		outcomes: map[string]apply.Outcome{"3": {Kind: apply.Unanswered, Blocked: []string{"Favourite colour [Red, Blue]"}}}}
+		outcomes: map[string]apply.Outcome{"3": {Kind: apply.Unanswered, Blocked: []string{"Favourite colour [Red, Blue]"}, Queued: 1, Captured: 1}}}
 	r.Applier = applier
 	sum, err := r.Run(context.Background(), Options{})
 	if err != nil || sum.Applied != 1 || sum.Failed != 1 || sum.Skipped != 1 || sum.WouldApply != 0 {
@@ -332,6 +341,9 @@ func TestALiveRunAppliesRecordsFailuresAndUnansweredQuestions(t *testing.T) {
 	}
 	if len(kinds(*events, EventApplied)) != 1 || len(kinds(*events, EventFailed)) != 1 {
 		t.Errorf("%+v", *events)
+	}
+	if sum.Captured != 1 || !strings.Contains(kinds(*events, EventSkip)[0].Text, "review queue") {
+		t.Errorf("%+v %+v", sum, kinds(*events, EventSkip))
 	}
 	if _, err := r.Run(context.Background(), Options{Fast: true}); err == nil {
 		t.Error("--fast without --dry-run must be refused")

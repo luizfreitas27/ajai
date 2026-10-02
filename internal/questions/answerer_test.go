@@ -2,6 +2,7 @@ package questions
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -708,11 +709,61 @@ func TestMatchAnswerToOption(t *testing.T) {
 type fakeAI struct {
 	replies map[string]string
 	calls   []string
+	options [][]string
+	kinds   []Kind
 }
 
-func (f *fakeAI) Answer(question string, kind Kind, options []string, _ string) (string, error) {
+func (f *fakeAI) Answer(_ context.Context, question string, kind Kind, options []string, _ string) (string, error) {
 	f.calls = append(f.calls, question)
+	f.options = append(f.options, options)
+	f.kinds = append(f.kinds, kind)
 	return f.replies[question], nil
+}
+
+func TestTheAIIsShownOnlyRealOptionsAndARejectedAnswerIsNotRemembered(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	ai := &fakeAI{replies: map[string]string{"Preferred shift": "Evening", "Willing to travel?": "No"}}
+	a.AI = ai
+	if d := a.Answer(dropdown("Preferred shift", "Select an option", "Day", "Night"), job); d.Action != Blocked {
+		t.Errorf("an answer that is not an option leaves the dropdown alone: %+v", d)
+	}
+	if strings.Join(ai.options[0], "|") != "Day|Night" {
+		t.Errorf("the placeholder was offered: %v", ai.options[0])
+	}
+	if found, _ := mem.Find("Preferred shift", "select"); found != nil {
+		t.Errorf("a rejected AI answer was remembered: %+v", found)
+	}
+	d := a.Answer(radio("Willing to travel?", "Yes", "No"), job)
+	if d.Action != Choose || d.Value != "No" || d.Source != "ai" {
+		t.Errorf("%+v", d)
+	}
+	found, _ := mem.Find("Willing to travel?", "radio")
+	if found == nil || found.Answer != "No" || found.State != "pending" || found.Source != "ai" || found.Uses != 1 {
+		t.Errorf("an AI radio answer is remembered as pending: %+v", found)
+	}
+}
+
+func TestMemoryIsConsultedBeforeTheAIAndAITextAnswersKeepTheirKind(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	ai := &fakeAI{replies: map[string]string{"Are you willing to relocate?": "No", "Why do you want to work here?": "The mission.", "Favourite editor?": "Vim"}}
+	a.AI = ai
+	if _, err := mem.Remember("Are you willing to relocate?", "select", "Yes", "user", ""); err != nil {
+		t.Fatal(err)
+	}
+	if d := a.Answer(dropdown("Are you willing to relocate?", "Select an option", "Yes", "No"), job); d.Value != "Yes" || d.Source != "memory" || len(ai.calls) != 0 {
+		t.Errorf("%+v calls=%v", d, ai.calls)
+	}
+	a.Answer(textarea("Why do you want to work here?"), job)
+	a.Answer(text("Favourite editor?"), job)
+	if strings.Join([]string{string(ai.kinds[0]), string(ai.kinds[1])}, ",") != "textarea,text" {
+		t.Errorf("kinds %v", ai.kinds)
+	}
+	for label, kind := range map[string]string{"Why do you want to work here?": "textarea", "Favourite editor?": "text"} {
+		found, _ := mem.Find(label, kind)
+		if found == nil || found.State != "pending" || found.Source != "ai" || found.Kind != kind {
+			t.Errorf("%s: %+v", label, found)
+		}
+	}
 }
 
 func TestTheAIFillsAnUnrecognisedControlOnlyWhenItNamesAnOptionAndIsRemembered(t *testing.T) {
@@ -744,4 +795,115 @@ func TestTheAIFillsAnUnrecognisedControlOnlyWhenItNamesAnOptionAndIsRemembered(t
 			t.Errorf("AI asked %q", c)
 		}
 	}
+}
+
+// ------------------------------------------------------------ learning from the user
+func TestCaptureRemembersWhatTheUserTypedAsApprovedExceptSensitiveAndBlank(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	if _, err := mem.Remember("Favourite language", "text", "Python", "ai", ""); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		q     Question
+		value string
+		want  bool
+	}{
+		{text("Favourite language"), "Go", true}, // the stale AI entry gives way
+		{dropdown("Preferred shift", "Select an option", "Day", "Night"), "Night", true},
+		{radio("Relocate?", "Yes", "No"), "No", true},
+		{checkbox("Email", "How may we contact you?"), "checked", true},
+		{textarea("Why us?"), "Because.", true},
+		{text("What are your salary expectations?"), "90000", false},
+		{text(UnknownTitle), "x", false},
+		{text("Empty"), "   ", false},
+		{dropdown("Shift?", "Select an option", "Day"), "Select an option", false},
+	}
+	rememberable := Decision{Action: Blocked, Remember: true}
+	for _, tc := range cases {
+		if got := a.Capture(tc.q, rememberable, tc.value, job.Link); got != tc.want {
+			t.Errorf("Capture(%q, %q) = %v", tc.q.Label, tc.value, got)
+		}
+	}
+	// A question the memory is never consulted for is never captured.
+	for _, q := range []Question{text("Email address"), dropdown("Gender", "Select an option", "Male", "Female")} {
+		if a.Capture(q, Decision{Action: Blocked, Remember: false}, "x", job.Link) {
+			t.Errorf("%q captured although its answer would never be used", q.Label)
+		}
+	}
+	found, _, _ := mem.Lookup("Favourite language", "text", false)
+	if found.Answer != "Go" || found.State != "approved" || found.Source != "user" {
+		t.Errorf("%+v", found)
+	}
+	if found, _, _ := mem.Lookup("How may we contact you? Email", "checkbox", false); found == nil || found.Answer != "checked" {
+		t.Errorf("checkbox captured under its group title: %+v", found)
+	}
+	if found, _, _ := mem.Lookup("What are your salary expectations?", "text", false); found != nil {
+		t.Error("a sensitive answer was captured")
+	}
+}
+
+func TestUnansweredQuestionsAreQueuedForTheUserButNeverSensitiveOnesOrConfigProblems(t *testing.T) {
+	cfg := pinned()
+	cfg.Personals.Gender = "Nonbinary" // configured, but no option fits: a configuration problem
+	a, mem := answerer(t, cfg)
+	for _, tc := range []struct {
+		q     Question
+		queue bool
+	}{
+		{text("Favourite colour?"), true},
+		{dropdown("Preferred shift", "Select an option", "Day", "Night"), true},
+		{textarea("Why us?"), true},
+		{text("Email address"), false},
+		{text("Do you hold an active security clearance?"), false},
+		{dropdown("Gender", "Select an option", "Male", "Female"), false},
+	} {
+		d := a.Answer(tc.q, job)
+		if d.Action != Blocked || d.Remember != tc.queue {
+			t.Errorf("%q: %+v", tc.q.Label, d)
+		}
+		if got := a.RememberUnanswered(tc.q, d, job.Link); got != tc.queue {
+			t.Errorf("%q queued = %v", tc.q.Label, got)
+		}
+	}
+	pending, _ := mem.List("pending")
+	if len(pending) != 3 {
+		t.Fatalf("%+v", pending)
+	}
+	for _, p := range pending {
+		if p.Answer != "" || p.Source != "form" {
+			t.Errorf("%+v", p)
+		}
+	}
+	// A queued question with no answer yet is a memory miss: the AI is still asked next time.
+	ai := &fakeAI{replies: map[string]string{"Favourite colour?": "Blue"}}
+	a.AI = ai
+	if d := a.Answer(text("Favourite colour?"), job); d.Value != "Blue" || d.Source != "ai" {
+		t.Errorf("%+v", d)
+	}
+	// ...and queuing never overwrites an entry that has an answer.
+	if a.RememberUnanswered(text("Favourite colour?"), Decision{Action: Blocked, Remember: true}, job.Link) {
+		t.Error("an answered entry was re-queued")
+	}
+	if found, _, _ := mem.Lookup("Favourite colour?", "text", false); found.Answer != "Blue" {
+		t.Errorf("%+v", found)
+	}
+}
+
+func TestTheAIIsGivenTheContext(t *testing.T) {
+	a, _ := answerer(t, pinned())
+	ctxAI := &ctxRecorder{}
+	a.AI = ctxAI
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.AnswerContext(ctx, text("Favourite colour?"), job)
+	if ctxAI.got != ctx {
+		t.Error("the AI did not receive the caller's context")
+	}
+}
+
+type ctxRecorder struct{ got context.Context }
+
+func (c *ctxRecorder) Answer(ctx context.Context, _ string, _ Kind, _ []string, _ string) (string, error) {
+	c.got = ctx
+	return "", nil
 }

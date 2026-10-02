@@ -1,6 +1,7 @@
 package questions
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -62,13 +63,19 @@ type Decision struct {
 	Option    int    // Choose: index into Question.Options
 	Typeahead bool   // Fill: the control is a typeahead that needs ARROW_DOWN + ENTER after typing
 	Clear     bool   // Blocked on a text control with overwrite on: the prefilled text is wiped, as the Python bot did
-	Source    string // "config", "memory", "ai", "prefilled", ""
-	Reason    string // Blocked: why, in words
+	// Remember (Blocked only): the question went through the memory and AI fallbacks and
+	// nothing fitted, so it may be queued for the user as a pending remembered answer.
+	// False for sensitive questions, the email question, and configured answers that
+	// match no option (a configuration problem, not a question to learn).
+	Remember bool
+	Source   string // "config", "memory", "ai", "prefilled", ""
+	Reason   string // Blocked: why, in words
 }
 
 // Memory is the slice of the answer memory the answerer uses.
 type Memory interface {
 	Lookup(label, kind string, approximate bool) (*memory.Remembered, bool, error)
+	Find(label, kind string) (*memory.Remembered, error)
 	Remember(label, kind, answer, source, jobLink string) (*memory.Remembered, error)
 	RecordUse(id, jobLink string) error
 }
@@ -76,7 +83,7 @@ type Memory interface {
 // AI answers an unrecognised question. With options it must name one verbatim
 // or return ""; it is never asked a sensitive question.
 type AI interface {
-	Answer(question string, kind Kind, options []string, jobDescription string) (string, error)
+	Answer(ctx context.Context, question string, kind Kind, options []string, jobDescription string) (string, error)
 }
 
 // Answerer holds the configured answers and the fallbacks.
@@ -207,7 +214,9 @@ func (a *Answerer) noticeAnswer(label string) string {
 
 // ------------------------------------------------------------------ the fallbacks
 
-// lookup is a memory lookup; callers gate sensitive questions before calling.
+// lookup is a memory lookup; callers gate sensitive questions before calling. An
+// entry with no answer yet (a question queued for the user) is a miss, so the AI
+// may still be asked.
 func (a *Answerer) lookup(label, kind string, approximate bool) (*memory.Remembered, bool) {
 	if a.Memory == nil {
 		return nil, false
@@ -215,6 +224,9 @@ func (a *Answerer) lookup(label, kind string, approximate bool) (*memory.Remembe
 	found, approx, err := a.Memory.Lookup(label, kind, approximate)
 	if err != nil {
 		a.Logger.Warn("answer memory lookup failed", "question", label, "error", err)
+		return nil, false
+	}
+	if found != nil && strings.TrimSpace(found.Answer) == "" {
 		return nil, false
 	}
 	return found, approx
@@ -241,11 +253,11 @@ func (a *Answerer) remember(label, kind, answer, source, jobLink string) *memory
 	return entry
 }
 
-func (a *Answerer) askAI(label string, kind Kind, options []string, description string) string {
+func (a *Answerer) askAI(ctx context.Context, label string, kind Kind, options []string, description string) string {
 	if a.AI == nil {
 		return ""
 	}
-	answer, err := a.AI.Answer(label, kind, options, description)
+	answer, err := a.AI.Answer(ctx, label, kind, options, description)
 	if err != nil {
 		a.Logger.Warn("AI answer failed", "question", label, "error", err)
 		return ""
@@ -256,7 +268,7 @@ func (a *Answerer) askAI(label string, kind Kind, options []string, description 
 // answerFromMemoryOrAI is the fallback for an unrecognised text or textarea
 // question: the memory first, then the AI (remembered as pending). "" when
 // neither has anything or the question is sensitive.
-func (a *Answerer) answerFromMemoryOrAI(label string, kind Kind, job Job) (string, string) {
+func (a *Answerer) answerFromMemoryOrAI(ctx context.Context, label string, kind Kind, job Job) (string, string) {
 	if IsSensitive(label) {
 		return "", ""
 	}
@@ -265,7 +277,7 @@ func (a *Answerer) answerFromMemoryOrAI(label string, kind Kind, job Job) (strin
 		a.Logger.Info("memory answered", "question", label, "answer", found.Answer, "state", found.State, "approximate", approx)
 		return found.Answer, "memory"
 	}
-	answer := a.askAI(label, kind, nil, job.Description)
+	answer := a.askAI(ctx, label, kind, nil, job.Description)
 	if answer == "" {
 		return "", ""
 	}
@@ -279,7 +291,7 @@ func (a *Answerer) answerFromMemoryOrAI(label string, kind Kind, job Job) (strin
 // optionFromMemoryOrAI picks an option for a select or radio with no configured
 // answer: the memory's text snapped to THIS form's options, then the AI shown the
 // non-placeholder options and accepted only verbatim. -1 when nothing fits.
-func (a *Answerer) optionFromMemoryOrAI(label string, kind Kind, options []string, job Job) (int, string) {
+func (a *Answerer) optionFromMemoryOrAI(ctx context.Context, label string, kind Kind, options []string, job Job) (int, string) {
 	if IsSensitive(label) {
 		return -1, ""
 	}
@@ -304,7 +316,7 @@ func (a *Answerer) optionFromMemoryOrAI(label string, kind Kind, options []strin
 	if len(choices) == 0 || a.AI == nil {
 		return -1, ""
 	}
-	answer := a.askAI(label, kind, choices, job.Description)
+	answer := a.askAI(ctx, label, kind, choices, job.Description)
 	if indexOf(choices, answer) < 0 {
 		a.Logger.Info("AI did not name one of the options", "question", label)
 		return -1, ""
@@ -318,17 +330,22 @@ func (a *Answerer) optionFromMemoryOrAI(label string, kind Kind, options []strin
 
 // ------------------------------------------------------------------ Answer
 
-// Answer decides what to do with one question.
+// Answer decides what to do with one question (AnswerContext with no deadline).
 func (a *Answerer) Answer(q Question, job Job) Decision {
+	return a.AnswerContext(context.Background(), q, job)
+}
+
+// AnswerContext decides what to do with one question; ctx bounds the AI call.
+func (a *Answerer) AnswerContext(ctx context.Context, q Question, job Job) Decision {
 	switch q.Kind {
 	case Select:
-		return a.answerSelect(q, job)
+		return a.answerSelect(ctx, q, job)
 	case Radio:
-		return a.answerRadio(q, job)
+		return a.answerRadio(ctx, q, job)
 	case Text:
-		return a.answerText(q, job)
+		return a.answerText(ctx, q, job)
 	case Textarea:
-		return a.answerTextarea(q, job)
+		return a.answerTextarea(ctx, q, job)
 	case Checkbox:
 		return a.answerCheckbox(q, job)
 	}
@@ -337,7 +354,7 @@ func (a *Answerer) Answer(q Question, job Job) Decision {
 
 func blocked(reason string) Decision { return Decision{Action: Blocked, Option: -1, Reason: reason} }
 
-func (a *Answerer) answerSelect(q Question, job Job) Decision {
+func (a *Answerer) answerSelect(ctx context.Context, q Question, job Job) Decision {
 	label := q.Label
 	if !a.Cfg.Questions.OverwritePrevious && !IsPlaceholder(q.Current) {
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
@@ -371,10 +388,10 @@ func (a *Answerer) answerSelect(q Question, job Job) Decision {
 			answer = job.WorkLocation
 		}
 	}
-	return a.chooseOption(q, label, answer, job)
+	return a.chooseOption(ctx, q, answer, job)
 }
 
-func (a *Answerer) answerRadio(q Question, job Job) Decision {
+func (a *Answerer) answerRadio(ctx context.Context, q Question, job Job) Decision {
 	label := q.Label
 	if !a.Cfg.Questions.OverwritePrevious && q.Current != "" {
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
@@ -392,13 +409,13 @@ func (a *Answerer) answerRadio(q Question, job Job) Decision {
 	case textmatch.Has(label, disabilityTerms...):
 		answer = a.Cfg.Personals.Disability
 	}
-	return a.chooseOption(q, label, answer, job)
+	return a.chooseOption(ctx, q, answer, job)
 }
 
 // chooseOption turns a configured answer (or none) into a Choose or Blocked for a
 // select/radio: exact option, else the honest mapper, else (only when nothing is
 // configured) the memory and the AI. Never the first option.
-func (a *Answerer) chooseOption(q Question, label, answer string, job Job) Decision {
+func (a *Answerer) chooseOption(ctx context.Context, q Question, answer string, job Job) Decision {
 	if answer != "" {
 		if i := indexOfNormalised(q.Options, answer); i >= 0 {
 			return Decision{Action: Choose, Option: i, Value: q.Options[i], Source: "config"}
@@ -406,7 +423,7 @@ func (a *Answerer) chooseOption(q Question, label, answer string, job Job) Decis
 	}
 	matched, source := MatchAnswerToOption(answer, q.Options), "config"
 	if matched < 0 && answer == "" {
-		matched, source = a.optionFromMemoryOrAI(q.Label, q.Kind, q.Options, job)
+		matched, source = a.optionFromMemoryOrAI(ctx, q.Label, q.Kind, q.Options, job)
 	}
 	if matched < 0 {
 		reason := "no configured, remembered or AI answer"
@@ -416,12 +433,13 @@ func (a *Answerer) chooseOption(q Question, label, answer string, job Job) Decis
 		a.Logger.Info("leaving it unanswered instead of guessing", "question", q.Label, "why", reason)
 		d := blocked(reason)
 		d.Value = q.Current // whatever LinkedIn had stays
+		d.Remember = answer == "" && !IsSensitive(q.Label)
 		return d
 	}
 	return Decision{Action: Choose, Option: matched, Value: q.Options[matched], Source: source}
 }
 
-func (a *Answerer) answerText(q Question, job Job) Decision {
+func (a *Answerer) answerText(ctx context.Context, q Question, job Job) Decision {
 	label := q.Label
 	if q.Current != "" && !a.Cfg.Questions.OverwritePrevious {
 		return Decision{Action: Leave, Value: q.Current, Source: "prefilled"}
@@ -492,18 +510,19 @@ func (a *Answerer) answerText(q Question, job Job) Decision {
 	}
 	source := "config"
 	if answer == "" && fallbackAllowed {
-		answer, source = a.answerFromMemoryOrAI(q.Label, Text, job)
+		answer, source = a.answerFromMemoryOrAI(ctx, q.Label, Text, job)
 	}
 	if answer == "" {
 		a.Logger.Info("no answer for the text question; leaving it empty", "question", q.Label)
 		d := blocked("no answer")
 		d.Clear = q.Current != "" // overwrite is on and nothing replaces the prefill: the Python bot cleared it
+		d.Remember = fallbackAllowed && !authMatched && !IsSensitive(q.Label)
 		return d
 	}
 	return Decision{Action: Fill, Value: answer, Typeahead: typeahead, Source: source}
 }
 
-func (a *Answerer) answerTextarea(q Question, job Job) Decision {
+func (a *Answerer) answerTextarea(ctx context.Context, q Question, job Job) Decision {
 	label := q.Label
 	if q.Current != "" && !a.Cfg.Questions.OverwritePrevious {
 		return Decision{Action: Leave, Value: q.Current, Source: "prefilled"}
@@ -516,11 +535,12 @@ func (a *Answerer) answerTextarea(q Question, job Job) Decision {
 		answer = a.Cfg.Questions.CoverLetter
 	}
 	if answer == "" {
-		answer, source = a.answerFromMemoryOrAI(q.Label, Textarea, job)
+		answer, source = a.answerFromMemoryOrAI(ctx, q.Label, Textarea, job)
 	}
 	if answer == "" {
 		d := blocked("no answer")
 		d.Clear = q.Current != ""
+		d.Remember = !IsSensitive(q.Label)
 		return d
 	}
 	return Decision{Action: Fill, Value: answer, Source: source}
@@ -553,4 +573,54 @@ func (a *Answerer) answerCheckbox(q Question, job Job) Decision {
 		a.remember(key, string(Checkbox), "checked", "form", job.Link)
 	}
 	return blocked(reason)
+}
+
+// ------------------------------------------------------------------ learning from the user
+
+// rememberKey is the label a question is remembered under: a checkbox goes by
+// its group title plus its own text.
+func rememberKey(q Question) string {
+	if q.Kind == Checkbox {
+		return CheckboxKey(q.GroupTitle, q.Label)
+	}
+	return q.Label
+}
+
+// Capture remembers, as approved (source user), what the user put into a
+// control by hand during a help pause. d is the decision aja made for that
+// control before the pause: only a question the memory is consulted for
+// (d.Remember) is captured, so the email question, a configured answer that
+// matches no option, and sensitive questions never fill the memory with
+// answers it would never use. Blank and untitled answers are never captured.
+// It reports whether something was remembered.
+func (a *Answerer) Capture(q Question, d Decision, value string, jobLink string) bool {
+	label, value := rememberKey(q), strings.TrimSpace(value)
+	if !a.mayRemember(label, d) || value == "" || (q.Kind == Select && IsPlaceholder(value)) {
+		return false
+	}
+	if a.remember(label, string(q.Kind), value, "user", jobLink) == nil {
+		return false
+	}
+	a.Logger.Info("captured your answer; aja will reuse it", "question", label, "kind", q.Kind, "answer", value)
+	return true
+}
+
+// RememberUnanswered queues a question nothing could answer as a pending entry
+// with no answer yet (source form), so the user can answer it once in the review
+// queue. It never touches an existing entry for the same question.
+func (a *Answerer) RememberUnanswered(q Question, d Decision, jobLink string) bool {
+	label := rememberKey(q)
+	if !a.mayRemember(label, d) {
+		return false
+	}
+	if existing, err := a.Memory.Find(label, string(q.Kind)); err != nil || existing != nil {
+		return false
+	}
+	return a.remember(label, string(q.Kind), "", "form", jobLink) != nil
+}
+
+// mayRemember: there is a memory, the decision says the memory is consulted for
+// this question, and the question has a usable, non-sensitive title.
+func (a *Answerer) mayRemember(label string, d Decision) bool {
+	return a.Memory != nil && d.Remember && label != "" && label != UnknownTitle && !IsSensitive(label)
 }

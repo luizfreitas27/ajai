@@ -44,11 +44,25 @@ go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
   dry run or on stalled unanswered questions, screenshots failures. Unit-tested with a fake
   DOM (`fake_test.go`); `e2e_browser_test.go` (build tag `browser`) drives the captured
   modal fixture through the rod adapter in a headless Chrome.
-- `internal/memory`, `internal/store`: answer memory and SQLite (pure Go driver).
+- `internal/memory`, `internal/store`: answer memory and SQLite (pure Go driver). A pending
+  entry with an empty answer is a question queued for the user (`aja answers review`);
+  lookups treat it as a miss so the AI is still asked.
+- `internal/ai`: one OpenAI-compatible client on the official openai-go SDK, the candidate
+  profile and the prompt. The chat service is built without `openai.NewClient`, so the
+  SDK's environment defaults (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_CUSTOM_HEADERS`...)
+  never reach a provider. With a key the endpoint must be HTTPS or loopback.
+- `internal/notify`: Telegram sender (help-pause and login nudges; run summary in F1-7).
+  The token is in the request URL, so client errors are logged without their URL.
+- Help pause: `apply.Applier.Helper` (nil when unattended) is asked once per distinct set of
+  stuck questions, at most `MaxHelpPauses` times per application; the form is snapshotted
+  before and after, controls the user filled that were empty before are left alone from then
+  on and, when the memory is consulted for them (`Decision.Remember`), captured as approved
+  answers (`Answerer.Capture`). Without help, stuck questions are queued for review
+  (`Answerer.RememberUnanswered`). Unattended = `--unattended`, or stdin or stdout not a
+  terminal (`run.ResolveUnattended`).
 - `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
   `selectors_test.go`. Update both together when LinkedIn changes.
-- `internal/ai`: one OpenAI-compatible client for every provider.
-- `internal/notify`, `internal/schedule`, `internal/markets`, `internal/pacing`.
+- `internal/schedule` (F2): schedule windows and the scheduler.
 - `internal/panel` (F2): embedded web panel with the same security rules as the Python one:
   loopback only, no CORS, a required request header on mutations, masked secrets.
 
