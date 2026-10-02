@@ -1,0 +1,30 @@
+aja   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Jobs  all   applied 1 · external 1 · failed 0 · skipped 1
+  recorded      outcome   title                     company         location
+  05 Oct 08:03  skipped   Senior Java               Umbrella        Remote
+  05 Oct 08:02  external  Backend Engineer          Initech         Lisboa
+> 05 Oct 08:01  applied   Go Developer              Acme            Recife
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Go Developer · Acme · Recife (Remote)
+applied Mon 05 Oct 08:01 · posted 2026-10-03
+job: https://www.linkedin.com/jobs/view/1/
+questions: Years of Go? 3
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+↑↓ move · tab outcome · / search · o open · ? keys · q quit

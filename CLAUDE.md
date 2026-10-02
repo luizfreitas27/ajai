@@ -118,6 +118,10 @@ to the tag before tagging and the workflow publishes that section as the release
   fake systemctl, and the CLI harness replaces systemctl with one that fails, so no test
   reaches this machine's systemd. The unit's state is read when the Schedule tab is shown
   and every `unitEvery` refreshes, one read at a time, never every second.
+- The Jobs tab reads `store.ListJobs` a page (`jobsPage`) at a time (`JobFilter.Offset`;
+  `JobFilter.Text` is a LIKE on title, company and location with `%`/`_` taken literally),
+  re-reads what it shows every refresh (the selection follows the job id), and opens links
+  through `Deps.OpenURL` (`xdg-open`, not waited for, its output on the null device).
 - Schedule windows are added and turned on through `store.AddValidWindow` and
   `store.SetWindowEnabledValid` (schedule.Validate against the windows there are, in one
   place): `aja schedule` and the TUI's Schedule tab both use them.

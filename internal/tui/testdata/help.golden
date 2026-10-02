@@ -1,11 +1,12 @@
-aja   1 Dashboard   2 Answers   3 Schedule   4 Config
+aja   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Keys
 
   1           Dashboard
   2           Answers
   3           Schedule
-  4           Config
+  4           Jobs
+  5           Config
   ?           this list; Esc closes it
   q, Ctrl-C   quit (a run in progress keeps running)
 
@@ -14,7 +15,6 @@ Dashboard
   r           start a run: market, dry run or live, a maximum
   x           stop the run in progress, whoever started it
   s           the setup checklist
-
 
 
 

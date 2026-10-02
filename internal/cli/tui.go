@@ -42,7 +42,19 @@ func (a *App) openTUI(ctx context.Context) error {
 	d := tui.Deps{Paths: a.paths, Store: st, Env: a.Env, Logger: logger, Now: a.now,
 		Probe: doctor.RealProbe(), Launcher: launcher{executable: self, configFlag: a.configFlag, noColor: a.noColor}, Home: home}
 	d.Unit = daemonUnit{app: a}
+	d.OpenURL = openInBrowser
 	return showTUI(ctx, d, a.Stdin, a.Stdout, a.colorOff())
+}
+
+// openInBrowser opens link in the default browser (xdg-open) without waiting
+// for it, its output on the null device so it never draws over the TUI.
+func openInBrowser(link string) error {
+	cmd := exec.Command("xdg-open", link)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // launcher runs aja for the TUI, with the same --config and --no-color.

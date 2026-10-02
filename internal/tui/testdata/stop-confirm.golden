@@ -1,4 +1,4 @@
-aja   1 Dashboard   2 Answers   3 Schedule   4 Config
+aja   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Stop a run started from the terminal (pid $PID) at 09:30? It ends once the job in hand is done.
 y stops it · n keeps it
