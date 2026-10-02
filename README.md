@@ -28,11 +28,21 @@ Pre-alpha. The plan is three usable phases, tracked as GitHub issues:
 - Go 1.25+ to build from source. Release binaries will be published for Linux,
   macOS and Windows.
 
-## Build
+## Build and first run
 
 ```bash
 go build ./cmd/aja && ./aja version
+./aja init                      # short wizard; or pass --first-name/--last-name/--terms for scripts
+./aja doctor                    # Chrome, profile, config, secrets, resume, data dir, and every path in use
+./aja config set search.terms "Software Engineer, Python Developer"
+./aja config show               # effective config, secrets masked
 ```
+
+Config lives in the OS config directory (`~/.config/aja/config.yaml` on Linux);
+secrets go in the `.env` beside it as `AJA_AI_API_KEY`, `AJA_TELEGRAM_BOT_TOKEN`
+and `AJA_TELEGRAM_CHAT_ID`. `AJA_HOME=<dir>` puts everything under one directory;
+`--config <file>` relocates the config file alone. `AJA_CFG_SECTION_KEY=value`
+overrides any key for one process without touching the file.
 
 ## Honest note on detection
 
