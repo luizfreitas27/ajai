@@ -1,5 +1,6 @@
 // Package store is the local SQLite database: runs, jobs (applied, external,
-// failed, skipped), remembered answers and small key/value state. Pure-Go
+// failed, skipped), remembered answers, schedule windows and the openings
+// handled, and small key/value state. Pure-Go
 // driver, embedded migrations applied on open, CSV export in the layout the
 // Python bot wrote.
 package store
