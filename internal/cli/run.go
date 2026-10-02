@@ -269,11 +269,7 @@ func (a *App) statusCmd() *cobra.Command {
 					a.ui.KV("started from", holder.From())
 				}
 			case state.Alive():
-				mode := "live"
-				if state.DryRun {
-					mode = "dry run"
-				}
-				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), mode, state.Market))
+				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), run.Mode(state.DryRun), state.Market))
 				if held {
 					a.ui.KV("started from", holder.From())
 				}

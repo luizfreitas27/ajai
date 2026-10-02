@@ -25,11 +25,7 @@ func (l *Listener) status() string {
 	case held:
 		fmt.Fprintf(&b, "Running: %s.\n", holder)
 		if stateErr == nil {
-			mode := "live"
-			if state.DryRun {
-				mode = "dry run"
-			}
-			fmt.Fprintf(&b, "Market %s, %s.\n", state.Market, mode)
+			fmt.Fprintf(&b, "Market %s, %s.\n", state.Market, run.Mode(state.DryRun))
 			if !state.NextRun.IsZero() {
 				fmt.Fprintf(&b, "Non-stop session: next run at %s.\n", state.NextRun.Local().Format("15:04"))
 			} else {
@@ -48,27 +44,44 @@ func (l *Listener) status() string {
 			if t, ok := store.ParseTime(r.StartedAt); ok {
 				when = t.Local().Format("Mon 02 Jan 15:04")
 			}
-			fmt.Fprintf(&b, "Last run (%s): applied %d, external %d, failed %d, skipped %d; %s.\n",
-				when, r.Applied, r.External, r.Failed, r.Skipped, r.Reason)
+			reason := r.Reason
+			if r.EndedAt == "" {
+				reason = "it never recorded an end (aja was killed)"
+			}
+			fmt.Fprintf(&b, "Last run (%s, market %s, %s): applied %d, external %d, failed %d, skipped %d; %s.\n",
+				when, r.Market, run.Mode(r.DryRun), r.Applied, r.External, r.Failed, r.Skipped, reason)
 		}
 	}
 	if n, err := l.store.CountAnswers("pending"); err == nil {
 		fmt.Fprintf(&b, "\nPending answers: %d\n", n)
 	}
-	if windows, err := l.store.ListWindows(); err == nil && len(windows) > 0 {
+	windows, err := l.store.ListWindows()
+	switch {
+	case err != nil:
+	case len(windows) == 0:
+		b.WriteString("No schedule windows (aja schedule add).\n")
+	default:
 		now := l.now()
 		if o, ok := schedule.Current(windows, now); ok {
 			fmt.Fprintf(&b, "Window open now: %d until %s (%s)\n", o.Window.ID, o.Window.End, o.Window)
 		}
 		if o, ok := schedule.Next(windows, now); ok {
 			fmt.Fprintf(&b, "Next window: %s, window %d (%s)\n", o.Start.Format("Mon 02 Jan 15:04"), o.Window.ID, o.Window)
+		} else {
+			b.WriteString("Every schedule window is disabled.\n")
 		}
 	}
 	return strings.TrimSpace(b.String())
 }
 
-// stop asks the run in progress to end and, in the background, says when it has.
-func (l *Listener) stop(ctx context.Context) {
+// stop asks the run in progress to end and, in the background, says when it
+// has. A /stop that waited while nobody listened is not for a run that started
+// after it was sent (live, it always means the run in progress: clocks differ).
+func (l *Listener) stop(ctx context.Context, sent time.Time, backlog bool) {
+	if h, held, _ := run.ReadLock(l.dataDir); backlog && held && h.Started.After(sent) {
+		l.reply(ctx, "Not stopping "+h.String()+": it started after your /stop. Send it again to stop this one.")
+		return
+	}
 	holder, err := l.runs.Stop(ReasonStopped)
 	switch {
 	case errors.Is(err, run.ErrNoRun):
@@ -79,21 +92,29 @@ func (l *Listener) stop(ctx context.Context) {
 		return
 	}
 	l.reply(ctx, "Stopping "+holder.String()+"…")
+	l.mu.Lock()
+	already := l.confirming
+	l.confirming = true
+	l.mu.Unlock()
+	if already {
+		return // one "Stopped." is enough
+	}
 	l.wg.Add(1)
 	go func() {
 		defer l.wg.Done()
-		deadline := time.Now().Add(l.StopConfirm) // real time: how long the user waits
+		defer func() { l.mu.Lock(); l.confirming = false; l.mu.Unlock() }()
+		deadline := time.Now().Add(l.stopConfirm) // real time: how long the user waits
 
 		for {
 			if _, held, _ := run.ReadLock(l.dataDir); !held {
-				l.reply(ctx, "Stopped. The run's summary follows.")
+				l.reply(ctx, "Stopped.")
 				return
 			}
 			if !time.Now().Before(deadline) {
-				l.reply(ctx, fmt.Sprintf("Still ending after %s; /status shows it.", l.StopConfirm))
+				l.reply(ctx, fmt.Sprintf("Still ending after %s; /status shows it.", l.stopConfirm))
 				return
 			}
-			if l.Sleep(ctx, time.Second) != nil {
+			if l.sleep(ctx, time.Second) != nil {
 				return
 			}
 		}
@@ -103,10 +124,7 @@ func (l *Listener) stop(ctx context.Context) {
 // start runs /run [market] [dry].
 func (l *Listener) start(ctx context.Context, args []string) {
 	req := daemon.Request{Origin: run.OriginTelegram}
-	markets := make([]string, len(config.MarketNames))
-	for i, m := range config.MarketNames {
-		markets[i] = string(m)
-	}
+	markets := config.MarketNameList()
 	for _, a := range args {
 		a = strings.ToLower(a)
 		switch {
@@ -131,10 +149,15 @@ func (l *Listener) start(ctx context.Context, args []string) {
 		if market == "" {
 			market = "from your config"
 		}
-		mode := "live"
-		if req.DryRun {
-			mode = "dry run"
-		}
-		l.reply(ctx, fmt.Sprintf("Started a run (market %s, %s). /status follows it, /stop ends it; its summary comes when it ends.", market, mode))
+		l.reply(ctx, fmt.Sprintf("Started a run (market %s, %s). /status follows it, /stop ends it; its summary comes when it ends.", market, run.Mode(req.DryRun)))
 	}
+}
+
+// help lists the commands.
+func help() string {
+	return `aja listens to:
+/status: the run in progress (or the last one), pending answers, the next window
+/stop: stop the run in progress, wherever it was started
+/run [` + strings.Join(config.MarketNameList(), "|") + `] [dry]: start an unattended run now
+/help: this list`
 }

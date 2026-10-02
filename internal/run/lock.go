@@ -40,10 +40,13 @@ func (h Holder) String() string {
 	return fmt.Sprintf("a run started from %s (pid %d) at %s", h.From(), h.PID, h.Started.Local().Format("15:04"))
 }
 
-// From says where the run was started: "the terminal", "schedule window 3".
+// From says where the run was started: "the terminal", "schedule window 3", "Telegram".
 func (h Holder) From() string {
-	if h.Window != 0 {
+	switch {
+	case h.Window != 0:
 		return fmt.Sprintf("schedule window %d", h.Window)
+	case h.Origin == OriginTelegram:
+		return "Telegram"
 	}
 	return "the " + string(h.Origin)
 }

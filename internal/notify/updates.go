@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,12 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("Telegram answered %d: %s", e.Status, e.Description)
 }
 
+// BotID is the bot's own id, the token's part before the colon (not secret).
+func (t *Telegram) BotID() string {
+	id, _, _ := strings.Cut(t.token, ":")
+	return id
+}
+
 // ChatID is the configured chat, the only one aja talks to and listens to.
 func (t *Telegram) ChatID() string { return t.chatID }
 
@@ -53,7 +60,9 @@ func (t *Telegram) Updates(ctx context.Context, offset int64, wait time.Duration
 	ctx, cancel := context.WithTimeout(ctx, wait+15*time.Second)
 	defer cancel()
 	var updates []Update
-	err := t.call(ctx, &http.Client{}, "getUpdates", map[string]any{
+	// Telegram remembers allowed_updates for later calls: add "callback_query" here
+	// when buttons are read (/pending), not elsewhere.
+	err := t.call(ctx, t.pollClient, "getUpdates", map[string]any{
 		"offset": offset, "timeout": int(wait / time.Second), "allowed_updates": []string{"message"},
 	}, &updates)
 	return updates, err

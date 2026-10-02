@@ -217,24 +217,27 @@ configuration is read afresh for every run, so `aja config set` needs no restart
 daemon runs at a time, and Ctrl-C lets the run in progress end cleanly first. Its runs use
 the aja profile, so sign in once with `aja login` before the first window.
 
-## Telegram commands
+## Remote commands (Telegram)
 
 With `AJA_TELEGRAM_BOT_TOKEN` and `AJA_TELEGRAM_CHAT_ID` set (the same bot that sends the run
-summaries), `aja daemon` also takes commands from that chat:
+summaries; the chat id is the numeric one), `aja daemon` also takes commands from that chat:
 
 | Command | What it does |
 |---|---|
 | `/status` | The run in progress (who started it, market, counts, term) or the last run, pending answers, the next window |
 | `/stop` | Stop the run in progress, wherever it was started; a second message says when it has ended |
-| `/run [brasil\|internacional] [dry]` | Start an unattended run now, or say why not (a run in progress, a config error) |
+| `/run [brasil\|internacional] [dry]` | Start an unattended run now, or say why not (a run in progress, a config error, the Chrome profile in use) |
 | `/help` | The list |
 
 Messages from any other chat are ignored. The daemon asks Telegram for new messages (long
 polling), so nothing on your machine is reachable from the internet, and it remembers what
-it read, so a restart never repeats a command; a command sent while the daemon was down
-(more than 10 minutes old) is not acted on. If your bot has a webhook set, Telegram refuses
-to hand messages out: remove it (`deleteWebhook`). The token and chat id are read when the
-daemon starts.
+it read, so a restart never repeats a command. A `/run` or `/stop` that waited more than 10
+minutes while the daemon was down is not acted on (send it again), and a waiting `/stop`
+never stops a run that started after it; `/status` and `/help` are always answered. If your
+bot has a webhook set, or another program reads it, Telegram hands the messages to that
+one: the daemon says so once, on Telegram too (remove the webhook with `deleteWebhook`). A
+revoked token stops the remote commands, with a line in the daemon's log. The token and chat
+id are read when the daemon starts.
 
 ## Markets
 

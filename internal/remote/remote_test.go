@@ -30,13 +30,14 @@ const (
 // Telegram does (an update stays until a later call's offset passes it) and
 // sendMessage records the text.
 type fakeTelegram struct {
-	mu      sync.Mutex
-	queue   []notify.Update
-	sent    []string
-	fail    int // the next getUpdates calls that fail with a dropped connection
-	nextID  int64
-	srv     *httptest.Server
-	arrived chan struct{}
+	mu       sync.Mutex
+	queue    []notify.Update
+	sent     []string
+	fail     int // the next getUpdates calls that fail with a dropped connection
+	conflict int // the next getUpdates calls answered 409 (a webhook is set)
+	nextID   int64
+	srv      *httptest.Server
+	arrived  chan struct{}
 }
 
 func newFakeTelegram(t *testing.T) *fakeTelegram {
@@ -51,6 +52,13 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		switch strings.TrimPrefix(r.URL.Path, "/bot"+token+"/") {
 		case "getUpdates":
 			f.mu.Lock()
+			if f.conflict > 0 {
+				f.conflict--
+				f.mu.Unlock()
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"ok":false,"error_code":409,"description":"Conflict: can't use getUpdates method while webhook is active"}`))
+				return
+			}
 			if f.fail > 0 {
 				f.fail--
 				f.mu.Unlock()
@@ -120,6 +128,7 @@ func (f *fakeTelegram) waitFor(t *testing.T, n int) []string {
 
 // fakeRuns is the supervisor: it records what it is asked and answers as told.
 type fakeRuns struct {
+	panics   bool
 	mu       sync.Mutex
 	starts   []daemon.Request
 	stops    []string
@@ -131,6 +140,9 @@ type fakeRuns struct {
 func (r *fakeRuns) Start(_ context.Context, req daemon.Request) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.panics {
+		panic("a nil request")
+	}
 	r.starts = append(r.starts, req)
 	return r.startErr
 }
@@ -192,8 +204,8 @@ func (w *world) listen() {
 	logger := slog.New(slog.NewTextHandler(lockedWriter{&w.logMu, w.logs}, nil))
 	bot := notify.New(token, "42", logger).WithAPIBase(w.tg.srv.URL)
 	l := New(bot, w.runs, w.st, w.dir, logger, func() time.Time { return w.now })
-	l.Poll, l.StopConfirm = 50*time.Millisecond, 2*time.Second
-	l.Sleep = func(ctx context.Context, d time.Duration) error {
+	l.poll, l.stopConfirm = 50*time.Millisecond, 2*time.Second
+	l.sleep = func(ctx context.Context, d time.Duration) error {
 		w.logMu.Lock()
 		w.backoff = append(w.backoff, d)
 		w.logMu.Unlock()
@@ -271,7 +283,7 @@ func TestStopAsksTheRunAndConfirmsWhenItEnded(t *testing.T) {
 		t.Errorf("%q", stops)
 	}
 	terminal.Release() // the run ends
-	if m := w.tg.waitFor(t, 2); !strings.Contains(m[1], "Stopped.") {
+	if m := w.tg.waitFor(t, 2); m[1] != "Stopped." {
 		t.Errorf("%q", m)
 	}
 	w.runs.mu.Lock()
@@ -341,7 +353,7 @@ func TestOnlyTheConfiguredChatIsHeardAndLoggedOnce(t *testing.T) {
 	}
 }
 
-func TestARestartNeverRepeatsACommandAndOldCommandsAreNotActedOn(t *testing.T) {
+func TestARestartNeverRepeatsACommand(t *testing.T) {
 	w := newWorld(t)
 	w.listen()
 	w.tg.say(chat, "/run", w.now)
@@ -353,10 +365,154 @@ func TestARestartNeverRepeatsACommandAndOldCommandsAreNotActedOn(t *testing.T) {
 	if starts, _ := w.runs.seen(); len(starts) != 1 {
 		t.Errorf("the /run was acted on %d times", len(starts))
 	}
-	w.tg.say(chat, "/run", w.now.Add(-time.Hour)) // sent while the daemon was down
+}
+
+func TestCommandsThatWaitedWhileNobodyListenedAreCheckedLiveOnesAreNot(t *testing.T) {
+	w := newWorld(t)
+	hourAgo := w.now.Add(-time.Hour)
+	// Sent while the daemon was down: the backlog of the first poll.
+	w.tg.say(chat, "/run", hourAgo)
+	w.tg.say(chat, "/status", hourAgo)
+	w.tg.say(chat, "/start", hourAgo) // tapping Start while setting the bot up
+	w.listen()
 	m := w.tg.waitFor(t, 3)
-	if starts, _ := w.runs.seen(); !strings.Contains(m[2], "Not acting on /run sent at") || len(starts) != 1 {
-		t.Errorf("%q %d", m[2], len(starts))
+	if !strings.Contains(m[0], "Not acting on /run sent at") || !strings.Contains(m[1], "No run in progress") || !strings.Contains(m[2], "aja listens to") {
+		t.Errorf("%q", m)
+	}
+	if starts, _ := w.runs.seen(); len(starts) != 0 {
+		t.Errorf("a stale /run started a run")
+	}
+	// Live, a message's date is not trusted against this machine's clock.
+	w.tg.say(chat, "/run", hourAgo)
+	w.tg.waitFor(t, 4)
+	if starts, _ := w.runs.seen(); len(starts) != 1 {
+		t.Errorf("a live /run must be acted on whatever the clocks say")
+	}
+}
+
+func TestABacklogStopDoesNotStopARunThatStartedAfterIt(t *testing.T) {
+	w := newWorld(t)
+	lock, _ := run.AcquireLock(w.dir, run.Holder{Origin: run.OriginSchedule, Window: 2, Started: w.now})
+	defer lock.Release()
+	w.tg.say(chat, "/stop", w.now.Add(-5*time.Minute)) // meant for an earlier run
+	w.listen()
+	if m := w.tg.waitFor(t, 1); !strings.Contains(m[0], "it started after your /stop") {
+		t.Errorf("%q", m)
+	}
+	if _, stops := w.runs.seen(); len(stops) != 0 {
+		t.Error("nothing stopped")
+	}
+}
+
+func TestTwoStopsGiveOneStoppedAndAPanickingCommandIsReported(t *testing.T) {
+	w := newWorld(t)
+	lock, _ := run.AcquireLock(w.dir, run.Holder{Origin: run.OriginTerminal, Started: w.now.Add(-time.Hour)})
+	w.runs.holder = run.Holder{PID: 9, Origin: run.OriginTerminal, Started: w.now}
+	w.listen()
+	w.tg.say(chat, "/stop", w.now)
+	w.tg.say(chat, "/stop", w.now)
+	w.tg.waitFor(t, 2)
+	lock.Release()
+	w.tg.waitFor(t, 3)
+	time.Sleep(100 * time.Millisecond)
+	if n := strings.Count(strings.Join(w.tg.messages(), "\n"), "Stopped."); n != 1 {
+		t.Errorf("%d confirmations: %q", n, w.tg.messages())
+	}
+
+	w.runs.mu.Lock()
+	w.runs.panics = true
+	w.runs.mu.Unlock()
+	w.tg.say(chat, "/run", w.now)
+	w.tg.say(chat, "/help", w.now) // still listening afterwards
+	m := w.tg.waitFor(t, 5)
+	if !strings.Contains(m[3], "aja hit a bug handling /run") || !strings.Contains(m[4], "aja listens to") {
+		t.Errorf("%q", m[3:])
+	}
+}
+
+func TestARefusedTokenStopsListeningAndAConflictIsSaidOnce(t *testing.T) {
+	w := newWorld(t)
+	w.tg.conflict = 3
+	w.listen()
+	w.tg.say(chat, "/help", w.now)
+	m := w.tg.waitFor(t, 2)
+	if !strings.Contains(m[0], "aja cannot read your commands: Conflict: can't use getUpdates method while webhook is active") ||
+		!strings.Contains(m[1], "aja listens to") {
+		t.Errorf("%q", m)
+	}
+	if n := strings.Count(w.log(), "hands the bot's messages to someone else"); n != 1 {
+		t.Errorf("said %d times", n)
+	}
+
+	logger := slog.New(slog.NewTextHandler(lockedWriter{&w.logMu, w.logs}, nil))
+	l := New(notify.New("999:WRONG", "42", logger).WithAPIBase(w.tg.srv.URL), w.runs, w.st, w.dir, logger, time.Now)
+	done := make(chan struct{})
+	go func() { l.Loop(context.Background()); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a refused token must end the loop")
+	}
+	if !strings.Contains(w.log(), "Telegram refused the bot token") || strings.Contains(w.log(), "WRONG") {
+		t.Errorf("%s", w.log())
+	}
+}
+
+func TestTheOffsetIsKeptPerBotAndForgottenAfterAQuietWeek(t *testing.T) {
+	w := newWorld(t)
+	bot := notify.New(token, "42", nil)
+	l := New(bot, w.runs, w.st, w.dir, nil, time.Now)
+	if err := l.saveOffset(500); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.loadOffset(); got != 500 {
+		t.Errorf("%d", got)
+	}
+	other := New(notify.New("777:OTHER", "42", nil), w.runs, w.st, w.dir, nil, time.Now)
+	if got := other.loadOffset(); got != 0 {
+		t.Errorf("another bot starts from its own offset: %d", got)
+	}
+	data, _ := json.Marshal(savedOffset{Offset: 500, Saved: time.Now().Add(-8 * 24 * time.Hour)})
+	_ = w.st.SetState(l.offsetKey(), string(data))
+	if got := l.loadOffset(); got != 0 {
+		t.Errorf("after a quiet week Telegram numbers updates afresh: %d", got)
+	}
+}
+
+func TestParseAndRunArguments(t *testing.T) {
+	cases := []struct {
+		text string
+		name string
+		args []string
+	}{
+		{"/status", "status", nil},
+		{"  /Run@aja_bot  brasil DRY ", "run", []string{"brasil", "DRY"}},
+		{"/start", "start", nil},
+		{"hello /status", "", nil},
+		{"", "", nil},
+	}
+	for _, tc := range cases {
+		name, args := parse(tc.text)
+		if name != tc.name || strings.Join(args, ",") != strings.Join(tc.args, ",") {
+			t.Errorf("%q: %q %q", tc.text, name, args)
+		}
+	}
+	w := newWorld(t)
+	w.listen()
+	runs := []struct {
+		text string
+		want daemon.Request
+	}{
+		{"/run", daemon.Request{Origin: run.OriginTelegram}},
+		{"/run dry-run", daemon.Request{Origin: run.OriginTelegram, DryRun: true}},
+		{"/run dryrun INTERNACIONAL", daemon.Request{Origin: run.OriginTelegram, Market: "internacional", DryRun: true}},
+	}
+	for i, tc := range runs {
+		w.tg.say(chat, tc.text, w.now)
+		w.tg.waitFor(t, i+1)
+		if starts, _ := w.runs.seen(); starts[i] != tc.want {
+			t.Errorf("%q: %+v", tc.text, starts[i])
+		}
 	}
 }
 

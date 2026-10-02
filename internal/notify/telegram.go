@@ -1,16 +1,15 @@
-// Package notify sends Telegram messages: the help-pause nudge, the login
-// nudge, and (F1-7) the run summary and fatal errors. Ported from the Python
+// Package notify talks to the user's Telegram bot: it sends the help-pause and
+// login nudges, the run summary and fatal errors (ported from the Python
 // modules/notify.py: off until both the token and the chat id are set, a
-// half-configured pair warns once, and a failed send is a warning that never
-// affects the run. The token is part of the request URL, so no URL is ever logged.
+// half-configured pair warns once, a failed send is a warning that never
+// affects the run), and reads the messages remote commands come in. The token
+// is part of every request URL, built in one place (call), and no URL is ever
+// logged or returned in an error.
 package notify
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -29,7 +28,8 @@ var APIBase = "https://api.telegram.org"
 type Telegram struct {
 	token, chatID string
 	base          string
-	client        *http.Client
+	client        *http.Client // sends: short timeout
+	pollClient    *http.Client // long polls: bounded by the request's context
 	logger        *slog.Logger
 	halfWarn      sync.Once
 }
@@ -40,7 +40,7 @@ func New(token, chatID string, logger *slog.Logger) *Telegram {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Telegram{token: strings.TrimSpace(token), chatID: strings.TrimSpace(chatID), base: APIBase,
-		client: &http.Client{Timeout: 10 * time.Second}, logger: logger}
+		client: &http.Client{Timeout: 10 * time.Second}, pollClient: &http.Client{}, logger: logger}
 }
 
 // WithAPIBase points the notifier at another Bot API host (tests).
@@ -69,32 +69,18 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 	if r := []rune(text); len(r) > MaxMessageLength {
 		text = string(r[:MaxMessageLength])
 	}
-	body, _ := json.Marshal(map[string]any{"chat_id": t.chatID, "text": text, "disable_web_page_preview": true})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/bot"+t.token+"/sendMessage", bytes.NewReader(body))
-	if err != nil {
-		t.logger.Warn("could not build the Telegram request", "error", redact(err))
-		return false
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := t.client.Do(req)
-	if err != nil {
-		if ctx.Err() != nil { // the run is ending; not a Telegram problem
-			t.logger.Debug("Telegram notification abandoned", "error", ctx.Err())
-			return false
-		}
-		t.logger.Warn("could not send the Telegram notification", "error", redact(err))
-		return false
-	}
-	defer func() { _ = res.Body.Close() }()
-	if res.StatusCode >= 200 && res.StatusCode < 300 {
+	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": text, "disable_web_page_preview": true}, nil)
+	var apiErr *APIError
+	switch {
+	case err == nil:
 		return true
+	case errors.As(err, &apiErr):
+		t.logger.Warn("Telegram rejected the notification", "status", apiErr.Status, "description", apiErr.Description)
+	case ctx.Err() != nil: // the run is ending; not a Telegram problem
+		t.logger.Debug("Telegram notification abandoned", "error", ctx.Err())
+	default:
+		t.logger.Warn("could not send the Telegram notification", "error", err)
 	}
-	var reply struct {
-		Description string `json:"description"`
-	}
-	data, _ := io.ReadAll(io.LimitReader(res.Body, 64*1024))
-	_ = json.Unmarshal(data, &reply)
-	t.logger.Warn("Telegram rejected the notification", "status", res.StatusCode, "description", reply.Description)
 	return false
 }
 
