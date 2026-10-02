@@ -173,6 +173,67 @@ func (a *App) pinnedEnv() (map[string]string, error) {
 	return env, nil
 }
 
+// installCheck refuses to install while a daemon runs outside systemd (it
+// would keep the unit's from starting), and says what reinstalling a running
+// unit ends: the run in progress, if any.
+func (a *App) installCheck(m service.Manager) (restarting string, err error) {
+	unitActive := m.Status().Active == "active"
+	if d, running, _ := daemon.ReadLock(a.paths.DataDir); running && !unitActive {
+		return "", fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
+	}
+	if h, held, _ := run.ReadLock(a.paths.DataDir); held && unitActive {
+		return "restarting the daemon ends " + h.String() + "; its window resumes once the daemon is back", nil
+	}
+	return "", nil
+}
+
+// installOptions are the unit's for this binary, config and environment.
+func (a *App) installOptions() (service.Options, error) {
+	o := service.Options{}
+	var err error
+	if o.Binary, err = executable(); err != nil {
+		return o, err
+	}
+	if a.configFlag != "" {
+		if o.ConfigFile, err = filepath.Abs(a.configFlag); err != nil {
+			return o, err
+		}
+	}
+	o.Env, err = a.pinnedEnv()
+	return o, err
+}
+
+// unitService is the daemon's systemd user unit for the TUI: the same checks
+// and options as `aja daemon install`.
+type unitService struct {
+	app *App
+	m   service.Manager
+}
+
+func (u unitService) Status() service.Status { return u.m.Status() }
+
+// Install writes, enables and starts the unit; what reinstalling ends comes
+// first among the warnings.
+func (u unitService) Install() (service.Installed, error) {
+	restarting, err := u.app.installCheck(u.m)
+	if err != nil {
+		return service.Installed{}, err
+	}
+	o, err := u.app.installOptions()
+	if err != nil {
+		return service.Installed{}, err
+	}
+	result, err := u.m.Install(o)
+	if restarting != "" {
+		result.Warnings = append([]string{restarting}, result.Warnings...)
+	}
+	return result, err
+}
+
+func (u unitService) Uninstall() ([]string, error) { return u.m.Uninstall() }
+func (u unitService) Start() ([]string, error)     { return u.m.Start() }
+func (u unitService) Stop() ([]string, error)      { return u.m.Stop() }
+
 func (a *App) daemonInstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
@@ -187,24 +248,15 @@ progress ends cleanly (and its window resumes when the daemon is back).`,
 			if err != nil {
 				return err
 			}
-			// A daemon started by hand would keep the unit's from starting.
-			unitActive := m.Status().Active == "active"
-			if d, running, _ := daemon.ReadLock(a.paths.DataDir); running && !unitActive {
-				return fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
-			}
-			if h, held, _ := run.ReadLock(a.paths.DataDir); held && unitActive {
-				a.ui.Warn("run", "restarting the daemon ends "+h.String()+"; its window resumes once the daemon is back")
-			}
-			o := service.Options{}
-			if o.Binary, err = executable(); err != nil {
+			restarting, err := a.installCheck(m)
+			if err != nil {
 				return err
 			}
-			if a.configFlag != "" {
-				if o.ConfigFile, err = filepath.Abs(a.configFlag); err != nil {
-					return err
-				}
+			if restarting != "" {
+				a.ui.Warn("run", restarting)
 			}
-			if o.Env, err = a.pinnedEnv(); err != nil {
+			o, err := a.installOptions()
+			if err != nil {
 				return err
 			}
 			result, err := m.Install(o)

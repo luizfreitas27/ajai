@@ -110,6 +110,12 @@ to the tag before tagging and the workflow publishes that section as the release
   guess) is the one rule for an answer a person types for a select or radio: Telegram
   replies and the TUI's Answers tab. The Answers tab approves only the answer it showed
   (re-read first), as `/pending`'s digest does.
+- The daemon's systemd unit in the TUI is `Deps.Service`: in production `cli.unitService`,
+  `aja daemon install`'s own checks (`App.installCheck`, refusing while a daemon runs
+  outside systemd) and options (`App.installOptions`) over `service.Manager`, which gains
+  `Start` and `Stop`; tests use a real `service.Manager` over the fake systemctl. Its state
+  (two systemctl calls) is read when the Schedule tab is shown and every `unitEvery`
+  refreshes, never every second.
 - Schedule windows are added and turned on through `store.AddValidWindow` and
   `store.SetWindowEnabledValid` (schedule.Validate against the windows there are, in one
   place): `aja schedule` and the TUI's Schedule tab both use them.

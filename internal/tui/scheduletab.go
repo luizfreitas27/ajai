@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/schedule"
 	"github.com/luizfreitas27/aja/internal/store"
 )
@@ -31,6 +32,7 @@ type scheduleTab struct {
 	forms    int // forms opened so far: a result belongs to the form it came from
 	deleting *schedule.Window
 	notice   notice
+	daemon   daemonSection
 }
 
 // The add form's fields.
@@ -78,7 +80,7 @@ func loadWindows(d Deps) tea.Cmd {
 	}
 }
 
-func (t scheduleTab) editing() bool { return t.form != nil || t.deleting != nil }
+func (t scheduleTab) editing() bool { return t.form != nil || t.deleting != nil || t.daemon.editing() }
 
 func (t scheduleTab) current() (schedule.Window, bool) {
 	if !t.loaded || t.cursor >= len(t.windows) {
@@ -95,7 +97,7 @@ func (t scheduleTab) resized(width, height int) scheduleTab {
 // listHeight is the room for windows: the tab's less its title, the notice,
 // the column names and the delete question.
 func (t scheduleTab) listHeight() int {
-	used := 2 + len(wrap(t.notice.text, max(1, t.width)))
+	used := 2 + len(wrap(t.notice.text, max(1, t.width))) + len(t.daemon.lines(measure, t.width, daemon.Process{}, false))
 	if t.deleting != nil {
 		used += 3
 	}
@@ -130,6 +132,10 @@ func (t scheduleTab) update(msg tea.Msg, d Deps) (scheduleTab, tea.Cmd) {
 			}
 		}
 		return t.settled(), nil
+	case unitReadMsg, daemonDoneMsg:
+		var cmd tea.Cmd
+		t.daemon, cmd = t.daemon.update(msg, d)
+		return t.settled(), cmd
 	case windowChangedMsg:
 		mine := t.form != nil && msg.form == t.form.id
 		switch {
@@ -149,6 +155,10 @@ func (t scheduleTab) update(msg tea.Msg, d Deps) (scheduleTab, tea.Cmd) {
 		return t.settled(), loadWindows(d)
 	case tea.KeyMsg:
 		switch {
+		case t.daemon.editing():
+			var cmd tea.Cmd
+			t.daemon, cmd = t.daemon.update(msg, d)
+			return t.settled(), cmd
 		case t.deleting != nil:
 			return t.deleteKey(msg, d)
 		case t.form != nil:
@@ -176,6 +186,8 @@ func (t scheduleTab) browseKey(msg tea.KeyMsg, d Deps) (scheduleTab, tea.Cmd) {
 		if w, ok := t.current(); ok {
 			t.deleting = &w
 		}
+	case "i", "u", "s", "t":
+		t.daemon = t.daemon.ask(map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "s": startDaemon, "t": stopDaemon}[msg.String()], d)
 	}
 	return t.settled(), nil
 }
@@ -343,7 +355,7 @@ func deleteWindow(d Deps, w schedule.Window) tea.Cmd {
 // windowRow lays out the list: it fits the smallest terminal.
 const windowRow = "  %-3s %-16s %-11s %-13s %-7s %-5s %s"
 
-func (t scheduleTab) view(s styles, width int, now time.Time) string {
+func (t scheduleTab) view(s styles, width int, now time.Time, proc daemon.Process, up bool) string {
 	head := s.section.Render("Schedule")
 	if t.loaded {
 		if o, ok := schedule.Current(t.windows, now); ok {
@@ -365,8 +377,10 @@ func (t scheduleTab) view(s styles, width int, now time.Time) string {
 	if !t.loaded {
 		return strings.Join(append(lines, "Reading…"), "\n")
 	}
+	bottom := t.daemon.lines(s, width, proc, up)
 	if len(t.windows) == 0 {
-		return strings.Join(append(lines, "", s.dim.Render("No schedule windows: a adds one. Runs start in them only while the daemon runs.")), "\n")
+		lines = append(lines, "", s.dim.Render("No schedule windows: a adds one. Runs start in them only while the daemon runs."))
+		return strings.Join(append(pad(lines, t.height-len(bottom)), bottom...), "\n")
 	}
 	lines = append(lines, s.dim.Render(fmt.Sprintf(windowRow, "#", "days", "hours", "market", "mode", "state", "next opening")))
 	n := t.listHeight()
@@ -402,7 +416,15 @@ func (t scheduleTab) view(s styles, width int, now time.Time) string {
 		lines = append(lines, "", s.warn.Render(fmt.Sprintf("Delete window %d (%s)?", t.deleting.ID, t.deleting)),
 			s.key.Render("y")+" deletes it · "+s.key.Render("n")+" keeps it")
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(append(pad(lines, t.height-len(bottom)), bottom...), "\n")
+}
+
+// pad adds empty lines to reach n, so what follows sits at the bottom.
+func pad(lines []string, n int) []string {
+	for len(lines) < n {
+		lines = append(lines, "")
+	}
+	return lines
 }
 
 func (f windowForm) lines(s styles, width int) []string {

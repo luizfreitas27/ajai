@@ -228,6 +228,22 @@ func (m Manager) Uninstall() ([]string, error) {
 	return ran, err
 }
 
+// Start starts the installed unit now.
+func (m Manager) Start() ([]string, error) { return m.installedCommand("start") }
+
+// Stop stops the installed unit now; the daemon ends like Ctrl-C, and so does
+// a run it started. It starts again with the next desktop session.
+func (m Manager) Stop() ([]string, error) { return m.installedCommand("stop") }
+
+func (m Manager) installedCommand(verb string) ([]string, error) {
+	if _, err := os.Stat(m.UnitPath()); errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNotInstalled
+	}
+	var ran []string
+	_, err := m.systemctl(&ran, verb, UnitName)
+	return ran, err
+}
+
 // Status is the unit as systemd sees it.
 type Status struct {
 	Installed bool

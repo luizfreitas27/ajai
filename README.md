@@ -151,7 +151,11 @@ the start and end (HH:MM, local time), choose the market and dry run or live. It
 as `aja schedule add` checks it (no window crossing midnight, none overlapping another on
 the same weekday) and refused with the reason. Space turns the selected window off or back
 on (on again only if nothing overlaps it now), and `d` deletes it after asking. Windows open
-runs only while the daemon runs.
+runs only while the daemon runs: the bottom of the tab says whether it does and how its
+systemd unit stands, and `i` installs (or reinstalls) the unit as `aja daemon install` does,
+`u` uninstalls it, `s` starts the daemon and `t` stops it, each after a question that says
+what it does. Installing warns when it could not start the daemon (no desktop session) or
+when reinstalling ends a run in progress.
 
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
@@ -185,8 +189,7 @@ only the checklist and the Config tab (for the secrets) open.
 Keys: the number keys switch tabs, `?` lists the keys that work on the screen shown, and
 `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
-`NO_COLOR`, and writes paths under your home as `~/…`. The daemon's controls and a Jobs tab
-are coming (issue #36).
+`NO_COLOR`, and writes paths under your home as `~/…`. A Jobs tab is coming (issue #36).
 
 ## Everyday commands
 

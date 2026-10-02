@@ -2,13 +2,17 @@ package cli
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/daemon"
+	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/service"
 )
 
@@ -118,5 +122,49 @@ func TestASecondDaemonExitsWithTheStatusTheUnitDoesNotRetry(t *testing.T) {
 	defer lock.Release()
 	if code, _, errText := h.run("daemon"); code != service.ExitAlreadyRunning || !strings.Contains(errText, "already running") {
 		t.Errorf("%d %s", code, errText)
+	}
+}
+
+// TestTheTUIInstallsWithTheCommandsChecks: unitService is `aja daemon install`
+// for the TUI, refusing and warning as the command does.
+func TestTheTUIInstallsWithTheCommandsChecks(t *testing.T) {
+	h := newHarness(t)
+	configHome := t.TempDir()
+	fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
+	a := &App{Env: config.MapEnv(map[string]string{"AJA_HOME": h.home}), Stdout: io.Discard, Stderr: io.Discard}
+	a.paths = paths.Resolve("", a.Env.Getenv)
+	service := func() unitService {
+		t.Helper()
+		m, err := a.serviceManager()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return unitService{app: a, m: m}
+	}
+	svc := service()
+
+	d, err := daemon.AcquireLock(h.home, time.Now()) // a daemon started by hand
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Install(); err == nil || !strings.Contains(err.Error(), "already running outside systemd") {
+		t.Errorf("refused like the command: %v", err)
+	}
+	d.Release()
+
+	fakeSystemd(t, configHome, nil, "") // the unit comes up and stays up
+	result, err := service().Install()
+	if err != nil || !result.Started || !strings.Contains(result.Unit, "ExecStart=/usr/local/bin/aja daemon") || !strings.Contains(result.Unit, "AJA_HOME="+h.home) {
+		t.Fatalf("%+v %v", result, err)
+	}
+
+	// A run in progress while the unit runs: reinstalling ends it, and says so first.
+	lock, err := run.AcquireLock(h.home, run.Holder{Origin: run.OriginSchedule, Window: 1, Started: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if result, err := service().Install(); err != nil || len(result.Warnings) == 0 || !strings.HasPrefix(result.Warnings[0], "restarting the daemon ends a run started from schedule window 1") {
+		t.Errorf("%+v %v", result.Warnings, err)
 	}
 }

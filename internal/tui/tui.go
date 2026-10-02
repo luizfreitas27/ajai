@@ -34,7 +34,8 @@ type Deps struct {
 	Now      func() time.Time
 	Probe    doctor.Probe // the machine, as `aja doctor` looks at it
 	Launcher Launcher
-	Home     string // the user's home directory, shown as ~
+	Service  Service // the daemon's systemd unit; nil: not handled here
+	Home     string  // the user's home directory, shown as ~
 }
 
 // tilde writes the home directory in text as ~: in ~/… and on its own, never
@@ -184,6 +185,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			next = tea.Batch(next, loadAnswers(m.deps, m.ans.shownState()))
 		case m.tab == tabSchedule && !m.sched.editing():
 			next = tea.Batch(next, loadWindows(m.deps))
+			if m.refreshes%unitEvery == 0 && m.sched.daemon.busy == noDaemonAction {
+				next = tea.Batch(next, readUnit(m.deps))
+			}
 		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -206,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
 		return m, cmd
-	case windowsLoadedMsg, windowChangedMsg:
+	case windowsLoadedMsg, windowChangedMsg, unitReadMsg, daemonDoneMsg:
 		var cmd tea.Cmd
 		m.sched, cmd = m.sched.update(msg, m.deps)
 		return m, cmd
@@ -344,7 +348,7 @@ func (m Model) loadTab() tea.Cmd {
 	case tabAnswers:
 		return loadAnswers(m.deps, m.ans.shownState())
 	case tabSchedule:
-		return loadWindows(m.deps)
+		return tea.Batch(loadWindows(m.deps), readUnit(m.deps))
 	}
 	return nil
 }
@@ -374,7 +378,7 @@ func (m Model) View() string {
 	case m.tab == tabAnswers:
 		body = m.ans.view(m.styles, m.width)
 	case m.tab == tabSchedule:
-		body = m.sched.view(m.styles, m.width, m.deps.Now())
+		body = m.sched.view(m.styles, m.width, m.deps.Now(), m.dash.snap.daemon, m.dash.snap.daemonUp)
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
@@ -422,6 +426,8 @@ func (m Model) hints() string {
 		hint = "enter saves · esc cancels"
 	case m.tab == tabAnswers:
 		hint = "↑↓ move · tab pending/approved · a approve · e edit · d delete · ? keys · q quit"
+	case m.tab == tabSchedule && m.sched.daemon.editing():
+		hint = "y does it · n leaves it"
 	case m.tab == tabSchedule && m.sched.deleting != nil:
 		hint = "y deletes · n keeps"
 	case m.tab == tabSchedule && m.sched.form != nil:
@@ -474,6 +480,8 @@ func (m Model) helpView() string {
 		row("a", "add a window: weekdays, hours, market, dry run or live")
 		row("Space", "turn the window on or off")
 		row("d", "delete it")
+		row("i, u", "install (or reinstall) or uninstall the daemon's systemd unit")
+		row("s, t", "start or stop the daemon")
 	case m.tab == tabConfig:
 		section("Config")
 		row("↑ ↓, k j", "move; PgUp PgDn, g G jump")

@@ -1,0 +1,30 @@
+aja   1 Dashboard   2 Answers   3 Schedule   4 Config
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Schedule
+
+No schedule windows: a adds one. Runs start in them only while the daemon runs.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Daemon  not running · systemd unit: not installed
+i install · u uninstall · s start · t stop
+Install the daemon as a systemd user unit? It starts now and with your desktop session.
+y does it · n leaves it
+────────────────────────────────────────────────────────────────────────────────────────────────────
+y does it · n leaves it
