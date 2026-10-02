@@ -1,6 +1,7 @@
-// Package remote is the daemon's remote commands: messages from the user's
-// Telegram bot, read by long polling (nothing on the machine is reachable from
-// the internet), acted on only when they come from the configured chat.
+// Package remote is the daemon's remote commands: messages, replies and button
+// presses from the user's Telegram bot, read by long polling (nothing on the
+// machine is reachable from the internet), acted on only when they come from
+// the configured chat.
 package remote
 
 import (
@@ -18,6 +19,7 @@ import (
 
 	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/logging"
+	"github.com/luizfreitas27/aja/internal/memory"
 	"github.com/luizfreitas27/aja/internal/notify"
 	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/store"
@@ -27,6 +29,9 @@ import (
 type Bot interface {
 	Updates(ctx context.Context, offset int64, wait time.Duration) ([]notify.Update, error)
 	Send(ctx context.Context, text string) bool
+	SendButtons(ctx context.Context, text string, buttons []notify.Button) (int64, error)
+	Edit(ctx context.Context, messageID int64, text string) error
+	AnswerCallback(ctx context.Context, id, text string) error
 	ChatID() string
 	BotID() string
 }
@@ -54,6 +59,7 @@ type Listener struct {
 	bot     Bot
 	runs    Runs
 	store   *store.Store
+	mem     *memory.Memory
 	dataDir string
 	logger  *slog.Logger
 	now     func() time.Time
@@ -73,7 +79,7 @@ func New(bot Bot, runs Runs, st *store.Store, dataDir string, logger *slog.Logge
 	if logger == nil {
 		logger = logging.Discard
 	}
-	return &Listener{bot: bot, runs: runs, store: st, dataDir: dataDir, logger: logger, now: now,
+	return &Listener{bot: bot, runs: runs, store: st, mem: memory.New(st, logger), dataDir: dataDir, logger: logger, now: now,
 		poll: 50 * time.Second, sleep: sleep, stopConfirm: 5 * time.Minute, ignored: map[int64]bool{}}
 }
 
@@ -171,48 +177,72 @@ func (l *Listener) saveOffset(offset int64) error {
 	return l.store.SetState(l.offsetKey(), string(data))
 }
 
-// handle acts on one update: a command from the configured chat. backlog marks
-// messages that arrived while nobody listened.
+// handle acts on one update from the configured chat: a button pressed, a
+// command, or a reply to a pending answer's message. backlog marks messages
+// that arrived while nobody listened.
 func (l *Listener) handle(ctx context.Context, u notify.Update, backlog bool) {
-	m := u.Message
-	if m == nil || m.Text == "" {
-		return
-	}
-	if strconv.FormatInt(m.Chat.ID, 10) != l.bot.ChatID() {
-		if !l.ignored[m.Chat.ID] {
-			l.ignored[m.Chat.ID] = true
-			l.logger.Warn("ignoring Telegram messages from a chat that is not AJA_TELEGRAM_CHAT_ID", "chat", m.Chat.ID)
+	switch q, m := u.CallbackQuery, u.Message; {
+	case q != nil:
+		if q.Message != nil && l.fromChat(q.Message.Chat.ID) {
+			l.guard(ctx, "a button", func() { l.press(ctx, q) })
 		}
-		return
+	case m != nil && l.fromChat(m.Chat.ID):
+		name, args := parse(m.Text)
+		switch {
+		case name != "":
+			l.guard(ctx, "/"+name, func() { l.command(ctx, name, args, m.Time(), backlog) })
+		case m.ReplyTo != nil && strings.TrimSpace(m.Text) != "":
+			l.guard(ctx, "your reply", func() { l.answer(ctx, *m) })
+		}
 	}
-	name, args := parse(m.Text)
-	if name == "" {
-		return // not a command
-	}
+}
+
+// guard runs act; a bug in it is reported instead of ending the daemon.
+func (l *Listener) guard(ctx context.Context, what string, act func()) {
 	defer func() {
-		if p := recover(); p != nil { // a bug in one command must not end the daemon
-			l.logger.Error("remote command crashed", "command", name, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
-			l.reply(ctx, "aja hit a bug handling /"+name+"; it is in the daemon's log.")
+		if p := recover(); p != nil {
+			l.logger.Error("remote command crashed", "command", what, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+			l.reply(ctx, "aja hit a bug handling "+what+"; it is in the daemon's log.")
 		}
 	}()
+	act()
+}
+
+// command runs /name args, sent at sent.
+func (l *Listener) command(ctx context.Context, name string, args []string, sent time.Time, backlog bool) {
 	l.logger.Info("remote command", "command", name)
 	acts := name == "run" || name == "stop"
-	if acts && backlog && l.now().Sub(m.Time()) > MaxAge {
-		l.reply(ctx, "Not acting on /"+name+" sent at "+m.Time().Local().Format("15:04")+": aja was not listening then. Send it again.")
+	if acts && backlog && l.now().Sub(sent) > MaxAge {
+		l.reply(ctx, "Not acting on /"+name+" sent at "+sent.Local().Format("15:04")+": aja was not listening then. Send it again.")
 		return
 	}
 	switch name {
 	case "status":
 		l.reply(ctx, l.status())
 	case "stop":
-		l.stop(ctx, m.Time(), backlog)
+		l.stop(ctx, sent, backlog)
 	case "run":
 		l.start(ctx, args)
+	case "pending":
+		l.pending(ctx)
 	case "help", "start":
 		l.reply(ctx, help())
 	default:
 		l.reply(ctx, "Unknown command /"+name+". /help lists them.")
 	}
+}
+
+// fromChat reports whether chat is the configured one; other chats are logged
+// once each.
+func (l *Listener) fromChat(chat int64) bool {
+	if strconv.FormatInt(chat, 10) == l.bot.ChatID() {
+		return true
+	}
+	if !l.ignored[chat] {
+		l.ignored[chat] = true
+		l.logger.Warn("ignoring Telegram messages from a chat that is not AJA_TELEGRAM_CHAT_ID", "chat", chat)
+	}
+	return false
 }
 
 // parse reads "/run@aja_bot brasil dry" as "run", ["brasil", "dry"]; text that

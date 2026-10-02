@@ -88,6 +88,45 @@ func TestAnswersAreUniquePerQuestionAndListedByState(t *testing.T) {
 	}
 }
 
+func TestAnswerOptionsRoundTrip(t *testing.T) {
+	s := open(t)
+	must(t, s.UpsertAnswer(Answer{ID: "r", Label: "Relocate?", Normalised: "relocate", Kind: "radio", Source: "form", State: "pending", Options: []string{"Yes", "No, not now"}}))
+	must(t, s.UpsertAnswer(Answer{ID: "t", Label: "Years", Normalised: "years", Kind: "text", Answer: "3", Source: "ai", State: "pending"}))
+	got, _ := s.GetAnswer("r")
+	found, _ := s.FindAnswer("radio", "relocate")
+	all, _ := s.ListAnswers("")
+	if got == nil || strings.Join(got.Options, "|") != "Yes|No, not now" || found == nil || len(found.Options) != 2 || len(all) != 2 {
+		t.Fatalf("get %+v find %+v list %+v", got, found, all)
+	}
+	if text, _ := s.GetAnswer("t"); text.Options != nil {
+		t.Errorf("a text question has no options: %#v", text.Options)
+	}
+}
+
+func TestTelegramMessagesLeadToTheirAnswerUntilItIsGone(t *testing.T) {
+	s := open(t)
+	must(t, s.UpsertAnswer(Answer{ID: "a1", Label: "Years", Normalised: "years", Kind: "text", Source: "form", State: "pending"}))
+	must(t, s.UpsertAnswer(Answer{ID: "a2", Label: "City", Normalised: "city", Kind: "text", Source: "form", State: "pending"}))
+	must(t, s.LinkTelegramMessage("42", 7, "a1"))
+	must(t, s.LinkTelegramMessage("42", 8, "a2"))
+	if id, err := s.TelegramMessageAnswer("42", 7); id != "a1" || err != nil {
+		t.Errorf("message 7: %q %v", id, err)
+	}
+	if id, _ := s.TelegramMessageAnswer("43", 7); id != "" {
+		t.Errorf("another chat's message 7 shows nothing: %q", id)
+	}
+	if _, err := s.DeleteAnswer("a1"); err != nil {
+		t.Fatal(err)
+	}
+	must(t, s.ForgetTelegramMessagesOfGoneAnswers())
+	if id, _ := s.TelegramMessageAnswer("42", 7); id != "" {
+		t.Errorf("the link to a deleted answer is forgotten: %q", id)
+	}
+	if id, _ := s.TelegramMessageAnswer("42", 8); id != "a2" {
+		t.Errorf("the link to a kept answer stays: %q", id)
+	}
+}
+
 func TestTimestampsAreNormalisedAndBlankIdsGenerated(t *testing.T) {
 	s := open(t)
 	must(t, s.UpsertAnswer(Answer{Label: "Q", Normalised: "q", Kind: "text", Answer: "a", Source: "ai", State: "pending", CreatedAt: "2026-10-01T16:45:25", UpdatedAt: "2026-10-01 16:45:25.5"}))

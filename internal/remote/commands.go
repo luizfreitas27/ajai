@@ -54,6 +54,9 @@ func (l *Listener) status() string {
 	}
 	if n, err := l.store.CountAnswers("pending"); err == nil {
 		fmt.Fprintf(&b, "\nPending answers: %d\n", n)
+		if n > 0 {
+			b.WriteString("/pending reviews them.\n")
+		}
 	}
 	windows, err := l.store.ListWindows()
 	switch {
@@ -159,5 +162,6 @@ func help() string {
 /status: the run in progress (or the last one), pending answers, the next window
 /stop: stop the run in progress, wherever it was started
 /run [` + strings.Join(config.MarketNameList(), "|") + `] [dry]: start an unattended run now
+/pending: review the pending answers: Approve or Delete, or reply to a question with its answer
 /help: this list`
 }

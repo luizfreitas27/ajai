@@ -104,8 +104,9 @@ func (m *Memory) Find(label, kind string) (*Remembered, error) {
 // Remember stores an answer. An answer the user gave is approved; anything else
 // is pending. An existing entry for the same question is updated instead of
 // duplicated, except that only the user can replace an approved answer. uses
-// starts at 0: remembering is not using.
-func (m *Memory) Remember(label, kind, answer, source, jobLink string) (*Remembered, error) {
+// starts at 0: remembering is not using. options are what a select or radio
+// offered (nil for other kinds); an update without options keeps the old ones.
+func (m *Memory) Remember(label, kind, answer, source, jobLink string, options []string) (*Remembered, error) {
 	if !contains(Kinds, kind) {
 		return nil, fmt.Errorf("unknown control kind %q", kind)
 	}
@@ -133,10 +134,13 @@ func (m *Memory) Remember(label, kind, answer, source, jobLink string) (*Remembe
 		if jobLink != "" {
 			existing.LastJobLink = jobLink
 		}
+		if len(options) > 0 {
+			existing.Options = options
+		}
 		return existing, m.st.UpsertAnswer(*existing)
 	}
 	entry := Remembered{ID: store.NewAnswerID(), Label: label, Normalised: key, Kind: kind, Answer: answer,
-		Source: source, State: state, LastJobLink: jobLink, CreatedAt: now, UpdatedAt: now}
+		Source: source, State: state, LastJobLink: jobLink, CreatedAt: now, UpdatedAt: now, Options: options}
 	return &entry, m.st.UpsertAnswer(entry)
 }
 

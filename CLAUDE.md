@@ -78,7 +78,9 @@ to the tag before tagging and the workflow publishes that section as the release
   modal fixture through the rod adapter in a headless Chrome.
 - `internal/memory`, `internal/store`: answer memory and SQLite (pure Go driver). A pending
   entry with an empty answer is a question queued for the user (`aja answers review`);
-  lookups treat it as a miss so the AI is still asked.
+  lookups treat it as a miss so the AI is still asked. Select and radio entries keep the
+  options the form offered (`questions.Choices`: placeholders out), so an answer given later
+  can be checked; entries from before migration 0003 have none.
 - `internal/ai`: one OpenAI-compatible client on the official openai-go SDK, the candidate
   profile and the prompt. The chat service is built without `openai.NewClient`, so the
   SDK's environment defaults (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_CUSTOM_HEADERS`...)
@@ -121,9 +123,14 @@ to the tag before tagging and the workflow publishes that section as the release
   reconnecting is "backlog": there a `/run` or `/stop` older than `MaxAge` is refused and a
   `/stop` never hits a run that started after it; live messages are never judged by their
   date (clock skew). 401 ends the loop, 409 is said once (also on Telegram), other errors
-  back off with one warning. A panic in a command is reported, not fatal. Commands go
-  through the `Runs` interface (the daemon's `Supervisor`). Tests run against an httptest
-  fake of the Bot API.
+  back off with one warning. A panic in a command, button or reply is reported, not fatal.
+  Commands go through the `Runs` interface (the daemon's `Supervisor`). `/pending` sends
+  one message per pending answer (at most `pendingShown`) with inline buttons whose
+  callback data is `approve:<id>` / `delete:<id>`, and records message → answer id in the
+  `telegram_messages` table, which is how a reply finds its answer after a restart; every
+  outcome edits the message (`Telegram.Edit` also removes the buttons). `getUpdates` asks
+  for `message` and `callback_query` (Telegram remembers that list). Tests run against an
+  httptest fake of the Bot API with a real store and answer memory.
 - `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
   goroutine (one at a time; a second `Start` gets a `*run.HeldError`, and so does a run of
   another process, checked before the `Starter` reads any config). The CLI's `Starter`

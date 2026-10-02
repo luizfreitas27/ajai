@@ -2,9 +2,10 @@
 // login nudges, the run summary and fatal errors (ported from the Python
 // modules/notify.py: off until both the token and the chat id are set, a
 // half-configured pair warns once, a failed send is a warning that never
-// affects the run), and reads the messages remote commands come in. The token
-// is part of every request URL, built in one place (call), and no URL is ever
-// logged or returned in an error.
+// affects the run), and carries the remote commands: it reads the messages and
+// button presses they come in, and sends, edits and acknowledges the review
+// queue's messages. The token is part of every request URL, built in one place
+// (call), and no URL is ever logged or returned in an error.
 package notify
 
 import (
@@ -66,10 +67,7 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 		}
 		return false
 	}
-	if r := []rune(text); len(r) > MaxMessageLength {
-		text = string(r[:MaxMessageLength])
-	}
-	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": text, "disable_web_page_preview": true}, nil)
+	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": truncate(text), "disable_web_page_preview": true}, nil)
 	var apiErr *APIError
 	switch {
 	case err == nil:
@@ -82,6 +80,14 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 		t.logger.Warn("could not send the Telegram notification", "error", err)
 	}
 	return false
+}
+
+// truncate cuts text to MaxMessageLength characters.
+func truncate(text string) string {
+	if r := []rune(text); len(r) > MaxMessageLength {
+		return string(r[:MaxMessageLength])
+	}
+	return text
 }
 
 // redact drops the request URL (which carries the token) from a client error.
