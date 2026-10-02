@@ -110,6 +110,9 @@ to the tag before tagging and the workflow publishes that section as the release
   guess) is the one rule for an answer a person types for a select or radio: Telegram
   replies and the TUI's Answers tab. The Answers tab approves only the answer it showed
   (re-read first), as `/pending`'s digest does.
+- Schedule windows are added and turned on through `store.AddValidWindow` and
+  `store.SetWindowEnabledValid` (schedule.Validate against the windows there are, in one
+  place): `aja schedule` and the TUI's Schedule tab both use them.
 - Lock readers: `filelock.Held` takes the lock for an instant, so another reader can see it
   taken with no description; `filelock.ReadHeld` looks again a few times before believing
   an undescribed holder (otherwise a once-a-second reader like the TUI makes the daemon

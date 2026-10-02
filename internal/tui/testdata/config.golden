@@ -1,4 +1,4 @@
-aja   1 Dashboard   2 Answers   3 Config
+aja   1 Dashboard   2 Answers   3 Schedule   4 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Config  ~/config.yaml
 secrets, kept in ~/.env

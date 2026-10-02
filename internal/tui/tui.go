@@ -92,10 +92,11 @@ type tab int
 const (
 	tabDashboard tab = iota
 	tabAnswers
+	tabSchedule
 	tabConfig
 )
 
-var tabNames = []string{"Dashboard", "Answers", "Config"}
+var tabNames = []string{"Dashboard", "Answers", "Schedule", "Config"}
 
 // tabKey is the number key that shows t.
 func tabKey(t tab) string { return fmt.Sprint(int(t) + 1) }
@@ -117,6 +118,7 @@ type Model struct {
 	dash          dashboard
 	runs          runControl
 	ans           answersTab
+	sched         scheduleTab
 	conf          configTab
 	checks        checklist
 }
@@ -166,6 +168,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.conf = m.conf.resized(m.width, m.bodyHeight())
 		m.ans = m.ans.resized(m.width, m.bodyHeight())
+		m.sched = m.sched.resized(m.width, m.bodyHeight())
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tickMsg:
@@ -175,8 +178,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dash = m.dash.apply(msg)
 		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs, m.deps.Now())
 		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
-		if m.tab == tabAnswers && !m.setupShown && !m.ans.editing() { // a run queues answers, Telegram answers them
+		switch { // what other processes change: runs and Telegram the answers, `aja schedule` the windows
+		case m.setupShown:
+		case m.tab == tabAnswers && !m.ans.editing():
 			next = tea.Batch(next, loadAnswers(m.deps, m.ans.shownState()))
+		case m.tab == tabSchedule && !m.sched.editing():
+			next = tea.Batch(next, loadWindows(m.deps))
 		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -198,6 +205,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case answersLoadedMsg, answerChangedMsg:
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
+		return m, cmd
+	case windowsLoadedMsg, windowChangedMsg:
+		var cmd tea.Cmd
+		m.sched, cmd = m.sched.update(msg, m.deps)
 		return m, cmd
 	case checkAgainMsg:
 		return m.checkAgain()
@@ -232,7 +243,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // typing reports whether a tab holds a value being typed or a question asked,
 // which every key but Ctrl-C goes to.
 func (m Model) typing() bool {
-	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.checks.editing()
+	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.sched.editing() || m.checks.editing()
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -256,6 +267,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !m.setupShown && m.tab == tabAnswers && m.ans.editing():
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
+		return m, cmd
+	case !m.setupShown && m.tab == tabSchedule && m.sched.editing():
+		var cmd tea.Cmd
+		m.sched, cmd = m.sched.update(msg, m.deps)
 		return m, cmd
 	}
 	switch key {
@@ -312,6 +327,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
 		return m, cmd
+	case m.tab == tabSchedule:
+		var cmd tea.Cmd
+		m.sched, cmd = m.sched.update(msg, m.deps)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -324,6 +343,8 @@ func (m Model) loadTab() tea.Cmd {
 		return loadConfig(m.deps)
 	case tabAnswers:
 		return loadAnswers(m.deps, m.ans.shownState())
+	case tabSchedule:
+		return loadWindows(m.deps)
 	}
 	return nil
 }
@@ -352,6 +373,8 @@ func (m Model) View() string {
 		body = m.conf.view(m.styles, m.deps, m.width)
 	case m.tab == tabAnswers:
 		body = m.ans.view(m.styles, m.width)
+	case m.tab == tabSchedule:
+		body = m.sched.view(m.styles, m.width, m.deps.Now())
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
@@ -399,6 +422,12 @@ func (m Model) hints() string {
 		hint = "enter saves · esc cancels"
 	case m.tab == tabAnswers:
 		hint = "↑↓ move · tab pending/approved · a approve · e edit · d delete · ? keys · q quit"
+	case m.tab == tabSchedule && m.sched.deleting != nil:
+		hint = "y deletes · n keeps"
+	case m.tab == tabSchedule && m.sched.form != nil:
+		hint = "↑↓ field · ←→ day or choice · space picks · enter adds · esc cancels"
+	case m.tab == tabSchedule:
+		hint = "↑↓ move · a add · space on/off · d delete · ? keys · q quit"
 	case m.runs.form != nil:
 		hint = "↑↓ field · ←→ change · enter starts · esc cancels"
 	case m.runs.confirm != nil:
@@ -409,6 +438,8 @@ func (m Model) hints() string {
 	return m.styles.dim.Render(hint)
 }
 
+// helpView lists every key that works now: the TUI's own, then the shown
+// screen's (all of them would not fit the smallest terminal).
 func (m Model) helpView() string {
 	lines := []string{m.styles.section.Render("Keys"), ""}
 	row := func(key, what string) {
@@ -419,24 +450,36 @@ func (m Model) helpView() string {
 	}
 	row("?", "this list; Esc closes it")
 	row("q, Ctrl-C", "quit (a run in progress keeps running)")
-	lines = append(lines, "", m.styles.section.Render("Dashboard"), "")
-	row("r", "start a run: market, dry run or live, a maximum")
-	row("x", "stop the run in progress, whoever started it")
-	row("s", "the setup checklist")
-	lines = append(lines, "", m.styles.section.Render("Answers"), "")
-	row("Tab", "pending (the review queue) or approved")
-	row("a", "approve the answer as shown")
-	row("e, Enter", "correct it: pick or type an option, or type the answer")
-	row("d", "delete it: aja asks the question again")
-	lines = append(lines, "", m.styles.section.Render("Setup checklist"), "")
-	row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
-	row("i", "import from the Python bot")
-	row("r", "check again")
-	row("Esc", "back to the tabs (once there is a config file)")
-	lines = append(lines, "", m.styles.section.Render("Config"), "")
-	row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
-	row("Enter", "edit the setting or secret, then Enter saves")
-	row("Esc", "cancel the edit")
+	section := func(title string) { lines = append(lines, "", m.styles.section.Render(title), "") }
+	switch {
+	case m.setupShown:
+		section("Setup checklist")
+		row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
+		row("i", "import from the Python bot")
+		row("r", "check again")
+		row("Esc", "back to the tabs (once there is a config file)")
+	case m.tab == tabDashboard:
+		section("Dashboard")
+		row("r", "start a run: market, dry run or live, a maximum")
+		row("x", "stop the run in progress, whoever started it")
+		row("s", "the setup checklist")
+	case m.tab == tabAnswers:
+		section("Answers")
+		row("Tab", "pending (the review queue) or approved")
+		row("a", "approve the answer as shown")
+		row("e, Enter", "correct it: pick or type an option, or type the answer")
+		row("d", "delete it: aja asks the question again")
+	case m.tab == tabSchedule:
+		section("Schedule")
+		row("a", "add a window: weekdays, hours, market, dry run or live")
+		row("Space", "turn the window on or off")
+		row("d", "delete it")
+	case m.tab == tabConfig:
+		section("Config")
+		row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
+		row("Enter", "edit the setting or secret, then Enter saves")
+		row("Esc", "cancel the edit")
+	}
 	return strings.Join(lines, "\n")
 }
 

@@ -1,10 +1,11 @@
-aja   1 Dashboard   2 Answers   3 Config
+aja   1 Dashboard   2 Answers   3 Schedule   4 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Keys
 
   1           Dashboard
   2           Answers
-  3           Config
+  3           Schedule
+  4           Config
   ?           this list; Esc closes it
   q, Ctrl-C   quit (a run in progress keeps running)
 
@@ -14,17 +15,16 @@ Dashboard
   x           stop the run in progress, whoever started it
   s           the setup checklist
 
-Answers
 
-  Tab         pending (the review queue) or approved
-  a           approve the answer as shown
-  e, Enter    correct it: pick or type an option, or type the answer
-  d           delete it: aja asks the question again
 
-Setup checklist
 
-  Enter       fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab
-  i           import from the Python bot
-  r           check again
+
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 esc closes the list · q quit
