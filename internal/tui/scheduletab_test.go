@@ -16,7 +16,7 @@ func (h *harness) addWindowByForm(start, end string, keysOnDays ...string) {
 	h.t.Helper()
 	h.press("a")
 	h.press(keysOnDays...)
-	h.press("down", start, "down", end, "enter")
+	h.press("down", "ctrl+u", start, "down", "ctrl+u", end, "enter")
 }
 
 func TestAWindowIsAddedInAFormCheckedLikeTheCommand(t *testing.T) {
@@ -32,7 +32,7 @@ func TestAWindowIsAddedInAFormCheckedLikeTheCommand(t *testing.T) {
 
 	// Saturday too; 9 to 11 (the 1 and 9 are typed, not tab keys).
 	h.addWindowByForm("09:00", "11:00", "right", "right", "right", "right", "right", " ")
-	h.shows("Added window 1:", "09:00-11:00", "Tue 06 Oct 09:00") // Monday's opening began at 09:00, before h.now
+	h.shows("Added window 1:", "09:00-11:00", "open until 11:00", "window 1 open now, until 11:00") // it is Monday 09:30
 	windows, _ := h.st.ListWindows()
 	if len(windows) != 1 || len(windows[0].Days) != 6 || windows[0].Start != 9*60 || windows[0].End != 11*60 || !windows[0].Enabled {
 		t.Fatalf("%+v", windows)
@@ -58,7 +58,7 @@ func TestAWindowIsTurnedOffAndOnAndDeleted(t *testing.T) {
 	}
 	h.open(100, 30)
 	h.scheduleTab()
-	h.shows("Tue", "14:00-16:00", "brasil", "dry run", "on", "Tue 06 Oct 14:00", "next opening: Tue 06 Oct 14:00, window 1")
+	h.shows("Tue", "14:00-16:00", "brasil", "dry run", "on", "Tue 06 Oct 14:00", "next opening Tue 06 Oct 14:00, window 1")
 	h.golden("schedule")
 	h.press(" ")
 	h.shows("Window 1 is off.", " off")
@@ -119,4 +119,51 @@ func TestTheSelectionStaysOnItsWindowWhenTheListChanges(t *testing.T) {
 	h.press("1", tabKey(tabSchedule))
 	h.press("d")
 	h.shows("Delete window 2 (Tue")
+}
+
+func TestTheFormOpensAsAWholeWindowAndARefusalAfterEscIsStillSaid(t *testing.T) {
+	h := newHarness(t)
+	h.open(80, 24)
+	h.scheduleTab()
+	h.press("a")
+	h.golden("schedule-form-smallest")
+	h.press("enter") // as it opens: Monday to Friday, 09:00 to 11:00
+	h.shows("Added window 1: Mon-Fri 09:00-11:00.")
+
+	// A refusal that comes after its form was closed.
+	h.press("a")
+	h.send(windowChangedMsg{form: 99, refusal: "overlaps window 1"}) // an older form's
+	h.shows("Add a schedule window")
+	h.press("esc")
+	h.send(windowChangedMsg{form: 2, refusal: "overlaps window 1"})
+	h.shows("Not added: overlaps window 1")
+}
+
+func TestTheListFitsTheSmallestTerminalScrollsAndKeepsUp(t *testing.T) {
+	h := newHarness(t)
+	for i := range 20 {
+		start := schedule.Clock((6 + i%12) * 60)
+		day := schedule.Week[i/12]
+		if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{day}, Start: start, End: start + 30, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.open(80, 24)
+	h.scheduleTab()
+	h.shows("Mon", "06:00-06:30", "Tue 06 Oct 06:00") // the next opening fits in 80 columns
+	h.golden("schedule-smallest")
+	for range 19 {
+		h.press("down")
+	}
+	h.press("d")
+	h.shows("Delete window 20", "y deletes · n keeps") // the last one, in view, its question too
+	h.press("n")
+
+	// `aja schedule add` in another terminal: the tab sees it on the next refresh.
+	if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Sunday}, Start: 20 * 60, End: 21 * 60, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.refresh()
+	h.press("down")
+	h.shows("> 21")
 }

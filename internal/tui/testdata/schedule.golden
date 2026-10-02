@@ -1,8 +1,8 @@
 aja   1 Dashboard   2 Answers   3 Schedule   4 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-Schedule  next opening: Tue 06 Oct 14:00, window 1
-  #    days                   hours        market        mode     state  next opening
-> 1    Tue                    14:00-16:00  brasil        dry run  on     Tue 06 Oct 14:00
+Schedule  next opening Tue 06 Oct 14:00, window 1
+  #   days             hours       market        mode    state next opening
+> 1   Tue              14:00-16:00 brasil        dry run on    Tue 06 Oct 14:00
 
 
 

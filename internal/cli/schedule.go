@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -70,11 +69,9 @@ func (a *App) scheduleAddCmd() *cobra.Command {
 			}
 			a.logger.Info("schedule window added", "id", w.ID, "window", w.String())
 			a.ui.OK("added", fmt.Sprintf("window %d: %s", w.ID, w))
-			windows, err := st.ListWindows()
-			if err != nil {
-				return err
+			if windows, err := st.ListWindows(); err == nil { // the window is added either way
+				a.printNextOpening(windows)
 			}
-			a.printNextOpening(windows)
 			return nil
 		},
 	}
@@ -146,9 +143,9 @@ func (a *App) scheduleRmCmd() *cobra.Command {
 
 // scheduleEnableCmd builds `aja schedule enable` (on) and `aja schedule disable`.
 func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
-	use, short, verb := "disable <id>", "Turn a schedule window off, keeping it", "disabled"
+	use, short, action, verb := "disable <id>", "Turn a schedule window off, keeping it", "disable", "disabled"
 	if on {
-		use, short, verb = "enable <id>", "Turn a schedule window back on", "enabled"
+		use, short, action, verb = "enable <id>", "Turn a schedule window back on", "enable", "enabled"
 	}
 	return &cobra.Command{
 		Use:   use,
@@ -159,16 +156,15 @@ func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if w, err = st.SetWindowEnabledValid(w.ID, on, config.MarketNameList()); err != nil {
-				return fmt.Errorf("cannot %s window %s: %w", strings.TrimSuffix(verb, "d"), args[0], err)
+			id := w.ID
+			if w, err = st.SetWindowEnabledValid(id, on, config.MarketNameList()); err != nil {
+				return fmt.Errorf("cannot %s window %d: %w", action, id, err)
 			}
 			a.logger.Info("schedule window "+verb, "id", w.ID, "window", w.String())
 			a.ui.OK(verb, fmt.Sprintf("window %d: %s", w.ID, w))
-			windows, err := st.ListWindows()
-			if err != nil {
-				return err
+			if windows, err := st.ListWindows(); err == nil { // the change is made either way
+				a.printNextOpening(windows)
 			}
-			a.printNextOpening(windows)
 			return nil
 		},
 	}

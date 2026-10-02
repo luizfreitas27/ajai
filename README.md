@@ -182,7 +182,8 @@ aside (with the same `--config` and `--no-color`); press Enter at the end to com
 and the checks run again. Without a config file
 only the checklist and the Config tab (for the secrets) open.
 
-Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
+Keys: the number keys switch tabs, `?` lists the keys that work on the screen shown, and
+`q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
 `NO_COLOR`, and writes paths under your home as `~/…`. The daemon's controls and a Jobs tab
 are coming (issue #36).

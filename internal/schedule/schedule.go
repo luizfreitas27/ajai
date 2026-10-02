@@ -129,13 +129,16 @@ func EncodeDays(days []time.Weekday) string {
 	return strings.Join(names, ",")
 }
 
+// Week is the weekdays Monday first, the order windows are written in.
+var Week = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday, time.Sunday}
+
 // DaysString writes days back compactly: "Mon-Fri", "Mon, Wed, Fri", "daily".
 func DaysString(days []time.Weekday) string {
 	if len(days) == 7 {
 		return "daily"
 	}
 	// Runs of consecutive days, Monday first so Mon-Fri reads naturally.
-	order := []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday, time.Sunday}
+	order := Week
 	var parts []string
 	for i := 0; i < len(order); {
 		if !slices.Contains(days, order[i]) {

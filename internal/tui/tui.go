@@ -168,6 +168,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.conf = m.conf.resized(m.width, m.bodyHeight())
 		m.ans = m.ans.resized(m.width, m.bodyHeight())
+		m.sched = m.sched.resized(m.width, m.bodyHeight())
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tickMsg:
@@ -177,8 +178,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dash = m.dash.apply(msg)
 		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs, m.deps.Now())
 		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
-		if m.tab == tabAnswers && !m.setupShown && !m.ans.editing() { // a run queues answers, Telegram answers them
+		switch { // what other processes change: runs and Telegram the answers, `aja schedule` the windows
+		case m.setupShown:
+		case m.tab == tabAnswers && !m.ans.editing():
 			next = tea.Batch(next, loadAnswers(m.deps, m.ans.shownState()))
+		case m.tab == tabSchedule && !m.sched.editing():
+			next = tea.Batch(next, loadWindows(m.deps))
 		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -433,6 +438,8 @@ func (m Model) hints() string {
 	return m.styles.dim.Render(hint)
 }
 
+// helpView lists every key that works now: the TUI's own, then the shown
+// screen's (all of them would not fit the smallest terminal).
 func (m Model) helpView() string {
 	lines := []string{m.styles.section.Render("Keys"), ""}
 	row := func(key, what string) {
@@ -443,28 +450,36 @@ func (m Model) helpView() string {
 	}
 	row("?", "this list; Esc closes it")
 	row("q, Ctrl-C", "quit (a run in progress keeps running)")
-	lines = append(lines, "", m.styles.section.Render("Dashboard"), "")
-	row("r", "start a run: market, dry run or live, a maximum")
-	row("x", "stop the run in progress, whoever started it")
-	row("s", "the setup checklist")
-	lines = append(lines, "", m.styles.section.Render("Answers"), "")
-	row("Tab", "pending (the review queue) or approved")
-	row("a", "approve the answer as shown")
-	row("e, Enter", "correct it: pick or type an option, or type the answer")
-	row("d", "delete it: aja asks the question again")
-	lines = append(lines, "", m.styles.section.Render("Schedule"), "")
-	row("a", "add a window: weekdays, hours, market, dry run or live")
-	row("Space", "turn the window on or off")
-	row("d", "delete it")
-	lines = append(lines, "", m.styles.section.Render("Setup checklist"), "")
-	row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
-	row("i", "import from the Python bot")
-	row("r", "check again")
-	row("Esc", "back to the tabs (once there is a config file)")
-	lines = append(lines, "", m.styles.section.Render("Config"), "")
-	row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
-	row("Enter", "edit the setting or secret, then Enter saves")
-	row("Esc", "cancel the edit")
+	section := func(title string) { lines = append(lines, "", m.styles.section.Render(title), "") }
+	switch {
+	case m.setupShown:
+		section("Setup checklist")
+		row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
+		row("i", "import from the Python bot")
+		row("r", "check again")
+		row("Esc", "back to the tabs (once there is a config file)")
+	case m.tab == tabDashboard:
+		section("Dashboard")
+		row("r", "start a run: market, dry run or live, a maximum")
+		row("x", "stop the run in progress, whoever started it")
+		row("s", "the setup checklist")
+	case m.tab == tabAnswers:
+		section("Answers")
+		row("Tab", "pending (the review queue) or approved")
+		row("a", "approve the answer as shown")
+		row("e, Enter", "correct it: pick or type an option, or type the answer")
+		row("d", "delete it: aja asks the question again")
+	case m.tab == tabSchedule:
+		section("Schedule")
+		row("a", "add a window: weekdays, hours, market, dry run or live")
+		row("Space", "turn the window on or off")
+		row("d", "delete it")
+	case m.tab == tabConfig:
+		section("Config")
+		row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
+		row("Enter", "edit the setting or secret, then Enter saves")
+		row("Esc", "cancel the edit")
+	}
 	return strings.Join(lines, "\n")
 }
 

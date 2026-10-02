@@ -123,8 +123,11 @@ func (s *Store) SetWindowEnabledValid(id int64, on bool, markets []string) (*sch
 			return nil, err
 		}
 	}
-	if _, err := s.SetWindowEnabled(id, on); err != nil {
+	switch found, err := s.SetWindowEnabled(id, on); {
+	case err != nil:
 		return nil, err
+	case !found: // deleted meanwhile
+		return nil, ErrNoWindow
 	}
 	return w, nil
 }

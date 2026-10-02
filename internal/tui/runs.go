@@ -25,8 +25,26 @@ const (
 	startWait = 20 * time.Second
 )
 
-// marketChoices are the Start form's markets; "" is the config's own.
+// marketChoices are the markets a form offers (Start, a schedule window); ""
+// is the config's own.
 var marketChoices = append([]string{""}, config.MarketNameList()...)
+
+// marketLabel names marketChoices[i].
+func marketLabel(i int) string {
+	if m := marketChoices[i]; m != "" {
+		return m
+	}
+	return "the config's"
+}
+
+// formLine is one field of a form: a marker when selected, the label, the value.
+func formLine(s styles, selected bool, label, value string) string {
+	mark := "  "
+	if selected {
+		mark = s.key.Render("> ")
+	}
+	return mark + fmt.Sprintf("%-9s", label) + " " + value
+}
 
 // runControl starts and stops runs from the Dashboard and says how that went.
 // A run it starts is `aja run --unattended` in a process of its own: closing
@@ -371,17 +389,8 @@ func (c runControl) lines(s styles, width int) []string {
 }
 
 func (f runForm) lines(s styles) []string {
-	field := func(i int, label, value string) string {
-		mark := "  "
-		if i == f.field {
-			mark = s.key.Render("> ")
-		}
-		return mark + fmt.Sprintf("%-9s", label) + " " + value
-	}
-	market := "the config's"
-	if m := marketChoices[f.market]; m != "" {
-		market = m
-	}
+	field := func(i int, label, value string) string { return formLine(s, i == f.field, label, value) }
+	market := marketLabel(f.market)
 	mode := "live: applies for real"
 	if f.dry {
 		mode = "dry run: fills every form, sends none"
