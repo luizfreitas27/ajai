@@ -47,7 +47,7 @@ func TestRunRefusesWhileAnotherRunHoldsTheLockWithoutOpeningChrome(t *testing.T)
 		t.Error("a run that could not open Chrome must release the lock")
 	}
 	if asked.ProfileDir != filepath.Join(h.home, "chrome-profile") || !asked.QuitOnClose {
-		t.Errorf("with chrome_profile_dir blank a run uses aja's own profile and closes Chrome after: %+v", asked)
+		t.Errorf("with chrome_profile_dir blank a run uses the aja profile and closes Chrome after: %+v", asked)
 	}
 }
 

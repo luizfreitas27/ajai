@@ -108,15 +108,15 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	}
 
 	// Profile, and whether LinkedIn is signed in there
-	profile, own := p.ChromeProfile(cfg.Settings.ChromeProfileDir)
-	label, hint := profile, "run `aja login` to sign in once"
-	if own {
-		label += " (aja's own profile)"
+	profile := p.ChromeProfile(cfg.Settings.ChromeProfileDir)
+	label, hint := profile.Dir, "run `aja login` to sign in once"
+	if profile.Own {
+		label += " (the aja profile)"
 		hint += "; or set settings.chrome_profile_dir to your everyday Chrome profile (" + probe.EverydayProfileDir(binary) + ") to use that"
 	}
-	if st, err := os.Stat(profile); err != nil || !st.IsDir() {
+	if st, err := os.Stat(profile.Dir); err != nil || !st.IsDir() {
 		add("chrome profile", Warn, label+" does not exist yet; "+hint)
-	} else if signedIn, err := probe.HasLinkedInSession(profile); err != nil {
+	} else if signedIn, err := probe.HasLinkedInSession(profile.Dir); err != nil {
 		add("chrome profile", Warn, label+": could not check for a LinkedIn session ("+err.Error()+")")
 	} else if !signedIn {
 		add("chrome profile", Warn, label+" has no LinkedIn session; "+hint)

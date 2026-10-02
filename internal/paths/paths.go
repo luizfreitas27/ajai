@@ -25,7 +25,7 @@ type Paths struct {
 	LogDir        string
 	ScreenshotDir string
 	ResumeDir     string
-	// ChromeProfileDir is aja's own Chrome profile, used when settings.chrome_profile_dir is blank.
+	// ChromeProfileDir is the aja profile, used when settings.chrome_profile_dir is blank.
 	ChromeProfileDir string
 }
 
@@ -56,14 +56,20 @@ func Resolve(configFlag string, getenv Getenv) Paths {
 	return p
 }
 
-// ChromeProfile resolves settings.chrome_profile_dir: blank means aja's own
-// profile. own reports whether the result is aja's own profile, which aja may
-// close Chrome on; any other profile is the user's.
-func (p Paths) ChromeProfile(setting string) (dir string, own bool) {
+// Profile is the Chrome profile runs use.
+type Profile struct {
+	Dir string
+	// Own: the aja profile, which aja creates and quits Chrome on; any other
+	// profile is the user's, and Chrome there is only ever detached from.
+	Own bool
+}
+
+// ChromeProfile resolves settings.chrome_profile_dir: blank means the aja profile.
+func (p Paths) ChromeProfile(setting string) Profile {
 	if setting == "" {
-		return p.ChromeProfileDir, true
+		return Profile{Dir: p.ChromeProfileDir, Own: true}
 	}
-	return setting, filepath.Clean(setting) == filepath.Clean(p.ChromeProfileDir)
+	return Profile{Dir: setting, Own: filepath.Clean(setting) == filepath.Clean(p.ChromeProfileDir)}
 }
 
 // EnsureDataDirs creates the data directories if they are missing.

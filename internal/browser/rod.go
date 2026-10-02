@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ type Options struct {
 	// HeadlessForTests is honoured ONLY by the browser-tagged tests; the CLI never sets it
 	// and a run is never headless (ADR 0001).
 	HeadlessForTests bool
-	// QuitOnClose: the profile is aja's own, so Close quits Chrome (gracefully, the
+	// QuitOnClose: the profile is the aja profile, so Close quits Chrome (gracefully, the
 	// profile kept) and the next run finds it free. Otherwise Close only detaches.
 	QuitOnClose bool
 	Logger      *slog.Logger
@@ -39,8 +40,19 @@ type Options struct {
 // quitWait bounds how long Close waits for Chrome to exit on its own.
 const quitWait = 15 * time.Second
 
+// exited waits up to d for process pid to end.
+func exited(pid int, d time.Duration) bool {
+	for deadline := time.Now().Add(d); procs.Alive(pid); {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return true
+}
+
 // ErrProfileInUse means the profile directory is locked by a running Chrome.
-var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or leave settings.chrome_profile_dir blank to use aja's own profile")
+var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or leave settings.chrome_profile_dir blank to use the aja profile")
 
 // Open launches Chrome on the given profile and connects to it.
 func Open(ctx context.Context, opts Options) (Browser, error) {
@@ -91,7 +103,7 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 	}
 	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.HeadlessForTests)
 	return &rodBrowser{b: b, main: &rodPage{p: main, smooth: opts.SmoothScroll}, launcher: l, logger: opts.Logger,
-		owned: opts.HeadlessForTests, quit: opts.QuitOnClose}, nil
+		testBrowser: opts.HeadlessForTests, quit: opts.QuitOnClose}, nil
 }
 
 // profileLocked reports whether a LIVE Chrome holds the profile's singleton
@@ -111,12 +123,12 @@ func profileLocked(dir string) bool {
 }
 
 type rodBrowser struct {
-	b        *rod.Browser
-	main     *rodPage
-	launcher *launcher.Launcher
-	logger   *slog.Logger
-	owned    bool // a headless test browser: ours to shut down, profile and all
-	quit     bool // aja's own profile: quit Chrome on Close, keep the profile
+	b           *rod.Browser
+	main        *rodPage
+	launcher    *launcher.Launcher
+	logger      *slog.Logger
+	testBrowser bool // a headless test browser: shut down, profile and all
+	quit        bool // the aja profile: quit Chrome on Close, keep the profile
 }
 
 func (r *rodBrowser) Main() Page { return r.main }
@@ -137,23 +149,24 @@ func (r *rodBrowser) Pages() ([]Page, error) {
 
 // Close leaves Chrome as it should be after aja: on the user's own profile it
 // only detaches (the window is theirs; rod's Browser.Close would shut it); on
-// aja's own profile it quits Chrome gracefully, so cookies are saved and the
+// the aja profile it quits Chrome gracefully, so cookies are saved and the
 // profile is free for the next run. Never launcher.Cleanup on a real profile: it
 // deletes the user-data directory.
 func (r *rodBrowser) Close() error {
 	if r.quit {
-		err := r.b.Close()
+		// Its own context: by now Ctrl-C may have cancelled the one Chrome was opened with.
+		err := r.b.Context(context.Background()).Close()
 		pid := r.launcher.PID()
-		for deadline := time.Now().Add(quitWait); procs.Alive(pid) && time.Now().Before(deadline); {
-			time.Sleep(100 * time.Millisecond)
+		if !exited(pid, quitWait) {
+			_ = syscall.Kill(pid, syscall.SIGTERM) // Chrome still shuts down cleanly on SIGTERM
+			if !exited(pid, 5*time.Second) {
+				r.launcher.Kill()
+			}
 		}
-		if procs.Alive(pid) {
-			r.launcher.Kill()
-		}
-		r.logger.Info("closed chrome on aja's profile")
+		r.logger.Info("closed chrome on the aja profile")
 		return err
 	}
-	if r.owned {
+	if r.testBrowser {
 		err := r.b.Close()
 		r.launcher.Kill()
 		r.launcher.Cleanup()

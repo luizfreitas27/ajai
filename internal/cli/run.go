@@ -19,8 +19,8 @@ import (
 	"github.com/luizfreitas27/aja/internal/run"
 )
 
-// OpenBrowser is the seam the run command uses to get a browser; tests replace it.
-var OpenBrowser = browser.Open
+// OpenBrowser is how aja run and aja login open Chrome; tests replace it.
+var OpenBrowser browser.Opener = browser.Open
 
 func (a *App) runCmd() *cobra.Command {
 	var opts run.Options
@@ -28,9 +28,9 @@ func (a *App) runCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Search LinkedIn and apply to Easy Apply jobs in your own Chrome",
-		Long: `Opens Chrome on aja's own profile (or settings.chrome_profile_dir), waits for you to sign
+		Long: `Opens Chrome on the aja profile (or settings.chrome_profile_dir), waits for you to sign
 in when needed (sign in once beforehand with aja login), then walks every search term with
-the configured filters, screens each job and applies. Pacing is on by default. On aja's own
+the configured filters, screens each job and applies. Pacing is on by default. On the aja
 profile, Chrome is closed when the run ends.
 
 --dry-run fills every form and discards it at the Review step instead of submitting, so you

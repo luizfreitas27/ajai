@@ -15,6 +15,10 @@ import (
 // ten minutes the Python bot slept.
 const defaultNonStopWait = 10 * time.Minute
 
+// DefaultLoginTimeout is how long a run (and aja login) waits for the user to
+// sign in to LinkedIn by hand.
+const DefaultLoginTimeout = 10 * time.Minute
+
 // Session is one invocation of aja run: a single run, or, with
 // settings.run_non_stop, run after run until one ends in a way that should not
 // be retried (End.Continues), with the Python bot's filter changes between runs
@@ -73,7 +77,7 @@ func (r *Runner) defaults() {
 		r.Now = time.Now
 	}
 	if r.LoginTimeout == 0 {
-		r.LoginTimeout = 10 * time.Minute
+		r.LoginTimeout = DefaultLoginTimeout
 	}
 	if r.NonStopWait == 0 {
 		r.NonStopWait = defaultNonStopWait

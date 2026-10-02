@@ -22,7 +22,8 @@ goreleaser release --snapshot --clean   # the two Linux release binaries into di
 ```
 
 Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, config in
-`.goreleaser.yaml`). CI's `release-snapshot` job builds the same targets on every PR.
+`.goreleaser.yaml`). User-visible changes go under "Unreleased" in `CHANGELOG.md`; rename it
+to the tag before tagging and the workflow publishes that section as the release notes. CI's `release-snapshot` job builds the same targets on every PR.
 
 ## Architecture (target; see issue #1 for the spec)
 
@@ -31,13 +32,14 @@ Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, c
   Secrets never live in the YAML.
 - `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
   (ADR 0001). The only package that imports rod. Never headless outside tests. `Close`
-  quits Chrome gracefully on aja's own profile (`Options.QuitOnClose`) and only detaches on
+  quits Chrome gracefully on the aja profile (`Options.QuitOnClose`) and only detaches on
   the user's; never call rod's `launcher.Cleanup` on a real profile (it deletes it).
-- Chrome profile: `paths.Paths.ChromeProfile(setting)` (blank = aja's own, in the data
+- Chrome profile: `paths.Paths.ChromeProfile(setting)` (blank = the aja profile, in the data
   directory) and `launch.OpenChrome` (find, create, open; `ErrOwnProfileInUse`) are the only
   places that decide it; `aja run` and `aja login` both go through them. `aja doctor` checks
-  the LinkedIn session by reading a copy of the profile's cookie database for `li_at`
-  (`chrome.HasLinkedInSession`), never the cookie values.
+  the LinkedIn session by opening every profile's cookie database read-only in place
+  (`immutable` when Chrome holds it locked) for an unexpired `li_at`
+  (`chrome.HasLinkedInSession`); never copy it, never read cookie values.
 - `internal/linkedin`: `Session` over `browser.Page`: login detection (feed URL only),
   search, filters, job cards, job details, pagination; plus the centralised selectors.
 - `internal/screening`: the pure skip rules (card, company, description).

@@ -79,7 +79,7 @@ go build ./cmd/aja && ./aja version
    ```
 
    Chrome opens on LinkedIn; sign in by hand (aja never types your password) and it closes
-   once the feed appears. The session stays in aja's profile.
+   once the feed appears. The session stays in the aja profile.
 
 5. **Check.** `aja doctor` tests Chrome, the profile (and whether LinkedIn is signed in
    there), the config, the secrets, the resume and the data directory, and prints every
@@ -103,9 +103,9 @@ go build ./cmd/aja && ./aja version
    ```
 
 **Coming from phase 1?** aja used to drive your everyday Chrome profile. A blank
-`settings.chrome_profile_dir` now means aja's own profile: run `aja login` once, or set
+`settings.chrome_profile_dir` now means the aja profile, one of aja's own: run `aja login` once, or set
 `settings.chrome_profile_dir` to your everyday profile (`aja doctor` prints its path) to
-keep the old behaviour. On aja's own profile a run closes its Chrome when it ends; on yours
+keep the old behaviour. On the aja profile a run closes its Chrome when it ends; on yours
 it leaves the window open, as before.
 
 ## Everyday commands

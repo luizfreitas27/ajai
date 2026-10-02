@@ -41,7 +41,7 @@ func TestCloseQuitsChromeOnAjasOwnProfileAndKeepsTheProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if procs.Alive(pid) {
-		t.Error("Close must end Chrome on aja's own profile")
+		t.Error("Close must end Chrome on the aja profile")
 	}
 	if time.Since(start) > 10*time.Second {
 		t.Errorf("Chrome took %s to quit", time.Since(start))
@@ -54,4 +54,31 @@ func TestCloseQuitsChromeOnAjasOwnProfileAndKeepsTheProfile(t *testing.T) {
 	}
 	again := open() // the next run
 	_ = again.Close()
+}
+
+// TestCloseStillQuitsGracefullyAfterCtrlC: Ctrl-C cancels the context Chrome was
+// opened with before Close runs; Chrome must still quit at once, not be killed
+// after the timeout.
+func TestCloseStillQuitsGracefullyAfterCtrlC(t *testing.T) {
+	bin, err := chrome.Find("")
+	if err != nil {
+		t.Skip("no Chrome on this machine:", err)
+	}
+	profile := filepath.Join(t.TempDir(), "chrome-profile")
+	ctx, cancel := context.WithCancel(context.Background())
+	br, err := Open(ctx, Options{Bin: bin, ProfileDir: profile, HeadlessForTests: true, QuitOnClose: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := br.(*rodBrowser).launcher.PID()
+	cancel()                // Ctrl-C
+	time.Sleep(time.Second) // the run winds down before Chrome is closed
+	start := time.Now()
+	_ = br.Close()
+	if procs.Alive(pid) {
+		t.Error("Chrome must have quit")
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Close took %s after Ctrl-C: Chrome was killed, not quit", d)
+	}
 }

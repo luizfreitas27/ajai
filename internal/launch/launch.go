@@ -62,7 +62,7 @@ type Deps struct {
 	// AfterFilters is the filter pause; used only when Options.PausesAfterFilters.
 	AfterFilters func(ctx context.Context, term string) (keepPausing bool)
 	// OpenBrowser opens Chrome (browser.Open; tests fake it). Required.
-	OpenBrowser func(ctx context.Context, o browser.Options) (browser.Browser, error)
+	OpenBrowser browser.Opener
 }
 
 // Opened is a run with its lock and Chrome: Session runs it, Close releases both.
@@ -82,7 +82,8 @@ func (o *Opened) Session(ctx context.Context) ([]run.Summary, error) {
 	return o.Runner.Session(ctx, o.opts)
 }
 
-// Close closes Chrome (detaching from it) and releases the run lock.
+// Close closes Chrome (quitting it on the aja profile, detaching from the
+// user's) and releases the run lock.
 func (o *Opened) Close() { o.close() }
 
 // Open takes the machine-wide run lock (a *run.HeldError when another run has
@@ -93,7 +94,7 @@ func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, err
 	if err != nil {
 		return nil, err
 	}
-	br, err := OpenChrome(ctx, cfg, d.Paths, d.OpenBrowser, d.Logger)
+	br, _, err := OpenChrome(ctx, cfg, d.Paths, d.OpenBrowser, d.Logger)
 	if err != nil {
 		lock.Release()
 		return nil, err
@@ -132,37 +133,36 @@ func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, err
 	}}, nil
 }
 
-// ErrOwnProfileInUse: aja's own profile is open in another Chrome window. It is
+// ErrOwnProfileInUse: the aja profile is open in another Chrome window. It is
 // also a browser.ErrProfileInUse for errors.Is.
 var ErrOwnProfileInUse error = ownProfileInUse{}
 
 type ownProfileInUse struct{}
 
 func (ownProfileInUse) Error() string {
-	return "aja's Chrome profile is in use by another window (a run, or aja login): close it, or wait for the run to end, and try again"
+	return "the aja profile is in use by another Chrome window (a run, or aja login): close it, or wait for the run to end, and try again"
 }
 
 func (ownProfileInUse) Is(target error) bool { return target == browser.ErrProfileInUse }
 
-// OpenChrome finds Chrome and opens it on the configured profile: aja's own
-// (created when missing, and closed again by Close) unless
-// settings.chrome_profile_dir names another.
-func OpenChrome(ctx context.Context, cfg config.Config, p paths.Paths, open func(context.Context, browser.Options) (browser.Browser, error),
-	logger *slog.Logger) (browser.Browser, error) {
+// OpenChrome finds Chrome and opens it on the configured profile, which it
+// returns: the aja profile (created when missing, and quit again by Close)
+// unless settings.chrome_profile_dir names another.
+func OpenChrome(ctx context.Context, cfg config.Config, p paths.Paths, open browser.Opener, logger *slog.Logger) (browser.Browser, paths.Profile, error) {
+	profile := p.ChromeProfile(cfg.Settings.ChromeProfileDir)
 	bin, err := chrome.Find(cfg.Settings.ChromeBinary)
 	if err != nil {
-		return nil, err
+		return nil, profile, err
 	}
-	profile, own := p.ChromeProfile(cfg.Settings.ChromeProfileDir)
-	if own {
-		if err := os.MkdirAll(profile, 0o700); err != nil { // cookies live here: the user's eyes only
-			return nil, err
+	if profile.Own {
+		if err := os.MkdirAll(profile.Dir, 0o700); err != nil { // cookies live here: the user's eyes only
+			return nil, profile, err
 		}
 	}
-	br, err := open(ctx, browser.Options{Bin: bin, ProfileDir: profile, DisableExtensions: cfg.Settings.DisableExtensions,
-		SmoothScroll: cfg.Settings.SmoothScroll, QuitOnClose: own, Logger: logger})
-	if own && errors.Is(err, browser.ErrProfileInUse) {
-		return nil, ErrOwnProfileInUse
+	br, err := open(ctx, browser.Options{Bin: bin, ProfileDir: profile.Dir, DisableExtensions: cfg.Settings.DisableExtensions,
+		SmoothScroll: cfg.Settings.SmoothScroll, QuitOnClose: profile.Own, Logger: logger})
+	if profile.Own && errors.Is(err, browser.ErrProfileInUse) {
+		return nil, profile, ErrOwnProfileInUse
 	}
-	return br, err
+	return br, profile, err
 }

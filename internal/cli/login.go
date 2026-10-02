@@ -18,8 +18,8 @@ func (a *App) loginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Sign in to LinkedIn once, in the Chrome profile aja uses",
-		Long: `Opens Chrome on the profile aja uses (its own, unless settings.chrome_profile_dir names
-another) at LinkedIn and waits until you have signed in, then closes it. Do this once before
+		Long: `Opens Chrome on the profile aja uses (the aja profile, unless settings.chrome_profile_dir
+names another) at LinkedIn and waits until you have signed in, then closes it. Do this once before
 the first run: aja never types your password, and runs started by the scheduler have nobody
 to sign in for them.`,
 		Args: cobra.NoArgs,
@@ -44,12 +44,11 @@ to sign in for them.`,
 				return err
 			}
 			ctx := cmd.Context()
-			br, err := launch.OpenChrome(ctx, l.Config, a.paths, OpenBrowser, a.logger)
+			br, profile, err := launch.OpenChrome(ctx, l.Config, a.paths, OpenBrowser, a.logger)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = br.Close() }()
-			profile, _ := a.paths.ChromeProfile(l.Config.Settings.ChromeProfileDir)
 			waited := false
 			err = linkedin.NewSession(br.Main(), br, nil, a.logger).EnsureLoggedIn(ctx, timeout, func() {
 				waited = true
@@ -61,13 +60,13 @@ to sign in for them.`,
 			case err != nil:
 				return err
 			case waited:
-				a.ui.OK("signed in", "LinkedIn session saved in "+profile)
+				a.ui.OK("signed in", "LinkedIn session saved in "+profile.Dir)
 			default:
-				a.ui.OK("signed in", "already signed in to LinkedIn in "+profile)
+				a.ui.OK("signed in", "already signed in to LinkedIn in "+profile.Dir)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long to wait for you to sign in")
+	cmd.Flags().DurationVar(&timeout, "timeout", run.DefaultLoginTimeout, "how long to wait for you to sign in")
 	return cmd
 }

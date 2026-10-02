@@ -46,7 +46,7 @@ func probe(found bool) Probe {
 
 func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.T) {
 	p, l := setup(t)
-	l.Config.Settings.ChromeProfileDir = "" // aja's own
+	l.Config.Settings.ChromeProfileDir = "" // the aja profile
 	cases := []struct {
 		name     string
 		create   bool
@@ -55,10 +55,10 @@ func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.
 		status   Status
 		want     []string
 	}{
-		{"not created", false, false, nil, Warn, []string{"(aja's own profile) does not exist yet", "aja login", "/home/u/.config/google-chrome"}},
+		{"not created", false, false, nil, Warn, []string{"(the aja profile) does not exist yet", "aja login", "/home/u/.config/google-chrome"}},
 		{"no session", true, false, nil, Warn, []string{"has no LinkedIn session", "aja login"}},
 		{"unreadable", true, false, errors.New("locked"), Warn, []string{"could not check", "locked"}},
-		{"signed in", true, true, nil, OK, []string{"(aja's own profile), signed in to LinkedIn"}},
+		{"signed in", true, true, nil, OK, []string{"(the aja profile), signed in to LinkedIn"}},
 	}
 	for _, tc := range cases {
 		_ = os.RemoveAll(p.ChromeProfileDir)
@@ -84,11 +84,11 @@ func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.
 			}
 		}
 	}
-	// The user's own profile: no "aja's own", no hint to switch.
+	// The user's own profile: no "the aja profile", no hint to switch.
 	l.Config.Settings.ChromeProfileDir = t.TempDir()
 	pr := probe(true)
 	pr.HasLinkedInSession = func(string) (bool, error) { return false, nil }
-	if c := byName(Run(l, nil, p, pr), "chrome profile"); strings.Contains(c.Detail, "aja's own") || strings.Contains(c.Detail, "everyday") || !strings.Contains(c.Detail, "aja login") {
+	if c := byName(Run(l, nil, p, pr), "chrome profile"); strings.Contains(c.Detail, "the aja profile") || strings.Contains(c.Detail, "everyday") || !strings.Contains(c.Detail, "aja login") {
 		t.Errorf("%+v", c)
 	}
 }

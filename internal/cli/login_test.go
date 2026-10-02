@@ -60,28 +60,45 @@ func fakeChrome(t *testing.T, br *loginBrowser, err error) *browser.Options {
 	return &got
 }
 
-func TestLoginWaitsForTheFeedInAjasOwnProfileAndClosesChrome(t *testing.T) {
-	h := newHarness(t) // no config yet: login comes before init just as well
-	br := &loginBrowser{page: &loginPage{signedInAfter: 2}}
-	opts := fakeChrome(t, br, nil)
-	code, out, errText := h.run("login", "--timeout", "200ms")
-	if code != 0 || !strings.Contains(out, "LinkedIn session saved in "+filepath.Join(h.home, "chrome-profile")) || !strings.Contains(out, "Sign in to LinkedIn") {
-		t.Fatalf("%d %s %s", code, out, errText)
+func TestLoginWaitsForTheFeedThenClosesChromeOnlyOnTheAjaProfile(t *testing.T) {
+	everyday := t.TempDir()
+	cases := []struct {
+		name          string
+		profile       string // settings.chrome_profile_dir; "" = the aja profile
+		signedInAfter int    // URL reads until the feed shows
+		want          string
+		prompted      bool // asked to sign in
+	}{
+		{"signs in on the aja profile", "", 2, "LinkedIn session saved in ", true},
+		{"already signed in", "", 1, "already signed in to LinkedIn in ", false},
+		{"the user's own profile", everyday, 1, "already signed in to LinkedIn in " + everyday, false},
 	}
-	if opts.ProfileDir != filepath.Join(h.home, "chrome-profile") || !opts.QuitOnClose {
-		t.Errorf("aja's own profile, closed afterwards: %+v", *opts)
-	}
-	if st, err := os.Stat(opts.ProfileDir); err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
-		t.Errorf("the profile is created, private: %v %v", st, err)
-	}
-	if !br.closed {
-		t.Error("Chrome must be closed after signing in")
-	}
-
-	br = &loginBrowser{page: &loginPage{signedInAfter: 1}}
-	fakeChrome(t, br, nil)
-	if code, out, _ := h.run("login"); code != 0 || !strings.Contains(out, "already signed in") || strings.Contains(out, "Sign in to LinkedIn") {
-		t.Errorf("%d %s", code, out)
+	for _, tc := range cases {
+		h := newHarness(t) // no config yet: login comes before init just as well
+		if tc.profile != "" {
+			h.env["AJA_CFG_SETTINGS_CHROME_PROFILE_DIR"] = tc.profile
+		}
+		br := &loginBrowser{page: &loginPage{signedInAfter: tc.signedInAfter}}
+		opts := fakeChrome(t, br, nil)
+		code, out, errText := h.run("login", "--timeout", "200ms")
+		if code != 0 || !strings.Contains(out, tc.want) || strings.Contains(out, "Sign in to LinkedIn") != tc.prompted {
+			t.Errorf("%s: %d %s %s", tc.name, code, out, errText)
+			continue
+		}
+		ajaProfile := filepath.Join(h.home, "chrome-profile")
+		if tc.profile == "" {
+			if opts.ProfileDir != ajaProfile || !opts.QuitOnClose {
+				t.Errorf("%s: the aja profile, quit afterwards: %+v", tc.name, *opts)
+			}
+			if st, err := os.Stat(ajaProfile); err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
+				t.Errorf("%s: the aja profile is created, private: %v %v", tc.name, st, err)
+			}
+		} else if opts.ProfileDir != tc.profile || opts.QuitOnClose {
+			t.Errorf("%s: the user's profile, as set, only detached from: %+v", tc.name, *opts)
+		}
+		if !br.closed {
+			t.Errorf("%s: Close must always be called (it quits or detaches)", tc.name)
+		}
 	}
 }
 
@@ -101,7 +118,7 @@ func TestLoginGivesUpAfterTheTimeoutWithAHint(t *testing.T) {
 func TestLoginRefusesWhileTheProfileOrARunIsBusy(t *testing.T) {
 	h := newHarness(t)
 	fakeChrome(t, nil, browser.ErrProfileInUse)
-	if code, _, errText := h.run("login"); code == 0 || !strings.Contains(errText, "aja's Chrome profile is in use by another window") {
+	if code, _, errText := h.run("login"); code == 0 || !strings.Contains(errText, "the aja profile is in use by another Chrome window") {
 		t.Errorf("%d %s", code, errText)
 	}
 
@@ -116,18 +133,5 @@ func TestLoginRefusesWhileTheProfileOrARunIsBusy(t *testing.T) {
 	}
 	if opts.ProfileDir != "" {
 		t.Error("Chrome must not open while a run uses it")
-	}
-}
-
-func TestLoginOnTheUsersOwnProfileLeavesChromeOpen(t *testing.T) {
-	h := newHarness(t)
-	everyday := t.TempDir()
-	h.env["AJA_CFG_SETTINGS_CHROME_PROFILE_DIR"] = everyday
-	opts := fakeChrome(t, &loginBrowser{page: &loginPage{signedInAfter: 1}}, nil)
-	if code, _, errText := h.run("login"); code != 0 {
-		t.Fatalf("%d %s", code, errText)
-	}
-	if opts.ProfileDir != everyday || opts.QuitOnClose {
-		t.Errorf("the user's profile: as set, and only detached from: %+v", *opts)
 	}
 }

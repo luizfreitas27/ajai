@@ -57,6 +57,7 @@ func TestALinkedInSessionIsAnUnexpiredLiAtCookie(t *testing.T) {
 		{"other linkedin cookies only", cookieProfile(t, network, [][3]any{{".linkedin.com", "bcookie", future}}), false},
 		{"li_at of another site", cookieProfile(t, network, [][3]any{{".notlinkedin.com", "li_at", future}}), false},
 		{"a profile never used", t.TempDir(), false},
+		{"signed in on another profile than Default", cookieProfile(t, filepath.Join("Profile 1", "Network", "Cookies"), [][3]any{{".www.linkedin.com", "li_at", future}}), true},
 	}
 	for _, tc := range cases {
 		got, err := HasLinkedInSession(tc.dir, now)
@@ -76,20 +77,25 @@ func TestALinkedInSessionIsAnUnexpiredLiAtCookie(t *testing.T) {
 	}
 }
 
-func TestTheEverydayProfileFollowsTheBrowserFound(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "/home/u/.config")
-	cases := map[string]string{
-		"/usr/bin/chromium":               "/home/u/.config/chromium",
-		"/usr/bin/chromium-browser":       "/home/u/.config/chromium",
-		"/usr/bin/google-chrome-stable":   "/home/u/.config/google-chrome",
-		"/usr/bin/google-chrome":          "/home/u/.config/google-chrome",
-		"/usr/bin/google-chrome-beta":     "/home/u/.config/google-chrome-beta",
-		"/usr/bin/google-chrome-unstable": "/home/u/.config/google-chrome-unstable",
-		"":                                "/home/u/.config/google-chrome", // Chrome not found
+func TestTheSessionIsFoundWhileChromeHoldsTheDatabaseLocked(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	dir := cookieProfile(t, filepath.Join("Default", "Network", "Cookies"), [][3]any{{".www.linkedin.com", "li_at", chromeTime(now.Add(time.Hour))}})
+	// Chrome keeps its databases in exclusive locking mode while it runs.
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "Default", "Network", "Cookies"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for bin, want := range cases {
-		if got := EverydayProfileDir(bin); got != want {
-			t.Errorf("%q: %q, want %q", bin, got, want)
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+	for _, q := range []string{"PRAGMA locking_mode=EXCLUSIVE", "BEGIN EXCLUSIVE", "UPDATE cookies SET value = 'x'"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
 		}
+	}
+	if ok, err := HasLinkedInSession(dir, now); !ok || err != nil {
+		t.Errorf("%v %v", ok, err)
+	}
+	if entries, _ := filepath.Glob(filepath.Join(os.TempDir(), "aja-cookies-*")); len(entries) > 0 {
+		t.Errorf("no copy of the cookies may be left on disk: %v", entries)
 	}
 }
