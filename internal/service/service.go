@@ -1,4 +1,4 @@
-// Package service installs `aja daemon` as a systemd user service tied to the
+// Package service installs `aja daemon` as a systemd user unit tied to the
 // desktop session, so it starts at login and the Chrome it opens is visible.
 // aja targets Linux only for now; systemd is the only service manager.
 package service
@@ -9,28 +9,39 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
-// UnitName is the service's name.
+// UnitName is the unit's name.
 const UnitName = "aja.service"
+
+// ExitAlreadyRunning is the exit status of `aja daemon` when another daemon
+// runs; the unit does not restart on it (RestartPreventExitStatus).
+const ExitAlreadyRunning = 3
 
 // Options are what the unit runs.
 type Options struct {
-	Binary     string // absolute path of the aja binary
-	ConfigFile string // --config, "" for the default location
-	Home       string // AJA_HOME, "" when unset
+	Binary     string            // absolute path of the aja binary
+	ConfigFile string            // --config, "" for the default location
+	Env        map[string]string // AJA_HOME, XDG_CONFIG_HOME, XDG_DATA_HOME as the installing shell has them
 }
 
 // Unit is the systemd unit for o.
 func Unit(o Options) string {
-	exec := quote(o.Binary) + " daemon"
+	execStart := execQuote(o.Binary) + " daemon"
 	if o.ConfigFile != "" {
-		exec += " --config " + quote(o.ConfigFile)
+		execStart += " --config " + execQuote(o.ConfigFile)
 	}
-	var env string
-	if o.Home != "" {
-		env = "Environment=" + quote("AJA_HOME="+o.Home) + "\n"
+	keys := make([]string, 0, len(o.Env))
+	for k := range o.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var env strings.Builder
+	for _, k := range keys {
+		env.WriteString("Environment=" + quote(k+"="+o.Env[k]) + "\n")
 	}
 	return `# Written by aja daemon install; aja daemon uninstall removes it.
 [Unit]
@@ -42,82 +53,151 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-` + env + `ExecStart=` + exec + `
-# Stopped like Ctrl-C: the run in progress ends cleanly first.
+` + env.String() + `ExecStart=` + execStart + `
+# Stopped like Ctrl-C: only the daemon gets SIGINT, its run ends cleanly and it
+# closes the Chrome it opened; whatever is left after it exits is killed.
 KillSignal=SIGINT
+KillMode=mixed
 TimeoutStopSec=3min
 Restart=on-failure
 RestartSec=30
+# Another aja daemon already runs: retrying would not help.
+RestartPreventExitStatus=` + fmt.Sprint(ExitAlreadyRunning) + `
 
 [Install]
 WantedBy=graphical-session.target
 `
 }
 
-// quote writes a word for a unit file: % doubled, and double quotes around it
-// (with \ and " escaped) when it holds a space or a quote.
+// quote writes a value for a unit file: % doubled (systemd specifiers), and
+// double quotes around it, with \ " and newlines escaped, when it holds
+// whitespace or a quote.
 func quote(s string) string {
 	s = strings.ReplaceAll(s, "%", "%%")
-	if !strings.ContainsAny(s, " \t\"'\\") {
+	if !strings.ContainsAny(s, " \t\n\"'\\") {
 		return s
 	}
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+	s = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(s)
+	return `"` + s + `"`
 }
 
-// Systemctl runs `systemctl --user args...` and returns its output.
+// execQuote is quote for ExecStart, which also expands $VARIABLES.
+func execQuote(s string) string { return quote(strings.ReplaceAll(s, "$", "$$")) }
+
+// Systemctl runs `systemctl --user args...` and returns what it printed on
+// stdout; a failure's error carries stderr.
 type Systemctl func(args ...string) (string, error)
 
 // RealSystemctl is Systemctl on this machine.
 func RealSystemctl(args ...string) (string, error) {
-	out, err := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput()
+	out, err := exec.Command("systemctl", append([]string{"--user"}, args...)...).Output()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+	}
 	return strings.TrimSpace(string(out)), err
 }
 
-// Manager installs, removes and reports the service.
+// UnitDir is where systemd --user looks for units: $XDG_CONFIG_HOME/systemd/user
+// as the systemd user manager has it (managerEnv: `systemctl --user
+// show-environment`), else ~/.config/systemd/user.
+func UnitDir(managerEnv, home string) string {
+	for _, line := range strings.Split(managerEnv, "\n") {
+		if v, ok := strings.CutPrefix(line, "XDG_CONFIG_HOME="); ok && filepath.IsAbs(v) {
+			return filepath.Join(v, "systemd", "user")
+		}
+	}
+	return filepath.Join(home, ".config", "systemd", "user")
+}
+
+// Manager installs, removes and reports the unit.
 type Manager struct {
-	UnitDir   string // ~/.config/systemd/user
+	UnitDir   string
 	Systemctl Systemctl
+	// Settle is how long Install waits for the started unit to stay up (default 5 s).
+	Settle time.Duration
 }
 
 // UnitPath is where the unit file lives.
 func (m Manager) UnitPath() string { return filepath.Join(m.UnitDir, UnitName) }
 
+// systemctl runs one command, recording it for the user, and makes its error say which.
+func (m Manager) systemctl(ran *[]string, args ...string) (string, error) {
+	cmd := "systemctl --user " + strings.Join(args, " ")
+	*ran = append(*ran, cmd)
+	out, err := m.Systemctl(args...)
+	if err != nil {
+		return out, fmt.Errorf("%s: %w", cmd, err)
+	}
+	return out, nil
+}
+
 // Installed is what Install did, for the user to see.
 type Installed struct {
 	Path     string
+	Unit     string   // the unit file it wrote
 	Commands []string // the systemctl commands it ran
+	Started  bool     // the unit was (re)started and stayed up
 	Warnings []string
 }
 
-// Install writes the unit (replacing an older one, e.g. after the binary moved),
-// reloads systemd, enables the service for the desktop session and (re)starts it.
+// Install writes the unit (replacing an older one, e.g. after the binary
+// moved), reloads systemd and enables the unit for the desktop session. In a
+// desktop session it also (re)starts it and checks it stays up; outside one it
+// says so and leaves the start to the next login.
 func (m Manager) Install(o Options) (Installed, error) {
-	in := Installed{Path: m.UnitPath()}
+	result := Installed{Path: m.UnitPath(), Unit: Unit(o)}
 	if strings.Contains(o.Binary, "/go-build") {
-		in.Warnings = append(in.Warnings, o.Binary+" is a temporary build (go run): install aja itself first, or the service will point at a file that disappears")
+		result.Warnings = append(result.Warnings, o.Binary+" is a temporary build (go run): install aja itself first, or the unit will point at a file that disappears")
 	}
 	if err := os.MkdirAll(m.UnitDir, 0o755); err != nil {
-		return in, err
+		return result, err
 	}
-	if err := os.WriteFile(in.Path, []byte(Unit(o)), 0o644); err != nil {
-		return in, err
+	if err := os.WriteFile(result.Path, []byte(result.Unit), 0o644); err != nil {
+		return result, err
 	}
-	for _, args := range [][]string{{"daemon-reload"}, {"enable", UnitName}, {"restart", UnitName}} {
-		in.Commands = append(in.Commands, "systemctl --user "+strings.Join(args, " "))
-		if out, err := m.Systemctl(args...); err != nil {
-			return in, fmt.Errorf("systemctl --user %s: %v %s", strings.Join(args, " "), err, out)
+	for _, args := range [][]string{{"daemon-reload"}, {"enable", UnitName}} {
+		if _, err := m.systemctl(&result.Commands, args...); err != nil {
+			return result, err
 		}
 	}
-	if out, _ := m.Systemctl("is-active", "graphical-session.target"); out != "active" {
-		in.Warnings = append(in.Warnings, "your session has not reached graphical-session.target, so the service will not start at login;"+
-			" start it from your session's autostart instead (e.g. Hyprland: exec-once = systemctl --user start "+UnitName+")")
-	}
 	if env, err := m.Systemctl("show-environment"); err == nil && !hasDisplay(env) {
-		in.Warnings = append(in.Warnings, "systemd's environment has neither WAYLAND_DISPLAY nor DISPLAY, so Chrome cannot open a window;"+
+		result.Warnings = append(result.Warnings, "systemd's environment has neither WAYLAND_DISPLAY nor DISPLAY, so Chrome cannot open a window;"+
 			" add `systemctl --user import-environment WAYLAND_DISPLAY DISPLAY` to your session's startup")
 	}
-	return in, nil
+	if state, _ := m.Systemctl("is-active", "graphical-session.target"); state != "active" {
+		result.Warnings = append(result.Warnings, "your session has not reached graphical-session.target, so the daemon was not started and will not start at login;"+
+			" start it from your session's autostart instead (e.g. Hyprland: exec-once = systemctl --user start "+UnitName+")")
+		return result, nil
+	}
+	if _, err := m.systemctl(&result.Commands, "restart", UnitName); err != nil {
+		return result, err
+	}
+	if !m.staysUp() {
+		return result, errors.New("the daemon did not stay up; see journalctl --user -u " + UnitName)
+	}
+	result.Started = true
+	return result, nil
+}
+
+// staysUp reports whether the unit is active after Settle (a daemon that
+// cannot start fails within a second or two).
+func (m Manager) staysUp() bool {
+	settle := m.Settle
+	if settle == 0 {
+		settle = 5 * time.Second
+	}
+	deadline := time.Now().Add(settle)
+	for {
+		state, _ := m.Systemctl("is-active", UnitName)
+		if state != "active" && state != "activating" {
+			return false
+		}
+		if !time.Now().Before(deadline) {
+			return state == "active"
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func hasDisplay(env string) bool {
@@ -130,31 +210,25 @@ func hasDisplay(env string) bool {
 }
 
 // ErrNotInstalled: there is no unit to remove.
-var ErrNotInstalled = errors.New("the aja service is not installed")
+var ErrNotInstalled = errors.New("the aja unit is not installed")
 
-// Uninstall stops and disables the service and removes its unit.
+// Uninstall stops and disables the unit and removes it.
 func (m Manager) Uninstall() ([]string, error) {
 	if _, err := os.Stat(m.UnitPath()); errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotInstalled
 	}
-	var commands []string
-	run := func(args ...string) error {
-		commands = append(commands, "systemctl --user "+strings.Join(args, " "))
-		if out, err := m.Systemctl(args...); err != nil {
-			return fmt.Errorf("systemctl --user %s: %v %s", strings.Join(args, " "), err, out)
-		}
-		return nil
-	}
-	if err := run("disable", "--now", UnitName); err != nil {
-		return commands, err
+	var ran []string
+	if _, err := m.systemctl(&ran, "disable", "--now", UnitName); err != nil {
+		return ran, err
 	}
 	if err := os.Remove(m.UnitPath()); err != nil {
-		return commands, err
+		return ran, err
 	}
-	return commands, run("daemon-reload")
+	_, err := m.systemctl(&ran, "daemon-reload")
+	return ran, err
 }
 
-// Status is the service as systemd sees it.
+// Status is the unit as systemd sees it.
 type Status struct {
 	Installed bool
 	Path      string
@@ -162,15 +236,22 @@ type Status struct {
 	Active    string // "active", "inactive", "failed", ... (systemctl is-active)
 }
 
-// Status asks systemd about the service. is-enabled and is-active answer with
-// a word and a non-zero exit for anything but yes; the word is what counts.
+// Status asks systemd about the unit. is-enabled and is-active print a word
+// and exit non-zero for anything but yes: the word is the answer; with no word,
+// systemd could not be asked and the error says why.
 func (m Manager) Status() Status {
 	st := Status{Path: m.UnitPath()}
 	if _, err := os.Stat(st.Path); err != nil {
 		return st
 	}
 	st.Installed = true
-	st.Enabled, _ = m.Systemctl("is-enabled", UnitName)
-	st.Active, _ = m.Systemctl("is-active", UnitName)
+	ask := func(args ...string) string {
+		out, err := m.Systemctl(args...)
+		if out == "" && err != nil {
+			return "unknown (" + err.Error() + ")"
+		}
+		return out
+	}
+	st.Enabled, st.Active = ask("is-enabled", UnitName), ask("is-active", UnitName)
 	return st
 }

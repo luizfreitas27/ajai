@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -31,7 +32,7 @@ stops it when the window closes. The configuration is read afresh for every run.
 progress when the daemon stops ends cleanly first.
 
 Only one daemon runs at a time. Its log is the daemon file in the log directory
-(aja logs --daemon). To have it start with your desktop session, aja daemon install.`,
+(aja logs --daemon). To have it start with your desktop session: aja daemon install.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -39,6 +40,10 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 				return err
 			}
 			lock, err := daemon.AcquireLock(a.paths.DataDir, time.Now())
+			var already *daemon.RunningError
+			if errors.As(err, &already) {
+				return &exitError{code: service.ExitAlreadyRunning, msg: err.Error()} // the systemd unit does not retry on it
+			}
 			if err != nil {
 				return err
 			}
@@ -120,61 +125,92 @@ func (f freshTelegram) Send(ctx context.Context, text string) bool {
 	return notify.New(s.TelegramBotToken, s.TelegramChatID, f.logger).Send(ctx, text)
 }
 
-// Seams for the service commands; tests replace them.
+// Seams for the systemd unit commands; tests replace them.
 var (
 	systemctl  service.Systemctl = service.RealSystemctl
-	executable                   = os.Executable
+	executable                   = os.Executable // on Linux, already the resolved path
+	unitSettle                   = 5 * time.Second
 )
 
-// serviceManager is the systemd user service in the user's config directory.
-func (a *App) serviceManager() service.Manager {
-	base := a.Env.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		home, _ := os.UserHomeDir()
-		base = filepath.Join(home, ".config")
+// serviceManager is the systemd user unit, in the directory systemd looks in.
+func (a *App) serviceManager() (service.Manager, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return service.Manager{}, err
 	}
-	return service.Manager{UnitDir: filepath.Join(base, "systemd", "user"), Systemctl: systemctl}
+	env, _ := systemctl("show-environment") // when systemd cannot be asked, the commands below say so
+	return service.Manager{UnitDir: service.UnitDir(env, home), Systemctl: systemctl, Settle: unitSettle}, nil
+}
+
+// pinnedEnv is the environment the unit must carry for the daemon to find the
+// same config and data as this shell: what is set here, made absolute.
+func (a *App) pinnedEnv() (map[string]string, error) {
+	env := map[string]string{}
+	for _, k := range []string{"AJA_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
+		if v := a.Env.Getenv(k); v != "" {
+			abs, err := filepath.Abs(v)
+			if err != nil {
+				return nil, err
+			}
+			env[k] = abs
+		}
+	}
+	return env, nil
 }
 
 func (a *App) daemonInstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
-		Short: "Run the daemon as a systemd user service that starts with your desktop session",
-		Long: `Writes a systemd user unit for this aja binary (with AJA_HOME and --config when you use
-them), enables it for your desktop session and (re)starts it. Run it again after moving or
-upgrading the binary. The service is stopped like Ctrl-C, so a run in progress ends cleanly.`,
+		Short: "Run the daemon from a systemd user unit that starts with your desktop session",
+		Long: `Writes a systemd user unit for this aja binary (with AJA_HOME, the XDG directories and
+--config as this shell has them), enables it for your desktop session and (re)starts it. Run
+it again after moving or upgrading the binary. The unit is stopped like Ctrl-C, so a run in
+progress ends cleanly (and its window resumes when the daemon is back).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			bin, err := executable()
+			m, err := a.serviceManager()
 			if err != nil {
 				return err
 			}
-			if resolved, err := filepath.EvalSymlinks(bin); err == nil {
-				bin = resolved
+			// A daemon started by hand would keep the unit's from starting.
+			unitActive := m.Status().Active == "active"
+			if d, running, _ := daemon.ReadLock(a.paths.DataDir); running && !unitActive {
+				return fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
 			}
-			o := service.Options{Binary: bin}
+			if h, held, _ := run.ReadLock(a.paths.DataDir); held && unitActive {
+				a.ui.Warn("run", "restarting the daemon ends "+h.String()+"; its window resumes once the daemon is back")
+			}
+			o := service.Options{}
+			if o.Binary, err = executable(); err != nil {
+				return err
+			}
 			if a.configFlag != "" {
 				if o.ConfigFile, err = filepath.Abs(a.configFlag); err != nil {
 					return err
 				}
 			}
-			if home := a.Env.Getenv("AJA_HOME"); home != "" {
-				if o.Home, err = filepath.Abs(home); err != nil {
-					return err
+			if o.Env, err = a.pinnedEnv(); err != nil {
+				return err
+			}
+			result, err := m.Install(o)
+			if result.Unit != "" {
+				a.ui.OK("wrote", result.Path)
+				for _, line := range strings.Split(strings.TrimRight(result.Unit, "\n"), "\n") {
+					a.ui.Hint("  " + line)
 				}
 			}
-			in, err := a.serviceManager().Install(o)
-			for _, c := range in.Commands {
+			for _, c := range result.Commands {
 				a.ui.Hint("ran: " + c)
 			}
 			if err != nil {
 				return err
 			}
-			a.ui.OK("installed", in.Path)
-			for _, w := range in.Warnings {
-				a.ui.Warn("service", w)
+			for _, w := range result.Warnings {
+				a.ui.Warn("unit", w)
 			}
-			a.ui.Hint("It starts with your desktop session. Check it with aja daemon status; follow it with aja logs --daemon -f.")
+			if result.Started {
+				a.ui.OK("started", "the daemon runs, and starts with your desktop session; aja daemon status, aja logs --daemon -f")
+			}
 			return nil
 		},
 	}
@@ -183,13 +219,16 @@ upgrading the binary. The service is stopped like Ctrl-C, so a run in progress e
 func (a *App) daemonUninstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall",
-		Short: "Stop the daemon service and remove it",
+		Short: "Stop the daemon's systemd unit and remove it",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m := a.serviceManager()
+			m, err := a.serviceManager()
+			if err != nil {
+				return err
+			}
 			commands, err := m.Uninstall()
 			if errors.Is(err, service.ErrNotInstalled) {
-				a.ui.Println("The aja service is not installed.")
+				a.ui.Println("The aja unit is not installed.")
 				return nil
 			}
 			for _, c := range commands {
@@ -207,14 +246,17 @@ func (a *App) daemonUninstallCmd() *cobra.Command {
 func (a *App) daemonStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Whether the daemon service is installed and running",
+		Short: "Whether the daemon's systemd unit is installed, and whether the daemon runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st := a.serviceManager().Status()
-			if st.Installed {
-				a.ui.KV("service", fmt.Sprintf("%s, %s (%s)", st.Enabled, st.Active, st.Path))
+			m, err := a.serviceManager()
+			if err != nil {
+				return err
+			}
+			if st := m.Status(); st.Installed {
+				a.ui.KV("unit", fmt.Sprintf("%s, %s (%s)", st.Enabled, st.Active, st.Path))
 			} else {
-				a.ui.KV("service", "not installed (aja daemon install)")
+				a.ui.KV("unit", "not installed (aja daemon install)")
 			}
 			if d, running, err := daemon.ReadLock(a.paths.DataDir); err != nil {
 				return err

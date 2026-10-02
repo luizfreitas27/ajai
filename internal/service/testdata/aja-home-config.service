@@ -9,12 +9,17 @@ After=graphical-session.target
 [Service]
 Type=simple
 Environment="AJA_HOME=/home/u/aja 100%%"
+Environment=XDG_DATA_HOME=/data/u
 ExecStart="/opt/my apps/aja" daemon --config "/home/u/aja 100%%/config.yaml"
-# Stopped like Ctrl-C: the run in progress ends cleanly first.
+# Stopped like Ctrl-C: only the daemon gets SIGINT, its run ends cleanly and it
+# closes the Chrome it opened; whatever is left after it exits is killed.
 KillSignal=SIGINT
+KillMode=mixed
 TimeoutStopSec=3min
 Restart=on-failure
 RestartSec=30
+# Another aja daemon already runs: retrying would not help.
+RestartPreventExitStatus=3
 
 [Install]
 WantedBy=graphical-session.target

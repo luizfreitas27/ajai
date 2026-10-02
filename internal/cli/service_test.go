@@ -6,52 +6,63 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/service"
 )
 
-// fakeService replaces systemctl and the executable path for one test.
-func fakeService(t *testing.T, answers map[string]string, fail string) *[]string {
+// fakeSystemd replaces systemctl, the executable path and the settle wait for
+// one test. Its user manager keeps units under configHome.
+func fakeSystemd(t *testing.T, configHome string, answers map[string]string, fail string) *[]string {
 	t.Helper()
 	var calls []string
-	savedCtl, savedExe := systemctl, executable
-	t.Cleanup(func() { systemctl, executable = savedCtl, savedExe })
+	savedCtl, savedExe, savedSettle := systemctl, executable, unitSettle
+	t.Cleanup(func() { systemctl, executable, unitSettle = savedCtl, savedExe, savedSettle })
+	all := map[string]string{"show-environment": "HOME=/home/u\nXDG_CONFIG_HOME=" + configHome + "\nWAYLAND_DISPLAY=wayland-1",
+		"is-active graphical-session.target": "active", "is-enabled aja.service": "enabled", "is-active aja.service": "active"}
+	for k, v := range answers {
+		all[k] = v
+	}
 	systemctl = func(args ...string) (string, error) {
 		cmd := strings.Join(args, " ")
 		calls = append(calls, cmd)
 		if cmd == fail {
-			return "Failed to enable unit", errors.New("exit status 1")
+			return "", errors.New("exit status 1: Failed to enable unit")
 		}
-		return answers[cmd], nil
+		return all[cmd], nil
 	}
 	executable = func() (string, error) { return "/usr/local/bin/aja", nil }
+	unitSettle = time.Millisecond
 	return &calls
 }
 
 func TestDaemonInstallStatusAndUninstall(t *testing.T) {
 	h := newHarness(t)
-	h.env["XDG_CONFIG_HOME"] = t.TempDir()
-	calls := fakeService(t, map[string]string{
-		"is-active graphical-session.target": "active", "show-environment": "WAYLAND_DISPLAY=wayland-1",
-		"is-enabled aja.service": "enabled", "is-active aja.service": "active",
-	}, "")
-	unit := filepath.Join(h.env["XDG_CONFIG_HOME"], "systemd", "user", "aja.service")
+	configHome := t.TempDir()
+	h.env["XDG_DATA_HOME"] = "relative/data" // pinned into the unit, made absolute
+	calls := fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
+	unit := filepath.Join(configHome, "systemd", "user", "aja.service")
 
 	if _, out, _ := h.run("daemon", "status"); !strings.Contains(out, "not installed (aja daemon install)") || !strings.Contains(out, "not running") {
 		t.Errorf("%s", out)
 	}
+	fakeSystemd(t, configHome, nil, "") // once started, the unit is active
 	code, out, errText := h.run("daemon", "install")
-	if code != 0 || !strings.Contains(out, "installed") || !strings.Contains(out, unit) || !strings.Contains(out, "ran: systemctl --user enable aja.service") {
+	if code != 0 || !strings.Contains(out, "wrote") || !strings.Contains(out, unit) || !strings.Contains(out, "ExecStart=/usr/local/bin/aja daemon") ||
+		!strings.Contains(out, "ran: systemctl --user restart aja.service") || !strings.Contains(out, "started") {
 		t.Fatalf("%d %s %s", code, out, errText)
 	}
 	data, _ := os.ReadFile(unit)
-	if !strings.Contains(string(data), "ExecStart=/usr/local/bin/aja daemon") || !strings.Contains(string(data), "Environment=AJA_HOME="+h.home) {
-		t.Errorf("the service runs this binary with this AJA_HOME:\n%s", data)
+	abs, _ := filepath.Abs("relative/data")
+	if !strings.Contains(string(data), "Environment=AJA_HOME="+h.home) || !strings.Contains(string(data), "Environment=XDG_DATA_HOME="+abs) {
+		t.Errorf("the unit finds the same config and data as this shell:\n%s", data)
 	}
 	if _, out, _ := h.run("daemon", "status"); !strings.Contains(out, "enabled, active ("+unit+")") {
 		t.Errorf("%s", out)
 	}
-	*calls = nil
+	_ = calls
+	calls = fakeSystemd(t, configHome, nil, "")
 	if code, out, _ := h.run("daemon", "uninstall"); code != 0 || !strings.Contains(out, "removed") || !strings.Contains(strings.Join(*calls, ","), "disable --now aja.service") {
 		t.Errorf("%d %s %q", code, out, *calls)
 	}
@@ -63,25 +74,49 @@ func TestDaemonInstallStatusAndUninstall(t *testing.T) {
 	}
 }
 
-func TestDaemonInstallPassesTheConfigFlagAndReportsFailures(t *testing.T) {
+func TestDaemonInstallRefusesBesideAHandStartedDaemonAndReportsFailures(t *testing.T) {
 	h := newHarness(t)
-	h.env["XDG_CONFIG_HOME"] = t.TempDir()
-	fakeService(t, map[string]string{"is-active graphical-session.target": "inactive"}, "")
+	configHome := t.TempDir()
+	fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
+	if err := os.MkdirAll(h.home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := daemon.AcquireLock(h.home, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "aja daemon is already running outside systemd") {
+		t.Errorf("%d %s", code, errText)
+	}
+	lock.Release()
+
 	cfg := filepath.Join(t.TempDir(), "my config.yaml")
-	code, out, errText := h.run("--config", cfg, "daemon", "install")
-	if code != 0 {
+	fakeSystemd(t, configHome, nil, "")
+	if code, _, errText := h.run("--config", cfg, "daemon", "install"); code != 0 {
 		t.Fatalf("%s", errText)
 	}
-	data, _ := os.ReadFile(filepath.Join(h.env["XDG_CONFIG_HOME"], "systemd", "user", "aja.service"))
+	data, _ := os.ReadFile(filepath.Join(configHome, "systemd", "user", "aja.service"))
 	if !strings.Contains(string(data), `daemon --config "`+cfg+`"`) {
 		t.Errorf("%s", data)
 	}
-	if !strings.Contains(out, "graphical-session.target") {
-		t.Errorf("the warning must reach the user:\n%s", out)
-	}
 
-	fakeService(t, nil, "enable "+service.UnitName)
-	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "systemctl --user enable aja.service") {
+	fakeSystemd(t, configHome, nil, "enable "+service.UnitName)
+	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "systemctl --user enable aja.service: exit status 1") {
+		t.Errorf("%d %s", code, errText)
+	}
+}
+
+func TestASecondDaemonExitsWithTheStatusTheUnitDoesNotRetry(t *testing.T) {
+	h := newHarness(t)
+	if err := os.MkdirAll(h.home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := daemon.AcquireLock(h.home, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if code, _, errText := h.run("daemon"); code != service.ExitAlreadyRunning || !strings.Contains(errText, "already running") {
 		t.Errorf("%d %s", code, errText)
 	}
 }
