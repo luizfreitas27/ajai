@@ -99,3 +99,47 @@ func TestStatusAndLogsWithoutAnyRun(t *testing.T) {
 		t.Errorf("a corrupt state file is reported:\n%s", out)
 	}
 }
+
+func TestRunTelegramWarningsReachTheLogAndABrokenConfigStillReports(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		sent = append(sent, string(data))
+		w.WriteHeader(401)
+		_, _ = io.WriteString(w, `{"ok":false,"description":"Unauthorized"}`)
+	}))
+	defer srv.Close()
+	savedBase := notify.APIBase
+	notify.APIBase = srv.URL
+	defer func() { notify.APIBase = savedBase }()
+
+	h := newHarness(t)
+	h.initValid()
+	h.env["AJA_TELEGRAM_BOT_TOKEN"] = "1:tok" // half configured
+	saved := OpenBrowser
+	t.Cleanup(func() { OpenBrowser = saved })
+	OpenBrowser = func(ctx context.Context, o browser.Options) (browser.Browser, error) {
+		return nil, browser.ErrProfileInUse
+	}
+	h.run("run", "--dry-run")
+	logs, _ := os.ReadFile(filepath.Join(h.home, "logs", mustOnlyFile(t, filepath.Join(h.home, "logs"))))
+	if !strings.Contains(string(logs), "BOTH") || len(sent) != 0 {
+		t.Errorf("a half-configured Telegram warns in the log and sends nothing: %d sent\n%s", len(sent), logs)
+	}
+
+	h.env["AJA_TELEGRAM_CHAT_ID"] = "42"
+	if err := os.WriteFile(filepath.Join(h.home, "config.yaml"), []byte("search:\n  trems: [x]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errText := h.run("run", "--dry-run")
+	if code == 0 || !strings.Contains(errText, "trems") {
+		t.Fatalf("%d %s", code, errText)
+	}
+	if len(sent) != 1 || !strings.Contains(sent[0], "could not start a run") || !strings.Contains(sent[0], "trems") {
+		t.Errorf("a broken config file is reported too: %q", sent)
+	}
+	logs, _ = os.ReadFile(filepath.Join(h.home, "logs", mustOnlyFile(t, filepath.Join(h.home, "logs"))))
+	if !strings.Contains(string(logs), "401") || strings.Contains(string(logs), "1:tok") {
+		t.Errorf("a 401 is a warning in the log, without the token:\n%s", logs)
+	}
+}

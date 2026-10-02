@@ -13,7 +13,9 @@ The behaviour was ported, not reinvented: same selectors, same question heuristi
 
 ## Status
 
-Phase 1, the command-line tool, is complete. Next:
+Phase 1, the command-line tool, is in use; a few settings ported from the Python bot are
+not wired yet (non-stop runs, pause after filters, smooth scrolling) along with `aja run
+--json`, tracked in issue #16. Next:
 
 - **F2**: `aja panel`, the web control panel served by the same binary, and `aja schedule`
   with a daemon and generated system units.
@@ -27,6 +29,7 @@ runs headless and never stores your LinkedIn password.
 **Release binaries.** Download the archive for your system from the
 [Releases](https://github.com/luizfreitas27/aja/releases) page (Linux, macOS and Windows,
 amd64 and arm64), check it against `checksums.txt`, unpack it and put `aja` on your `PATH`.
+While the repository is private, only its collaborators can download them.
 
 **With Go 1.26+:**
 
@@ -131,15 +134,17 @@ scheduler), the job is skipped instead and the question waits for your answer in
 
 `markets.active` is `internacional` (foreign currency, annual salaries) or `brasil` (BRL,
 monthly salaries). Each market may set its own currency, salaries, search location, search
-terms and resume; blank values fall back to the general settings. Salary questions get the
+terms and resume; blank values fall back to the general settings (a blank currency to BRL or
+USD). Salary questions get the
 figure in the period they ask for, and the market's own period when they name none.
 Override per run with `aja run --market brasil`.
 
 ## Telegram
 
 With both secrets set, aja sends one message when a run ends (the summary, or the error that
-stopped it with what was done until then), one when a run cannot start, and a nudge when it
-waits for your login or your help. A failed send never affects the run, and the token never
+stopped it with what was done until then), one when a run cannot start (configuration,
+Chrome, AI settings; not a mistyped flag), and a nudge when it waits for your login or your
+help. A failed send never affects the run, and the token never
 reaches the log.
 
 To get the two values: create a bot with [@BotFather](https://t.me/BotFather) (it gives the
@@ -165,7 +170,7 @@ git tag v0.1.0 && git push origin v0.1.0
 
 `.goreleaser.yaml` builds the six binaries with the tag as the version (`aja version`), and
 publishes them with `checksums.txt`. Every pull request already builds them without
-publishing, so a tag cannot find a broken release.
+publishing, so a broken build shows up before a tag does.
 
 ## Honest note on detection
 

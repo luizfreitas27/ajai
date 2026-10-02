@@ -53,21 +53,24 @@ skipped and the question waits for you in "aja answers review".`,
 			if market != "" {
 				flags["markets.active"] = market
 			}
+			ctx := cmd.Context()
 			l, err := config.Load(a.paths, a.Env, flags)
-			if l == nil {
+			level := config.Defaults().Settings.LogLevel
+			if l != nil {
+				level = l.Config.Settings.LogLevel
+			}
+			a.openLog(level) // before the notifier, which logs its warnings through it
+			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
+			// too: an unattended run has nobody watching the terminal. The secrets come from
+			// the environment, so they are there even when the config file is broken.
+			secrets := a.secrets(l)
+			telegram := notify.New(secrets.TelegramBotToken, secrets.TelegramChatID, a.logger)
+			cannotStart := func(err error) error {
+				run.ReportStartFailure(ctx, telegram, err)
 				return err
 			}
-			ctx := cmd.Context()
-			telegram := notify.New(l.Secrets.TelegramBotToken, l.Secrets.TelegramChatID, a.logger)
-			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
-			// too: an unattended run has nobody watching the terminal.
-			cannotStart := func(err error) error {
-				if ctx.Err() == nil {
-					sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-					defer cancel()
-					telegram.Send(sendCtx, run.StartFailureMessage(err))
-				}
-				return err
+			if l == nil {
+				return cannotStart(err)
 			}
 			if !l.FileExisted {
 				return cannotStart(errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first"))
@@ -87,7 +90,6 @@ skipped and the question waits for you in "aja answers review".`,
 			}
 			opts.Unattended = run.ResolveUnattended(opts.Unattended, a.stdinIsTerminal(), a.stdoutIsTerminal())
 			cfg := l.Config
-			a.openLog(cfg.Settings.LogLevel)
 			st, err := a.openStore()
 			if err != nil {
 				return cannotStart(err)
@@ -357,4 +359,15 @@ func (a *App) follow(ctx context.Context, path string, offset int64) error {
 		}
 		_ = f.Close()
 	}
+}
+
+// secrets returns the loaded secrets, or, when the config file could not even be
+// parsed, the ones the environment and the .env file hold.
+func (a *App) secrets(l *config.Loaded) config.Secrets {
+	if l != nil {
+		return l.Secrets
+	}
+	env := a.Env
+	_ = env.LoadDotenv(a.paths.EnvFile)
+	return env.Secrets()
 }

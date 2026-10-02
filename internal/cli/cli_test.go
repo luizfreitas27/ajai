@@ -69,9 +69,10 @@ func TestResolveVersionPrefersTheReleaseTagThenTheModuleVersion(t *testing.T) {
 		info   *debug.BuildInfo
 		want   string
 	}{
-		{"v0.1.0", withModule("v9.9.9"), "v0.1.0"}, // a goreleaser build
-		{"dev", withModule("v0.2.0"), "v0.2.0"},    // go install ...@v0.2.0
-		{"dev", withModule("(devel)"), "dev"},      // go build in a checkout
+		{"v0.1.0", withModule("v9.9.9"), "v0.1.0"},                                                      // a goreleaser build
+		{"dev", withModule("v0.2.0"), "v0.2.0"},                                                         // go install ...@v0.2.0
+		{"dev", withModule("v0.0.0-20261002025052-8017aed917c5"), "v0.0.0-20261002025052-8017aed917c5"}, // go build in a git checkout
+		{"dev", withModule("(devel)"), "dev"},                                                           // go build -buildvcs=false, or outside a git checkout
 		{"", nil, "dev"},
 	}
 	for _, tc := range cases {

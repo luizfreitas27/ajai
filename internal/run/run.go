@@ -66,10 +66,14 @@ func ResolveUnattended(flag, stdinIsTerminal, stdoutIsTerminal bool) bool {
 	return flag || !stdinIsTerminal || !stdoutIsTerminal
 }
 
+// errInvalidOptions marks a mistake in the command line: the person typing it
+// sees the message, so it is not sent to Telegram.
+var errInvalidOptions = errors.New("invalid options")
+
 // Validate rejects option combinations that make no sense.
 func (o Options) Validate() error {
 	if o.Fast && !o.DryRun {
-		return errors.New("--fast is allowed only together with --dry-run")
+		return fmt.Errorf("%w: --fast is allowed only together with --dry-run", errInvalidOptions)
 	}
 	return nil
 }
@@ -165,9 +169,25 @@ func (r *Runner) saveState(sum *Summary, term string) {
 // Run executes one run and returns its summary. A cancelled context ends the
 // run cleanly with reason "stopped by user". The run is recorded in the store,
 // with the review queue's size, however it ends.
-func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
-	sum, err := r.run(ctx, opts)
+func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error) {
+	defer func() {
+		// A bug must not end a run silently: report it, then let it crash as before.
+		if p := recover(); p != nil {
+			if sum.Reason == "" {
+				sum.Reason = fmt.Sprintf("crashed: %v", p)
+			}
+			r.notifyEnd(sum, fmt.Errorf("aja crashed: %v", p))
+			panic(p)
+		}
+	}()
+	sum, err = r.run(ctx, opts)
+	if err != nil && sum.Reason == "" {
+		sum.Reason = "error: " + err.Error()
+	}
 	if sum.RunID == 0 {
+		if !errors.Is(err, errInvalidOptions) {
+			r.notifyEnd(sum, err)
+		}
 		return sum, err
 	}
 	if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
