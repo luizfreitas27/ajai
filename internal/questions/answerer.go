@@ -31,7 +31,7 @@ const UnknownTitle = "Unknown"
 type Question struct {
 	Label      string   // the visible title; for a checkbox, the box's own visible text
 	GroupTitle string   // checkbox only: the hidden group title, "" when none
-	Kind       Kind     //
+	Kind       Kind     // which control this is
 	Options    []string // select and radio: the option texts in order
 	Current    string   // select: selected text; radio: selected label; text/textarea: value; checkbox: "checked" or ""
 }
@@ -46,7 +46,7 @@ type Job struct {
 // Action is what the browser layer should do with a control.
 type Action int
 
-// Actions.
+// The actions, in the order the browser layer handles them.
 const (
 	Leave   Action = iota // nothing to do: prefilled, or not ours to touch
 	Fill                  // type Value into a text or textarea control
@@ -61,6 +61,7 @@ type Decision struct {
 	Value     string // Fill: the text; Choose: the option text; Blocked/Leave: "" or the kept value
 	Option    int    // Choose: index into Question.Options
 	Typeahead bool   // Fill: the control is a typeahead that needs ARROW_DOWN + ENTER after typing
+	Clear     bool   // Blocked on a text control with overwrite on: the prefilled text is wiped, as the Python bot did
 	Source    string // "config", "memory", "ai", "prefilled", ""
 	Reason    string // Blocked: why, in words
 }
@@ -97,21 +98,23 @@ func New(cfg config.Config, mem Memory, ai AI, logger *slog.Logger) *Answerer {
 
 // ------------------------------------------------------------------ classification
 
-// WorkAuthorizationAnswer is the configured answer for a visa / authorization /
-// citizenship question, else "". Three distinct questions: sponsorship first
-// ("sponsor a new work visa or work authorization" is a sponsorship question),
-// authorization before citizenship ("citizen or otherwise legally authorized"
-// is a Yes/No question).
-func (a *Answerer) WorkAuthorizationAnswer(label string) string {
+// WorkAuthorizationAnswer classifies a visa / authorization / citizenship
+// question and returns its configured answer. matched is true when the label
+// belongs to one of the three families even if the setting is blank: such a
+// question is never handed to the location rules or the fallbacks. Order
+// matters: sponsorship first ("sponsor a new work visa or work authorization" is
+// a sponsorship question), authorization before citizenship ("citizen or
+// otherwise legally authorized" is a Yes/No question).
+func (a *Answerer) WorkAuthorizationAnswer(label string) (matched bool, answer string) {
 	switch {
 	case textmatch.Has(label, visaTerms...):
-		return a.Cfg.Questions.RequireVisa
+		return true, a.Cfg.Questions.RequireVisa
 	case textmatch.Has(label, authorizationTerms...):
-		return a.Cfg.Questions.LegallyAuthorized
+		return true, a.Cfg.Questions.LegallyAuthorized
 	case textmatch.Has(label, citizenshipTerms...):
-		return a.Cfg.Questions.Citizenship
+		return true, a.Cfg.Questions.Citizenship
 	}
-	return ""
+	return false, ""
 }
 
 // IsSensitive is true for a work-authorization, visa, citizenship, clearance,
@@ -171,7 +174,7 @@ func (a *Answerer) salaryAnswer(label string) string {
 	case textmatch.Has(label, monthTerms...):
 		return markets.FormatMoney(monthly)
 	case textmatch.Has(label, "lakh", "lakhs"):
-		return markets.FormatMoney(roundTo(annual/100000, 2))
+		return pythonRound(annual/100000, 2)
 	case textmatch.Has(label, annualTerms...):
 		return markets.FormatMoney(annual)
 	case m.SalaryPeriod == markets.Monthly:
@@ -181,9 +184,14 @@ func (a *Answerer) salaryAnswer(label string) string {
 	}
 }
 
-func roundTo(v float64, decimals int) float64 {
-	f, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'f', decimals, 64), 64)
-	return f
+// pythonRound renders str(round(v, decimals)): "12.0", "2.5", "2.75".
+func pythonRound(v float64, decimals int) string {
+	text := strconv.FormatFloat(v, 'f', decimals, 64)
+	text = strings.TrimRight(text, "0")
+	if strings.HasSuffix(text, ".") {
+		text += "0"
+	}
+	return text
 }
 
 func (a *Answerer) noticeAnswer(label string) string {
@@ -199,9 +207,9 @@ func (a *Answerer) noticeAnswer(label string) string {
 
 // ------------------------------------------------------------------ the fallbacks
 
-// lookupUnlessSensitive is a memory lookup guarded by the sensitive rule.
-func (a *Answerer) lookupUnlessSensitive(label, kind string, approximate bool) (*memory.Remembered, bool) {
-	if a.Memory == nil || IsSensitive(label) {
+// lookup is a memory lookup; callers gate sensitive questions before calling.
+func (a *Answerer) lookup(label, kind string, approximate bool) (*memory.Remembered, bool) {
+	if a.Memory == nil {
 		return nil, false
 	}
 	found, approx, err := a.Memory.Lookup(label, kind, approximate)
@@ -252,7 +260,7 @@ func (a *Answerer) answerFromMemoryOrAI(label string, kind Kind, job Job) (strin
 	if IsSensitive(label) {
 		return "", ""
 	}
-	if found, approx := a.lookupUnlessSensitive(label, string(kind), true); found != nil {
+	if found, approx := a.lookup(label, string(kind), true); found != nil {
 		a.recordUse(found, job.Link)
 		a.Logger.Info("memory answered", "question", label, "answer", found.Answer, "state", found.State, "approximate", approx)
 		return found.Answer, "memory"
@@ -275,7 +283,7 @@ func (a *Answerer) optionFromMemoryOrAI(label string, kind Kind, options []strin
 	if IsSensitive(label) {
 		return -1, ""
 	}
-	if found, approx := a.lookupUnlessSensitive(label, string(kind), true); found != nil {
+	if found, approx := a.lookup(label, string(kind), true); found != nil {
 		matched := indexOf(options, found.Answer)
 		if matched < 0 {
 			matched = MatchAnswerToOption(found.Answer, options)
@@ -330,15 +338,20 @@ func (a *Answerer) Answer(q Question, job Job) Decision {
 func blocked(reason string) Decision { return Decision{Action: Blocked, Option: -1, Reason: reason} }
 
 func (a *Answerer) answerSelect(q Question, job Job) Decision {
-	label := strings.ToLower(q.Label)
+	label := q.Label
 	if !a.Cfg.Questions.OverwritePrevious && !IsPlaceholder(q.Current) {
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
 	}
 	answer := ""
+	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
 	switch {
-	case a.WorkAuthorizationAnswer(label) != "":
-		answer = a.WorkAuthorizationAnswer(label)
-	case textmatch.Has(label, "email", "phone"):
+	case authMatched:
+		if authAnswer == "" {
+			return blocked("a work-authorization question with no configured answer is never guessed")
+		}
+		answer = authAnswer
+	case textmatch.Has(label, "email", "phone") && strings.TrimSpace(q.Current) != "":
+		// Phone country code and the like: LinkedIn's own value stands, even a placeholder.
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
 	case textmatch.Has(label, "gender", "sex", "sexual orientation", "gênero", "genero", "sexo"):
 		answer = a.Cfg.Personals.Gender
@@ -362,14 +375,18 @@ func (a *Answerer) answerSelect(q Question, job Job) Decision {
 }
 
 func (a *Answerer) answerRadio(q Question, job Job) Decision {
-	label := strings.ToLower(q.Label)
+	label := q.Label
 	if !a.Cfg.Questions.OverwritePrevious && q.Current != "" {
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
 	}
 	answer := ""
+	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
 	switch {
-	case a.WorkAuthorizationAnswer(label) != "":
-		answer = a.WorkAuthorizationAnswer(label)
+	case authMatched:
+		if authAnswer == "" {
+			return blocked("a work-authorization question with no configured answer is never guessed")
+		}
+		answer = authAnswer
 	case textmatch.Has(label, "veteran", "protected", "veterano"):
 		answer = a.Cfg.Personals.Veteran
 	case textmatch.Has(label, disabilityTerms...):
@@ -383,7 +400,7 @@ func (a *Answerer) answerRadio(q Question, job Job) Decision {
 // configured) the memory and the AI. Never the first option.
 func (a *Answerer) chooseOption(q Question, label, answer string, job Job) Decision {
 	if answer != "" {
-		if i := indexOf(q.Options, answer); i >= 0 {
+		if i := indexOfNormalised(q.Options, answer); i >= 0 {
 			return Decision{Action: Choose, Option: i, Value: q.Options[i], Source: "config"}
 		}
 	}
@@ -392,26 +409,29 @@ func (a *Answerer) chooseOption(q Question, label, answer string, job Job) Decis
 		matched, source = a.optionFromMemoryOrAI(q.Label, q.Kind, q.Options, job)
 	}
 	if matched < 0 {
-		what := answer
-		if what == "" {
-			what = "a configured answer"
+		reason := "no configured, remembered or AI answer"
+		if answer != "" {
+			reason = fmt.Sprintf("no option matched the configured answer %q", answer)
 		}
-		a.Logger.Info("no option matched; leaving it unanswered instead of guessing", "question", q.Label, "answer", what)
-		return blocked(fmt.Sprintf("no option matched %q", what))
+		a.Logger.Info("leaving it unanswered instead of guessing", "question", q.Label, "why", reason)
+		d := blocked(reason)
+		d.Value = q.Current // whatever LinkedIn had stays
+		return d
 	}
 	return Decision{Action: Choose, Option: matched, Value: q.Options[matched], Source: source}
 }
 
 func (a *Answerer) answerText(q Question, job Job) Decision {
-	label := strings.ToLower(q.Label)
+	label := q.Label
 	if q.Current != "" && !a.Cfg.Questions.OverwritePrevious {
 		return Decision{Action: Leave, Value: q.Current, Source: "prefilled"}
 	}
 	p, qs := a.Cfg.Personals, a.Cfg.Questions
 	answer, fallbackAllowed, typeahead := "", true, false
+	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
 	switch {
-	case a.WorkAuthorizationAnswer(label) != "":
-		answer = a.WorkAuthorizationAnswer(label)
+	case authMatched:
+		answer, fallbackAllowed = authAnswer, false
 	case textmatch.Has(label, "experience", "years", "experiência", "experiencia", "anos"):
 		// Only the total. "years of Kubernetes experience" and "experience with Python" ask about ONE skill.
 		withoutUnit := label
@@ -476,13 +496,15 @@ func (a *Answerer) answerText(q Question, job Job) Decision {
 	}
 	if answer == "" {
 		a.Logger.Info("no answer for the text question; leaving it empty", "question", q.Label)
-		return blocked("no answer")
+		d := blocked("no answer")
+		d.Clear = q.Current != "" // overwrite is on and nothing replaces the prefill: the Python bot cleared it
+		return d
 	}
 	return Decision{Action: Fill, Value: answer, Typeahead: typeahead, Source: source}
 }
 
 func (a *Answerer) answerTextarea(q Question, job Job) Decision {
-	label := strings.ToLower(q.Label)
+	label := q.Label
 	if q.Current != "" && !a.Cfg.Questions.OverwritePrevious {
 		return Decision{Action: Leave, Value: q.Current, Source: "prefilled"}
 	}
@@ -497,7 +519,9 @@ func (a *Answerer) answerTextarea(q Question, job Job) Decision {
 		answer, source = a.answerFromMemoryOrAI(q.Label, Textarea, job)
 	}
 	if answer == "" {
-		return blocked("no answer")
+		d := blocked("no answer")
+		d.Clear = q.Current != ""
+		return d
 	}
 	return Decision{Action: Fill, Value: answer, Source: source}
 }
@@ -511,9 +535,9 @@ func (a *Answerer) answerCheckbox(q Question, job Job) Decision {
 	}
 	key := CheckboxKey(q.GroupTitle, q.Label)
 	var remembered *memory.Remembered
-	if key != "" {
+	if key != "" && !IsSensitive(key) {
 		// Exact only: a near-identical attestation at another employer is a different legal text.
-		remembered, _ = a.lookupUnlessSensitive(key, string(Checkbox), false)
+		remembered, _ = a.lookup(key, string(Checkbox), false)
 	}
 	if remembered != nil && remembered.State == "approved" && remembered.Answer == "checked" {
 		a.recordUse(remembered, job.Link)
@@ -521,7 +545,7 @@ func (a *Answerer) answerCheckbox(q Question, job Job) Decision {
 		return Decision{Action: Tick, Value: "checked", Source: "memory"}
 	}
 	reason := "it cannot be classified"
-	if term := AttestationTerm(strings.TrimSpace(q.GroupTitle + " " + q.Label)); term != "" {
+	if term := AttestationTerm(key); term != "" {
 		reason = fmt.Sprintf("it is an attestation or consent (%q)", term)
 	}
 	a.Logger.Info("not ticking a box; it is not something to guess", "question", key, "why", reason)

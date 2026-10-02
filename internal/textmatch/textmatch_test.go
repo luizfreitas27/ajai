@@ -1,6 +1,9 @@
 package textmatch
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFindWordMatchesWholeWordsOnly(t *testing.T) {
 	cases := []struct {
@@ -62,6 +65,12 @@ func TestRatioBehavesLikeDifflib(t *testing.T) {
 		// ...and 0.9556 for a near-identical attestation, which is why checkboxes never match approximately.
 		{"i agree to the terms and conditions of acme", "i agree to the terms and conditions of acme inc", 0.9555, 0.9557},
 	}
+	long1 := strings.Repeat("i consent to the processing of my personal data by acme for recruitment purposes ", 4)
+	long2 := strings.Repeat("i agree that globex may store my application and contact me about future openings ", 4)
+	cases = append(cases, struct {
+		a, b     string
+		min, max float64
+	}{long1, long2, 0, 0.5}) // difflib: 0.18 with autojunk; without it these would look 0.9 alike
 	for _, tc := range cases {
 		got := Ratio(tc.a, tc.b)
 		if got < tc.min || got > tc.max {

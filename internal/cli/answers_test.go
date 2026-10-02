@@ -51,4 +51,11 @@ func TestAnswersListApproveEditDelete(t *testing.T) {
 	if _, out, _ := h.run("answers", "list"); !strings.Contains(out, "No remembered answers.") {
 		t.Errorf("%s", out)
 	}
+	h.run("import", pythonCheckout(t))
+	if code, out, _ := h.run("answers", "clear", "--state", "pending"); code != 0 || !strings.Contains(out, "1 pending answer(s)") {
+		t.Errorf("%d %s", code, out)
+	}
+	if code, _, errText := h.run("answers", "clear"); code == 0 || !strings.Contains(errText, "--state is required") {
+		t.Errorf("%d %s", code, errText)
+	}
 }

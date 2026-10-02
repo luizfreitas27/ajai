@@ -65,9 +65,10 @@ func (m *Memory) Lookup(label, kind string, approximate bool) (*Remembered, bool
 	if err != nil {
 		return nil, false, err
 	}
+	// Oldest first, so on an equal ratio the entry remembered first wins, as in Python.
 	var best *Remembered
 	bestRatio := 0.0
-	for i := range all {
+	for i := len(all) - 1; i >= 0; i-- {
 		if all[i].Kind != kind {
 			continue
 		}
@@ -98,6 +99,9 @@ func (m *Memory) Remember(label, kind, answer, source, jobLink string) (*Remembe
 		state = "approved"
 	}
 	key := textmatch.Normalise(label)
+	if key == "" {
+		return nil, fmt.Errorf("label %q normalises to nothing; it cannot be remembered", label)
+	}
 	existing, err := m.st.FindAnswer(kind, key)
 	if err != nil {
 		return nil, err
@@ -175,6 +179,15 @@ func (m *Memory) Delete(id string) error {
 		return ErrUnknownID
 	}
 	return nil
+}
+
+// DeleteAll forgets every entry in state (e.g. the whole pending queue) and
+// returns how many were removed.
+func (m *Memory) DeleteAll(state string) (int, error) {
+	if !contains(States, state) {
+		return 0, fmt.Errorf("unknown review state %q", state)
+	}
+	return m.st.DeleteAnswersInState(state)
 }
 
 func contains(list []string, v string) bool {

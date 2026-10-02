@@ -70,6 +70,18 @@ func alnumOnly(s string) string {
 	return b.String()
 }
 
+// indexOfNormalised is indexOf with whitespace collapsed on both sides, the
+// XPath normalize-space() the Python radio branch used.
+func indexOfNormalised(options []string, text string) int {
+	want := strings.Join(strings.Fields(text), " ")
+	for i, o := range options {
+		if strings.Join(strings.Fields(o), " ") == want {
+			return i
+		}
+	}
+	return -1
+}
+
 // indexOf returns the index of an option equal to text, or -1.
 func indexOf(options []string, text string) int {
 	for i, o := range options {

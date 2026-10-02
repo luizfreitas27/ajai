@@ -5,6 +5,8 @@
 // helpers; the term lists below are copied verbatim, English and Portuguese.
 package questions
 
+import "strings"
+
 // Work-authorization wording overlaps the location questions ("United States"
 // contains "state") and the two families collide in every branch, so it is
 // classified first.
@@ -65,8 +67,10 @@ var (
 // offered to the AI, and a dropdown sitting on one counts as unanswered.
 var OptionPlaceholders = []string{"Select an option", "Select", "Please select", "Choose an option", ""}
 
-// IsPlaceholder reports whether an option text is one of OptionPlaceholders.
+// IsPlaceholder reports whether an option text is one of OptionPlaceholders
+// (surrounding whitespace ignored).
 func IsPlaceholder(text string) bool {
+	text = strings.TrimSpace(text)
 	for _, p := range OptionPlaceholders {
 		if text == p {
 			return true

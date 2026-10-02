@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ with a review state. Pending answers (from the AI, or a checkbox the bot saw and
 alone) are still used; approving confirms them, editing corrects them, deleting forgets
 them. Only an approved answer may tick a checkbox.`,
 	}
-	cmd.AddCommand(a.answersListCmd(), a.answersApproveCmd(), a.answersEditCmd(), a.answersDeleteCmd())
+	cmd.AddCommand(a.answersListCmd(), a.answersApproveCmd(), a.answersEditCmd(), a.answersDeleteCmd(), a.answersClearCmd())
 	return cmd
 }
 
@@ -40,8 +41,8 @@ func (a *App) answersListCmd() *cobra.Command {
 		Short: "List remembered answers, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if state != "" && state != "pending" && state != "approved" {
-				return errors.New("--state takes pending or approved")
+			if state != "" && !slices.Contains(memory.States, state) {
+				return errors.New("--state takes " + strings.Join(memory.States, " or "))
 			}
 			mem, err := a.openMemory()
 			if err != nil {
@@ -60,14 +61,21 @@ func (a *App) answersListCmd() *cobra.Command {
 				return enc.Encode(entries)
 			}
 			if len(entries) == 0 {
-				a.ui.Println("No remembered answers" + map[bool]string{true: " in state " + state, false: ""}[state != ""] + ".")
+				if state == "" {
+					a.ui.Println("No remembered answers.")
+				} else {
+					a.ui.Println("No remembered answers in state " + state + ".")
+				}
 				return nil
 			}
 			for _, e := range entries {
 				a.ui.Printf("%s  %-8s %-9s %-5s  %s\n", e.ID, e.State, e.Kind, e.Source, e.Label)
 				a.ui.Hint(fmt.Sprintf("answer: %q  uses: %d", e.Answer, e.Uses))
 			}
-			pending, _ := mem.PendingCount()
+			pending, err := mem.PendingCount()
+			if err != nil {
+				return err
+			}
 			a.ui.Println()
 			a.ui.Printf("%d pending\n", pending)
 			return nil
@@ -144,4 +152,31 @@ func (a *App) answersDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func (a *App) answersClearCmd() *cobra.Command {
+	var state string
+	cmd := &cobra.Command{
+		Use:   "clear --state pending|approved",
+		Short: "Forget every remembered answer in one review state",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !slices.Contains(memory.States, state) {
+				return errors.New("--state is required and takes " + strings.Join(memory.States, " or "))
+			}
+			mem, err := a.openMemory()
+			if err != nil {
+				return err
+			}
+			n, err := mem.DeleteAll(state)
+			if err != nil {
+				return err
+			}
+			a.logger.Info("answers cleared", "state", state, "count", n)
+			a.ui.OK("cleared", fmt.Sprintf("%d %s answer(s)", n, state))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&state, "state", "", "which review state to clear")
+	return cmd
 }

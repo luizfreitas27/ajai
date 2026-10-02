@@ -44,7 +44,9 @@ go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
 
 ## Conventions
 
-- Standard Go style; `gofmt`, `go vet` and golangci-lint are the linters.
+- Standard Go style; `gofmt`, `go vet` and golangci-lint are the linters. CI formats with the
+  Go version in `go.mod`; a newer local Go may align long map keys differently, so check with
+  `$(GOTOOLCHAIN=go$(sed -n 's/^go //p' go.mod) go env GOROOT)/bin/gofmt -l .` before pushing.
 - Exported identifiers get doc comments. Tests are table-driven where there is a table.
 - Tests that need a real Chrome go behind `//go:build browser`.
 - CLI and log text is English. Question heuristics match English and Portuguese labels.

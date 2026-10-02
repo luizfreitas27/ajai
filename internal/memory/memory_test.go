@@ -122,6 +122,42 @@ func TestRememberingAgainUpdatesInsteadOfDuplicatingAndTheUsersWordStands(t *tes
 	}
 }
 
+func TestALabelThatNormalisesToNothingIsNeverRemembered(t *testing.T) {
+	m, _ := fresh(t)
+	for _, label := range []string{"", "   ?!", "职位"} {
+		if _, err := m.Remember(label, "text", "x", "ai", ""); err == nil {
+			t.Errorf("%q was remembered; two such labels would collide", label)
+		}
+	}
+}
+
+func TestOnAnEqualRatioTheOldestEntryWins(t *testing.T) {
+	m, _ := fresh(t)
+	old := rem(t, m, "years with go aaa1", "text", "OLD", "ai", "")
+	rem(t, m, "years with go aaa2", "text", "NEW", "ai", "")
+	found, approximate, _ := m.Lookup("years with go aaa3", "text", true)
+	if found == nil || !approximate || found.ID != old.ID {
+		t.Errorf("%+v", found)
+	}
+}
+
+func TestDeleteAllClearsOneState(t *testing.T) {
+	m, _ := fresh(t)
+	rem(t, m, "Q1", "text", "A1", "ai", "")
+	rem(t, m, "Q2", "text", "A2", "ai", "")
+	rem(t, m, "Q3", "text", "A3", "user", "")
+	n, err := m.DeleteAll("pending")
+	if err != nil || n != 2 {
+		t.Errorf("%d %v", n, err)
+	}
+	if all, _ := m.List(""); len(all) != 1 || all[0].State != "approved" {
+		t.Errorf("%+v", all)
+	}
+	if _, err := m.DeleteAll("maybe"); err == nil {
+		t.Error("unknown state")
+	}
+}
+
 func TestInvalidKindOrSourceIsRejected(t *testing.T) {
 	m, _ := fresh(t)
 	if _, err := m.Remember("q", "slider", "1", "ai", ""); err == nil {

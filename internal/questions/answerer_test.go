@@ -1,6 +1,8 @@
 package questions
 
 import (
+	"bytes"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -71,15 +73,55 @@ func TestWorkAuthorizationBeatsLocationAndTheThreeQuestionsDiffer(t *testing.T) 
 	cfg.Questions.RequireVisa, cfg.Questions.LegallyAuthorized = "SPONSORSHIP", "AUTHORIZED"
 	a, _ := answerer(t, cfg)
 	cases := map[string]string{
-		"are you currently legally authorized to work in the united states?":                                                      "AUTHORIZED",
-		"what state do you live in?":                                                                                              "",
-		"will you now or in the future require sponsorship for employment visa status?":                                           "SPONSORSHIP",
-		"what is your citizenship status?":                                                                                        citizenship,
+		"are you currently legally authorized to work in the united states?":            "AUTHORIZED",
+		"what state do you live in?":                                                    "",
+		"will you now or in the future require sponsorship for employment visa status?": "SPONSORSHIP",
+		"what is your citizenship status?":                                              citizenship,
 		"would you need your next employer to sponsor a new u.s. work visa or work authorization that you do not currently hold?": "SPONSORSHIP",
 	}
 	for label, want := range cases {
-		if got := a.WorkAuthorizationAnswer(label); got != want {
+		if _, got := a.WorkAuthorizationAnswer(label); got != want {
 			t.Errorf("%q -> %q, want %q", label, got, want)
+		}
+	}
+	if matched, _ := a.WorkAuthorizationAnswer("what state do you live in?"); matched {
+		t.Error("a location question is not a work-authorization one")
+	}
+}
+
+func TestABlankWorkAuthorizationSettingNeverFallsThroughToLocationOrFallbacks(t *testing.T) {
+	cfg := pinned()
+	cfg.Questions.RequireVisa, cfg.Questions.LegallyAuthorized, cfg.Questions.Citizenship = "", "", ""
+	a, mem := answerer(t, cfg)
+	a.AI = &fakeAI{replies: map[string]string{"Are you authorized to work in this country?": "Yes"}}
+	for _, q := range []Question{
+		text("Are you legally authorized to work in this state?"),
+		text("Will you require visa sponsorship to work in this country?"),
+		dropdown("Are you authorized to work in this country?", "Select an option", "Yes", "Testland"),
+		dropdown("Citizenship country", "Select an option", "Testland", "Other"),
+		radio("Are you a citizen of this country?", "Yes", "No"),
+	} {
+		if _, err := mem.Remember(q.Label, string(q.Kind), "leaked", "user", ""); err != nil {
+			t.Fatal(err)
+		}
+		if d := a.Answer(q, job); d.Action != Blocked || d.Value == state || d.Value == "Testland" || d.Value == "Yes" {
+			t.Errorf("%q: %+v (a false legal answer on a real application)", q.Label, d)
+		}
+	}
+	if len(a.AI.(*fakeAI).calls) != 0 {
+		t.Error("the AI was asked a work-authorization question")
+	}
+}
+
+func TestTheThreeVisaLabelsFromTheLiveRunAreSponsorshipNotLocation(t *testing.T) {
+	a, _ := answerer(t, pinned())
+	for _, label := range []string{
+		"Will you now or in the future require sponsorship for employment visa status?",
+		"Would you need your next employer to sponsor a new U.S. work visa or work authorization that you do not currently hold? (e.g. new H-1B, or TN work status)",
+		"Would you need your next employer to transfer or continue an existing U.S. work visa or work authorization? (e.g. H-1B transfer, OPT/STEM OPT employer change)",
+	} {
+		if d := a.Answer(dropdown(label, "Select an option", "Yes", "No"), job); d.Action != Choose || d.Value != "Yes" {
+			t.Errorf("%q: %+v", label, d)
 		}
 	}
 }
@@ -127,7 +169,8 @@ func TestDropdownRouting(t *testing.T) {
 	a, _ := answerer(t, pinned())
 	for _, tc := range cases {
 		d := a.Answer(tc.q, job)
-		if d.Action != tc.wantAction || d.Value != tc.wantValue {
+		// A Blocked decision keeps whatever LinkedIn had (the placeholder) in Value; the option is what matters.
+		if d.Action != tc.wantAction || (d.Action != Blocked && d.Value != tc.wantValue) || (d.Action == Blocked && d.Option != -1) {
 			t.Errorf("%s: got %+v, want %v %q", tc.name, d, tc.wantAction, tc.wantValue)
 		}
 	}
@@ -184,7 +227,7 @@ func TestRadioRouting(t *testing.T) {
 	}
 	for _, tc := range cases {
 		d := a.Answer(tc.q, job)
-		if d.Action != tc.wantAction || d.Value != tc.wantValue {
+		if d.Action != tc.wantAction || (d.Action != Blocked && d.Value != tc.wantValue) {
 			t.Errorf("%s: got %+v, want %v %q", tc.name, d, tc.wantAction, tc.wantValue)
 		}
 	}
@@ -266,6 +309,9 @@ func TestTheCityQuestionTypesTheCityAndIsATypeahead(t *testing.T) {
 	a, _ = answerer(t, cfg)
 	if d := a.Answer(text("City"), Job{WorkLocation: "Lisbon"}); d.Value != "Lisbon" {
 		t.Errorf("falls back to the job's location: %+v", d)
+	}
+	if d := a.Answer(text("Localização"), Job{WorkLocation: "Remoto"}); d.Value != "Remoto" {
+		t.Errorf("%+v", d)
 	}
 }
 
@@ -390,10 +436,115 @@ func TestSensitiveQuestionsNeverReachMemory(t *testing.T) {
 
 func TestTheEmailQuestionIsNeverGuessedOrRemembered(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("Email address", "text", "made.up@example.com", "ai", ""); err != nil {
+	ai := &fakeAI{replies: map[string]string{"Email address": "made.up@example.com"}}
+	a.AI = ai
+	if d := a.Answer(text("Email address"), job); d.Action != Blocked {
+		t.Errorf("%+v", d)
+	}
+	if all, _ := mem.List(""); len(all) != 0 || len(ai.calls) != 0 {
+		t.Errorf("email reached the AI (%d calls) or the memory (%d entries)", len(ai.calls), len(all))
+	}
+}
+
+func TestSensitiveTextQuestionsNeverReachTheAIAndStayEmpty(t *testing.T) {
+	cfg := pinned()
+	cfg.Questions.DesiredSalary = 0
+	a, _ := answerer(t, cfg)
+	ai := &fakeAI{replies: map[string]string{}}
+	a.AI = ai
+	for _, label := range []string{"Do you have a disability?", "Are you a protected veteran?", "Do you hold an active security clearance?"} {
+		ai.replies[label] = "guessed"
+		if d := a.Answer(text(label), job); d.Action != Blocked || d.Value != "" {
+			t.Errorf("%q: %+v", label, d)
+		}
+	}
+	// A salary question is sensitive too; with the salary configured as 0 it is answered "0", never guessed.
+	ai.replies["What are your salary expectations in USD?"] = "999999"
+	if d := a.Answer(text("What are your salary expectations in USD?"), job); d.Value != "0" || d.Source != "config" {
+		t.Errorf("%+v", d)
+	}
+	if len(ai.calls) != 0 {
+		t.Errorf("AI asked: %v", ai.calls)
+	}
+}
+
+func TestAnUnrelatedQuestionBelowTheThresholdGoesToTheAIAndIsRemembered(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", ""); err != nil {
 		t.Fatal(err)
 	}
-	if d := a.Answer(text("Email address"), job); d.Action != Blocked {
+	ai := &fakeAI{replies: map[string]string{"How many years of experience do you have with Kubernetes?": "2"}}
+	a.AI = ai
+	if d := a.Answer(text("How many years of experience do you have with Kubernetes?"), job); d.Value != "2" || d.Source != "ai" {
+		t.Errorf("%+v", d)
+	}
+	if all, _ := mem.List(""); len(all) != 2 || len(ai.calls) != 1 {
+		t.Errorf("%d entries, %d calls", len(all), len(ai.calls))
+	}
+}
+
+func TestAnApproximateMemoryHitIsLoggedThroughTheFormPath(t *testing.T) {
+	var log bytes.Buffer
+	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	logger := slog.New(slog.NewTextHandler(&log, nil))
+	mem := memory.New(st, logger)
+	a := New(pinned(), mem, nil, logger)
+	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", ""); err != nil {
+		t.Fatal(err)
+	}
+	if d := a.Answer(text("How many years experience do you have with Python?"), job); d.Value != "4" {
+		t.Errorf("%+v", d)
+	}
+	if !strings.Contains(log.String(), "approximate") {
+		t.Errorf("log lacks the approximation:\n%s", log.String())
+	}
+}
+
+func TestOverwriteOnWithNoAnswerClearsThePrefillAndAPlaceholderWithSpacesIsAPlaceholder(t *testing.T) {
+	cfg := pinned()
+	cfg.Questions.OverwritePrevious = true
+	a, _ := answerer(t, cfg)
+	d := a.Answer(Question{Label: "How many people did you manage?", Kind: Text, Current: "12"}, job)
+	if d.Action != Blocked || !d.Clear {
+		t.Errorf("%+v", d)
+	}
+	a, _ = answerer(t, pinned())
+	d = a.Answer(Question{Label: "Do you have an active security clearance?", Kind: Select, Options: []string{"Select an option ", "Yes", "No"}, Current: "Select an option "}, job)
+	if d.Action != Blocked {
+		t.Errorf("a placeholder with trailing spaces was taken as prefilled: %+v", d)
+	}
+	// An unknown dropdown already holding a real value, with overwrite on: reported, value kept.
+	cfg.Questions.OverwritePrevious = true
+	a, _ = answerer(t, cfg)
+	d = a.Answer(Question{Label: "Favourite colour", Kind: Select, Options: []string{"Select an option", "Red", "Blue"}, Current: "Red"}, job)
+	if d.Action != Blocked || d.Value != "Red" || !strings.Contains(d.Reason, "no configured, remembered or AI answer") {
+		t.Errorf("%+v", d)
+	}
+}
+
+func TestLakhsUsePythonsRounding(t *testing.T) {
+	cfg := pinned()
+	cfg.Questions.DesiredSalary = 1200000
+	a, _ := answerer(t, cfg)
+	if d := a.Answer(text("Expected CTC in lakhs"), job); d.Value != "12.0" {
+		t.Errorf("%+v", d)
+	}
+	cfg.Questions.DesiredSalary = 275000
+	a, _ = answerer(t, cfg)
+	if d := a.Answer(text("Expected CTC in lakhs"), job); d.Value != "2.75" {
+		t.Errorf("%+v", d)
+	}
+}
+
+func TestARadioOptionWithExtraWhitespaceStillMatchesExactly(t *testing.T) {
+	cfg := pinned()
+	cfg.Personals.Veteran = "I am not a protected veteran"
+	a, _ := answerer(t, cfg)
+	if d := a.Answer(radio("Veteran status", " I am not a  protected veteran ", "Other"), job); d.Option != 0 || d.Source != "config" {
 		t.Errorf("%+v", d)
 	}
 }
@@ -424,7 +575,7 @@ func TestRememberedDropdownAndRadioAnswersAreSnappedToThisFormsOptions(t *testin
 	}
 	for _, tc := range cases {
 		d := a.Answer(tc.q, job)
-		if (d.Action == Blocked) != tc.blocked || d.Value != tc.wantValue {
+		if (d.Action == Blocked) != tc.blocked || (!tc.blocked && d.Value != tc.wantValue) {
 			t.Errorf("%q %v: %+v", tc.q.Label, tc.q.Options, d)
 		}
 	}

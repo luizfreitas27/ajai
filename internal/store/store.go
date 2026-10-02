@@ -325,6 +325,16 @@ func (s *Store) DeleteAnswer(id string) (bool, error) {
 	return n > 0, nil
 }
 
+// DeleteAnswersInState removes every answer in state and returns how many.
+func (s *Store) DeleteAnswersInState(state string) (int, error) {
+	res, err := s.db.Exec(`DELETE FROM answers WHERE state = ?`, state)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // CountAnswers returns how many answers are in state ("" for all).
 func (s *Store) CountAnswers(state string) (int, error) {
 	var n int
@@ -337,10 +347,10 @@ func (s *Store) CountAnswers(state string) (int, error) {
 	return n, err
 }
 
-func (s *Store) oneAnswer(where string, arg any) (*Answer, error) {
+func (s *Store) oneAnswer(where string, args ...any) (*Answer, error) {
 	var a Answer
 	err := s.db.QueryRow(`SELECT id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at
-		FROM answers WHERE `+where, arg).
+		FROM answers WHERE `+where, args...).
 		Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -353,17 +363,7 @@ func (s *Store) oneAnswer(where string, arg any) (*Answer, error) {
 
 // FindAnswer returns the answer remembered for this question, or nil.
 func (s *Store) FindAnswer(kind, normalised string) (*Answer, error) {
-	var a Answer
-	err := s.db.QueryRow(`SELECT id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at
-		FROM answers WHERE kind = ? AND normalised = ?`, kind, normalised).
-		Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &a, nil
+	return s.oneAnswer(`kind = ? AND normalised = ?`, kind, normalised)
 }
 
 // ListAnswers returns answers, newest updated first; state "" means all.

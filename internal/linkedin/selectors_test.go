@@ -132,6 +132,19 @@ func TestApplyButtonStillSaysEasyApply(t *testing.T) {
 	}
 }
 
+func TestEasyApplyLocatorOrder(t *testing.T) {
+	if !strings.Contains(EasyApplyLocators[0].XPath, ApplyButtonID) {
+		t.Error("the stable id must be tried first")
+	}
+	found := false
+	for _, loc := range EasyApplyLocators {
+		found = found || strings.Contains(loc.XPath, EasyApplyAriaLabelPrefix)
+	}
+	if !found || EasyApplyLocators[len(EasyApplyLocators)-1].XPath != ApplyButtonXPath {
+		t.Error("an Easy Apply text locator and the generic apply button must close the list")
+	}
+}
+
 // ------------------------------------------------------------ modal (06)
 func TestModalAndFormAnchors(t *testing.T) {
 	modal := fixture(t, "06_easy_apply_modal.html")

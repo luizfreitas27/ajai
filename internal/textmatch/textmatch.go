@@ -81,37 +81,61 @@ func Normalise(label string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-// Ratio is difflib.SequenceMatcher(None, a, b).ratio() for short strings: twice
-// the number of matching characters found by recursively taking the longest
-// common substring, over the total length. 1.0 for identical strings.
+// Ratio is difflib.SequenceMatcher(None, a, b).ratio(): twice the number of
+// matching characters found by recursively taking the longest common substring,
+// over the total length. 1.0 for identical strings. Like difflib's "autojunk",
+// when b has 200 characters or more, characters that make up more than 1% of it
+// are ignored as anchors, so two long consent texts do not look alike just
+// because they share the same common letters.
 func Ratio(a, b string) float64 {
 	ra, rb := []rune(a), []rune(b)
 	total := len(ra) + len(rb)
 	if total == 0 {
 		return 1
 	}
-	return 2 * float64(matches(ra, rb)) / float64(total)
+	return 2 * float64(matches(ra, rb, popular(rb))) / float64(total)
 }
 
-func matches(a, b []rune) int {
+// AutojunkMinLength is difflib's threshold for the popular-character rule.
+const AutojunkMinLength = 200
+
+func popular(b []rune) map[rune]bool {
+	if len(b) < AutojunkMinLength {
+		return nil
+	}
+	counts := map[rune]int{}
+	for _, r := range b {
+		counts[r]++
+	}
+	limit := len(b)/100 + 1
+	junk := map[rune]bool{}
+	for r, n := range counts {
+		if n > limit {
+			junk[r] = true
+		}
+	}
+	return junk
+}
+
+func matches(a, b []rune, junk map[rune]bool) int {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}
-	ai, bj, size := longestCommon(a, b)
+	ai, bj, size := longestCommon(a, b, junk)
 	if size == 0 {
 		return 0
 	}
-	return size + matches(a[:ai], b[:bj]) + matches(a[ai+size:], b[bj+size:])
+	return size + matches(a[:ai], b[:bj], junk) + matches(a[ai+size:], b[bj+size:], junk)
 }
 
 // longestCommon is the earliest longest common substring, like difflib's
-// find_longest_match without junk handling.
-func longestCommon(a, b []rune) (bestA, bestB, bestSize int) {
+// find_longest_match; junk characters in b never start or extend a block.
+func longestCommon(a, b []rune, junk map[rune]bool) (bestA, bestB, bestSize int) {
 	prev := make([]int, len(b)+1)
 	cur := make([]int, len(b)+1)
 	for i := 1; i <= len(a); i++ {
 		for j := 1; j <= len(b); j++ {
-			if a[i-1] == b[j-1] {
+			if a[i-1] == b[j-1] && !junk[b[j-1]] {
 				cur[j] = prev[j-1] + 1
 				if cur[j] > bestSize {
 					bestSize = cur[j]
