@@ -167,7 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshedMsg:
 		before := m.dash.snap.activity
 		m.dash = m.dash.apply(msg)
-		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs)
+		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs, m.deps.Now())
 		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
@@ -193,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.doctorBusy = false
 		// Something a run needs is missing: open on the checklist, once, never
 		// over a value being typed.
-		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() {
+		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() && !m.runs.editing() {
 			m.setupOpened, m.setupShown, m.help = true, true, false
 		}
 		if m.doctorAgain {

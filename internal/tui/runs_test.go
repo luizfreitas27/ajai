@@ -77,7 +77,8 @@ func TestStopAsksFirstThenStopsAnyRunAndSaysWhenItEnded(t *testing.T) {
 	id, _ := h.st.StartRun(context.Background(), "brasil", false)
 	h.refresh()
 	h.press("x")
-	h.shows("Stop the run started from the terminal at 09:30? It ends once the job in hand is done.", "y stops the run · n keeps it")
+	h.shows(fmt.Sprintf("Stop a run started from the terminal (pid %d) at 09:30? It ends once the job in hand is done.", os.Getpid()), "y stops the run · n keeps it")
+	h.golden("stop-confirm")
 	h.press("n")
 	if _, err := os.Stat(run.StopPath(h.p.DataDir)); err == nil {
 		t.Fatal("n keeps the run")
@@ -98,4 +99,122 @@ func TestStopAsksFirstThenStopsAnyRunAndSaysWhenItEnded(t *testing.T) {
 	lock.Release()
 	h.refresh()
 	h.shows("The run ended (stopped from the TUI): applied 2 · external 0 · failed 0 · skipped 3.", "No run in progress.")
+}
+
+func TestARunThatHeldTheLockThenFailedSaysWhyNotAnOldRunsSummary(t *testing.T) {
+	h := newHarness(t)
+	h.pastRun(h.now.Add(-24*time.Hour), "brasil", true, store.Run{Applied: 9, Reason: "an old run"})
+	h.open(100, 30)
+	h.press("r", "enter")
+	lock, err := run.AcquireLock(h.p.DataDir, run.Holder{Origin: run.OriginTUI, Started: h.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.refresh()
+	h.shows("Started: the run is in progress")
+	// Chrome will not open: the run logs why and lets the lock go, recording nothing.
+	h.logAt(logging.FileName, h.now.Add(time.Second), run.StartFailedMsg, `"error":"launching Chrome: no display"`)
+	lock.Release()
+	h.exit <- errors.New("exit status 1")
+	h.refresh()
+	h.shows("The run did not start: launching Chrome: no display")
+	if strings.Contains(h.screen(), "The run ended (an old run)") {
+		t.Errorf("an old run's summary:\n%s", h.screen())
+	}
+}
+
+func TestAStartedRunThatEndsCleanlyIsNotAFailureAndEveryRunOfASessionIsAnnounced(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "enter")
+	lock, err := run.AcquireLock(h.p.DataDir, run.Holder{Origin: run.OriginTUI, Started: h.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.refresh()
+	// A non-stop session: two runs end while the lock stays held.
+	for i, applied := range []int{1, 2} {
+		h.now = h.now.Add(time.Minute)
+		id, _ := h.st.StartRun(context.Background(), "brasil", true)
+		h.now = h.now.Add(time.Minute)
+		if err := h.st.FinishRun(context.Background(), store.Run{ID: id, Applied: applied, Reason: fmt.Sprintf("run %d done", i+1)}); err != nil {
+			t.Fatal(err)
+		}
+		h.refresh()
+		h.shows(fmt.Sprintf("The run ended (run %d done): applied %d", i+1, applied))
+	}
+	lock.Release()
+	h.exit <- nil
+	h.refresh()
+	if strings.Contains(h.screen(), "did not start") {
+		t.Errorf("a clean end is not a failure:\n%s", h.screen())
+	}
+	h.shows("The run ended (run 2 done)")
+}
+
+func TestOneStartAtATimeAndASlowStartIsSaid(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "enter", "r")
+	h.shows("A run is starting already (pid")
+	if len(h.started) != 1 {
+		t.Fatalf("started %q", h.started)
+	}
+	h.now = h.now.Add(startWait + time.Second)
+	h.refresh()
+	h.shows("has not begun after 20s; today's log may say why.")
+}
+
+func TestStopLeavesAnotherRunAlone(t *testing.T) {
+	h := newHarness(t)
+	first, err := run.AcquireLock(h.p.DataDir, run.Holder{Origin: run.OriginTerminal, Started: h.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.open(100, 30)
+	h.press("x")
+	h.shows("Stop a run started from the terminal")
+	// Before y, that run ends and a schedule window's starts.
+	first.Release()
+	second, err := run.AcquireLock(h.p.DataDir, run.Holder{Origin: run.OriginSchedule, Window: 2, Started: h.now.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Release()
+	h.press("y")
+	h.shows("Not stopped: a run started from schedule window 2")
+	if _, err := os.Stat(run.StopPath(h.p.DataDir)); err == nil {
+		t.Error("the other run was asked to stop")
+	}
+}
+
+func TestTheChecklistNeverOpensOverTheStartForm(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "down", "down", "1")
+	h.session = false
+	h.send(runDoctor(h.deps())())
+	h.press("2")
+	h.shows("Start a run")
+	if strings.Contains(h.screen(), "Setup checklist") {
+		t.Fatalf("the checklist opened over the form:\n%s", h.screen())
+	}
+}
+
+func TestARunThatBeganAndEndedBetweenTwoRefreshesIsNoFailure(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "enter")
+	// The whole run happens unseen (the TUI was busy, say, with a fix in the terminal).
+	h.now = h.now.Add(time.Minute)
+	id, _ := h.st.StartRun(context.Background(), "brasil", true)
+	if err := h.st.FinishRun(context.Background(), store.Run{ID: id, Applied: 0, Skipped: 2, Reason: "the search ran out of jobs"}); err != nil {
+		t.Fatal(err)
+	}
+	h.exit <- nil
+	h.refresh()
+	h.shows("The run ended (the search ran out of jobs)")
+	if strings.Contains(h.screen(), "did not start") {
+		t.Errorf("a clean end is no failure:\n%s", h.screen())
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -204,6 +205,7 @@ func (h *harness) golden(name string) {
 	h.t.Helper()
 	path := filepath.Join("testdata", name+".golden")
 	screen := strings.ReplaceAll(h.screen(), h.p.DataDir, "$AJA_HOME") // a new temporary directory each run (most show as ~)
+	screen = strings.ReplaceAll(screen, "pid "+strconv.Itoa(os.Getpid()), "pid $PID")
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			h.t.Fatal(err)

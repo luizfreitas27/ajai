@@ -1,11 +1,8 @@
 package tui
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +17,13 @@ import (
 	"github.com/luizfreitas27/aja/internal/store"
 )
 
-// reasonStopped is the ending reason of a run stopped from the TUI.
-const reasonStopped = "stopped from the TUI"
+const (
+	// reasonStopped is the ending reason of a run stopped from the TUI.
+	reasonStopped = "stopped from the TUI"
+	// startWait is how long a run the TUI started may take to hold the run
+	// lock before the TUI says it has not begun.
+	startWait = 20 * time.Second
+)
 
 // marketChoices are the Start form's markets; "" is the config's own.
 var marketChoices = append([]string{""}, config.MarketNameList()...)
@@ -32,8 +34,10 @@ var marketChoices = append([]string{""}, config.MarketNameList()...)
 type runControl struct {
 	form     *runForm
 	confirm  *run.Holder // the run Stop asks about
-	started  *startedRun // a run this TUI started, until it holds the run lock or ends
-	stopping bool
+	started  *startedRun // a run this TUI started, until its process ends
+	stopping string      // the run a stop was asked of, until it lets the run lock go
+	lastEnd  int64       // the newest run seen ended: later ones are announced
+	seen     bool        // lastEnd is known (the first refresh read it)
 	notice   notice
 }
 
@@ -42,11 +46,21 @@ type startedRun struct {
 	pid    int
 	at     time.Time
 	exited <-chan error // its end, while the TUI runs
+	begun  bool         // it has held the run lock
+	slow   bool         // the TUI said it had not begun yet
 }
+
+// The Start form's fields.
+const (
+	fieldMarket = iota
+	fieldMode
+	fieldMax
+	formFields
+)
 
 // runForm is the Start form.
 type runForm struct {
-	field   int // 0 market, 1 mode, 2 maximum
+	field   int
 	market  int // index into marketChoices
 	dry     bool
 	max     textinput.Model
@@ -63,11 +77,14 @@ type stopAskedMsg struct {
 	err    error
 }
 
-// startExit is how a run this TUI started ended before it held the run lock.
+// startExit is how a run this TUI started ended.
 type startExit struct {
 	err    error
-	reason string // from its log line, when it said why
+	reason string // why it could not start, from its log, when it said so
 }
+
+// errRunChanged: the run in progress is not the one Stop asked about.
+var errRunChanged = errors.New("another run is in progress now")
 
 // editing reports whether keys go to the form or the confirmation.
 func (c runControl) editing() bool { return c.form != nil || c.confirm != nil }
@@ -84,7 +101,7 @@ func newRunForm() *runForm {
 
 // args are `aja run`'s for the form's choices.
 func (f runForm) args() ([]string, error) {
-	args := []string{"run", "--unattended", "--origin", "tui"}
+	args := []string{"run", "--unattended", "--origin", string(run.OriginTUI)}
 	if m := marketChoices[f.market]; m != "" {
 		args = append(args, "--market", m)
 	}
@@ -103,8 +120,12 @@ func (f runForm) args() ([]string, error) {
 	return args, nil
 }
 
-// start opens the Start form.
+// start opens the Start form, unless a run this TUI started has not begun.
 func (c runControl) start() runControl {
+	if c.started != nil && !c.started.begun {
+		c.notice = notice{"A run is starting already (pid " + strconv.Itoa(c.started.pid) + ").", levelWarn}
+		return c
+	}
 	c.form, c.confirm = newRunForm(), nil
 	return c
 }
@@ -133,11 +154,13 @@ func (c runControl) update(msg tea.Msg, d Deps) (runControl, tea.Cmd) {
 		switch {
 		case errors.Is(msg.err, run.ErrNoRun):
 			c.notice = notice{text: "No run in progress."}
+		case errors.Is(msg.err, errRunChanged):
+			c.notice = notice{"Not stopped: " + msg.holder.String() + " is in progress now; x stops it.", levelWarn}
 		case msg.err != nil:
 			c.notice = notice{"Could not ask the run to stop: " + msg.err.Error(), levelFail}
 		default:
-			c.stopping = true
-			c.notice = notice{"Stopping " + msg.holder.String() + ": it ends once the job in hand is done.", levelWarn}
+			c.stopping = msg.holder.String()
+			c.notice = notice{}
 		}
 	case tea.KeyMsg:
 		switch {
@@ -153,8 +176,9 @@ func (c runControl) update(msg tea.Msg, d Deps) (runControl, tea.Cmd) {
 func (c runControl) confirmKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 	switch msg.String() {
 	case "y":
+		h := *c.confirm
 		c.confirm = nil
-		return c, stopRun(d)
+		return c, stopRun(d, h)
 	case "n", "esc":
 		c.confirm = nil
 	}
@@ -163,11 +187,12 @@ func (c runControl) confirmKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 
 func (c runControl) formKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 	f := *c.form
-	switch key := msg.String(); key {
-	case "esc":
+	var cmd tea.Cmd
+	switch key := msg.String(); {
+	case key == "esc":
 		c.form = nil
 		return c, nil
-	case "enter":
+	case key == "enter":
 		args, err := f.args()
 		if err != nil {
 			f.refusal = err.Error()
@@ -176,41 +201,35 @@ func (c runControl) formKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 		}
 		c.form = nil
 		return c, startRun(d, args)
-	case "up", "shift+tab":
-		f.field = (f.field + 2) % 3
-	case "down", "tab":
-		f.field = (f.field + 1) % 3
-	case "left", "right", "h", "l", " ":
-		step := 1
-		if key == "left" || key == "h" {
-			step = len(marketChoices) - 1
-		}
-		switch f.field {
-		case 0:
-			f.market = (f.market + step) % len(marketChoices)
-		case 1:
-			f.dry = !f.dry
-		default:
-			var cmd tea.Cmd
-			f.max, cmd = f.max.Update(msg)
-			c.form = &f
-			return c, cmd
-		}
-	default:
-		if f.field == 2 {
-			var cmd tea.Cmd
-			f.max, cmd = f.max.Update(msg)
-			c.form = &f
-			return c, cmd
-		}
+	case key == "up" || key == "shift+tab":
+		f.field = (f.field + formFields - 1) % formFields
+	case key == "down" || key == "tab":
+		f.field = (f.field + 1) % formFields
+	case f.field == fieldMax:
+		f.max, cmd = f.max.Update(msg)
+	case key == "left" || key == "h":
+		f = f.change(-1)
+	case key == "right" || key == "l" || key == " ":
+		f = f.change(1)
 	}
-	if f.field == 2 {
+	if f.field == fieldMax {
 		f.max.Focus()
 	} else {
 		f.max.Blur()
 	}
 	c.form = &f
-	return c, nil
+	return c, cmd
+}
+
+// change moves the market or the mode choice by step.
+func (f runForm) change(step int) runForm {
+	switch f.field {
+	case fieldMarket:
+		f.market = (f.market + step + len(marketChoices)) % len(marketChoices)
+	case fieldMode:
+		f.dry = !f.dry
+	}
+	return f
 }
 
 // startRun starts `aja args` in a process of its own, unless a run holds the
@@ -230,108 +249,125 @@ func startRun(d Deps, args []string) tea.Cmd {
 	}
 }
 
-// stopRun asks the run in progress, whoever started it, to end.
-func stopRun(d Deps) tea.Cmd {
+// stopRun asks the run h, the one the user confirmed, to end; another run
+// holding the lock by now is left alone.
+func stopRun(d Deps, h run.Holder) tea.Cmd {
 	return func() tea.Msg {
-		h, err := run.RequestStop(d.Paths.DataDir, reasonStopped)
-		if err == nil {
-			d.logger().Info("stop requested from the TUI", "run", h.String())
+		if now, held, _ := run.ReadLock(d.Paths.DataDir); held && (now.PID != h.PID || !now.Started.Equal(h.Started)) {
+			return stopAskedMsg{holder: now, err: errRunChanged}
 		}
-		return stopAskedMsg{holder: h, err: err}
+		holder, err := run.RequestStop(d.Paths.DataDir, reasonStopped)
+		if err == nil {
+			d.logger().Info("stop requested from the TUI", "run", holder.String())
+		}
+		return stopAskedMsg{holder: holder, err: err}
 	}
 }
 
-// watchStart is, for a run this TUI started, its end if it came before it held
-// the run lock (refresh reads it; never blocks).
+// watchStart is how s, a run this TUI started, ended, if it has (refresh reads
+// it; it never blocks).
 func watchStart(d Deps, s *startedRun) *startExit {
 	if s == nil {
 		return nil
 	}
 	select {
 	case err := <-s.exited:
-		return &startExit{err: err, reason: startFailure(d.Paths.LogDir, s.at)}
+		return &startExit{err: err, reason: run.ReadStartFailure(logging.FileName(d.Paths.LogDir, s.at), s.at)}
 	default:
 		return nil
 	}
 }
 
-// startFailure is the error the run log's last "could not start" line since
-// since gives, or "".
-func startFailure(logDir string, since time.Time) string {
-	f, err := os.Open(logging.FileName(logDir, since))
-	if err != nil {
-		return ""
+// observe follows one refresh to the next: a run ending (each run of a
+// non-stop session too), a run this TUI started beginning or not, and the
+// end of a stop.
+func (c runControl) observe(before, now run.Activity, exit *startExit, runs []store.Run, at time.Time) runControl {
+	newest := store.Run{}
+	if len(runs) > 0 {
+		newest = runs[0]
 	}
-	defer func() { _ = f.Close() }()
-	reason := ""
-	lines := bufio.NewScanner(f)
-	lines.Buffer(make([]byte, 64*1024), 1<<20)
-	for lines.Scan() {
-		var line struct {
-			Time  time.Time `json:"time"`
-			Msg   string    `json:"msg"`
-			Error string    `json:"error"`
-		}
-		if json.Unmarshal(lines.Bytes(), &line) == nil && line.Msg == run.StartFailedMsg && !line.Time.Before(since.Add(-time.Second)) {
-			reason = line.Error
-		}
+	switch {
+	case !c.seen: // what ended before the TUI opened is not news
+		c.seen, c.lastEnd = true, endedID(newest)
+	case newest.EndedAt != "" && newest.ID != c.lastEnd:
+		c.lastEnd = newest.ID
+		c.notice = notice{text: fmt.Sprintf("The run ended (%s): applied %d · external %d · failed %d · skipped %d.",
+			firstOf(newest.Reason, "no reason recorded"), newest.Applied, newest.External, newest.Failed, newest.Skipped)}
+	case before.Held && !now.Held && !recordedSince(newest, before.Holder.Started):
+		c.notice = notice{"The run " + strings.TrimPrefix(before.Holder.String(), "a run ") + " ended before it recorded anything; today's log says why.", levelWarn}
 	}
-	return reason
-}
-
-// observe follows the run lock from one refresh to the next: a run this TUI
-// started holding it (or ending first), and any run ending.
-func (c runControl) observe(before, now run.Activity, exit *startExit, runs []store.Run) runControl {
-	if s := c.started; s != nil {
-		switch {
-		case now.Held && now.Holder.PID == s.pid:
-			c.started, c.notice = nil, notice{text: fmt.Sprintf("Started: the run is in progress (pid %d).", s.pid)}
-		case exit != nil:
-			c.started = nil
-			why := exit.reason
-			if why == "" {
-				why = fmt.Sprintf("aja ended (%v) before it began; today's log may say more", exit.err)
-			}
-			c.notice = notice{"The run did not start: " + why, levelFail}
-		}
+	if !now.Held {
+		c.stopping = ""
 	}
-	if before.Held && !now.Held {
-		c.stopping = false
-		if len(runs) > 0 {
-			r := runs[0]
-			reason := r.Reason
-			if reason == "" {
-				reason = "it never recorded an end"
-			}
-			c.notice = notice{text: fmt.Sprintf("The run ended (%s): applied %d · external %d · failed %d · skipped %d.",
-				reason, r.Applied, r.External, r.Failed, r.Skipped)}
-		}
+	s := c.started
+	if s == nil {
+		return c
+	}
+	switch {
+	case exit != nil && exit.reason != "":
+		c.started, c.notice = nil, notice{"The run did not start: " + exit.reason, levelFail}
+	case exit != nil && !s.begun && exit.err != nil:
+		c.started, c.notice = nil, notice{fmt.Sprintf("The run did not start: aja ended (%v) before it began; today's log may say why.", exit.err), levelFail}
+	case exit != nil:
+		c.started = nil // it ran and ended: the run's own line says how
+	case now.Held && now.Holder.PID == s.pid && !s.begun:
+		begun := *s
+		begun.begun = true
+		c.started, c.notice = &begun, notice{text: fmt.Sprintf("Started: the run is in progress (pid %d).", s.pid)}
+	case !s.begun && !s.slow && at.Sub(s.at) > startWait:
+		slow := *s
+		slow.slow = true
+		c.started, c.notice = &slow, notice{fmt.Sprintf("The run (pid %d) has not begun after %s; today's log may say why.", s.pid, startWait), levelWarn}
 	}
 	return c
 }
 
+func endedID(r store.Run) int64 {
+	if r.EndedAt == "" {
+		return 0
+	}
+	return r.ID
+}
+
+// recordedSince reports whether r is a run that started at or after since.
+func recordedSince(r store.Run, since time.Time) bool {
+	t, ok := store.ParseTime(r.StartedAt)
+	return ok && !t.Before(since.Add(-time.Second))
+}
+
+func firstOf(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
 // lines are what the control shows above the Dashboard: the form, the
-// confirmation, or the last outcome.
+// confirmation, a stop under way, the last outcome.
 func (c runControl) lines(s styles, width int) []string {
 	switch {
 	case c.confirm != nil:
-		h := *c.confirm
-		what := "the run that is just starting"
-		if f := (run.Activity{Held: true, Holder: h}).From(); f != "" {
-			what = fmt.Sprintf("the run started from %s at %s", f, h.Started.Local().Format("15:04"))
-		}
-		return []string{s.warn.Render("Stop " + what + "? It ends once the job in hand is done."),
+		return []string{s.warn.Render("Stop " + c.confirm.String() + "? It ends once the job in hand is done."),
 			s.key.Render("y") + " stops it · " + s.key.Render("n") + " keeps it", ""}
 	case c.form != nil:
 		return c.form.lines(s)
-	case c.notice.text != "":
-		var out []string
-		for _, l := range wrap(c.notice.text, width) {
-			out = append(out, s.byLevel(c.notice.level).Render(l))
-		}
-		return append(out, "")
 	}
-	return nil
+	var out []string
+	say := func(n notice) {
+		for _, l := range wrap(n.text, width) {
+			out = append(out, s.byLevel(n.level).Render(l))
+		}
+	}
+	if c.stopping != "" {
+		say(notice{"Stopping " + c.stopping + ": it ends once the job in hand is done.", levelWarn})
+	}
+	if c.notice.text != "" {
+		say(c.notice)
+	}
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	return out
 }
 
 func (f runForm) lines(s styles) []string {
@@ -352,9 +388,9 @@ func (f runForm) lines(s styles) []string {
 	}
 	out := []string{
 		s.section.Render("Start a run") + "  " + s.dim.Render("unattended, in a process of its own: closing the TUI never ends it"),
-		field(0, "Market", "‹ "+market+" ›"),
-		field(1, "Mode", "‹ "+mode+" ›"),
-		field(2, "Maximum", f.max.View()+s.dim.Render("  applications; 0 or blank: the pacing cap")),
+		field(fieldMarket, "Market", "‹ "+market+" ›"),
+		field(fieldMode, "Mode", "‹ "+mode+" ›"),
+		field(fieldMax, "Maximum", f.max.View()+s.dim.Render("  applications; 0 or blank: the pacing cap")),
 	}
 	if f.refusal != "" {
 		out = append(out, s.fail.Render("Refused: "+f.refusal))

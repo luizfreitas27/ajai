@@ -55,31 +55,33 @@ else on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			l, err := config.Load(a.paths, a.Env, marketFlag(market))
+			a.openLog(logLevel(l)) // before the notifier, which logs its warnings through it
 			from := run.OriginTerminal
 			switch origin {
 			case "":
-			case "tui":
+			case string(run.OriginTUI):
 				from = run.OriginTUI
 			default:
-				return fmt.Errorf("unknown --origin %q", origin)
+				err := fmt.Errorf("unknown --origin %q", origin)
+				run.LogStartFailure(a.logger, err)
+				return err
 			}
-			l, err := config.Load(a.paths, a.Env, marketFlag(market))
-			a.openLog(logLevel(l)) // before the notifier, which logs its warnings through it
 			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
 			// too: an unattended run has nobody watching the terminal. The secrets come from
 			// the environment, so they are there even when the config file is broken.
 			secrets := a.secrets(l)
 			telegram := notify.New(secrets.TelegramBotToken, secrets.TelegramChatID, a.logger)
-			// In the log too: a run started from the TUI has no terminal to print to.
 			cannotStart := func(err error) error {
-				a.logger.Error(run.StartFailedMsg, "error", err.Error())
+				run.LogStartFailure(a.logger, err)
 				run.ReportStartFailure(ctx, telegram, err)
 				return err
 			}
 			if err := a.configProblem(l, err); err != nil {
 				return cannotStart(err)
 			}
-			if err := opts.Validate(); err != nil {
+			if err := opts.Validate(); err != nil { // a mistyped flag: the log says so, Telegram need not
+				run.LogStartFailure(a.logger, err)
 				return err
 			}
 			if terms != "" {

@@ -1,7 +1,11 @@
 package run
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"log/slog"
+	"os"
 	"time"
 )
 
@@ -51,8 +55,38 @@ func (r *Runner) notifyEnd(sum Summary, err error) {
 }
 
 // StartFailedMsg is the log line of a run that could not start; the TUI reads
-// its error to say why a run it started did not.
+// it (ReadStartFailure) to say why a run it started did not.
 const StartFailedMsg = "run could not start"
+
+// LogStartFailure writes why a run could not start to its log: a run started
+// from the TUI has no terminal to print it to.
+func LogStartFailure(logger *slog.Logger, err error) {
+	logger.Error(StartFailedMsg, "error", err.Error())
+}
+
+// ReadStartFailure is the error of the last LogStartFailure line in the log
+// at path written since since, or "".
+func ReadStartFailure(path string, since time.Time) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	reason := ""
+	lines := bufio.NewScanner(f)
+	lines.Buffer(make([]byte, 64*1024), 1<<20)
+	for lines.Scan() {
+		var line struct {
+			Time  time.Time `json:"time"`
+			Msg   string    `json:"msg"`
+			Error string    `json:"error"`
+		}
+		if json.Unmarshal(lines.Bytes(), &line) == nil && line.Msg == StartFailedMsg && !line.Time.Before(since.Add(-time.Second)) {
+			reason = line.Error
+		}
+	}
+	return reason
+}
 
 // ReportStartFailure tells the user a run could not start (configuration,
 // Chrome, AI settings), unless the user cancelled it themselves.

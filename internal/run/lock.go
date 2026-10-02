@@ -22,7 +22,7 @@ const (
 	OriginTerminal Origin = "terminal"
 	OriginSchedule Origin = "schedule"
 	OriginTelegram Origin = "telegram"
-	OriginTUI      Origin = "TUI" // a run the TUI started, in a process of its own
+	OriginTUI      Origin = "tui" // a run the TUI started, in a process of its own
 )
 
 // Holder is who holds the run lock.
@@ -52,6 +52,8 @@ func (h Holder) From() string {
 		return fmt.Sprintf("schedule window %d", h.Window)
 	case h.Origin == OriginTelegram:
 		return "Telegram"
+	case h.Origin == OriginTUI:
+		return "the TUI"
 	}
 	return "the " + string(h.Origin)
 }
