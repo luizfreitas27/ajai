@@ -13,18 +13,33 @@ import (
 	"github.com/luizfreitas27/aja/internal/questions"
 )
 
-// answersDetailLines is the room kept under the list for the selected answer.
+// answersDetailLines is the least room kept under the list for the selected
+// answer; the editor takes more when its options need it.
 const answersDetailLines = 8
+
+// The two review states the tab shows.
+const (
+	statePending  = "pending"
+	stateApproved = "approved"
+)
+
+func otherState(state string) string {
+	if state == stateApproved {
+		return statePending
+	}
+	return stateApproved
+}
 
 // answersTab is the Answers tab: the answer memory, the review queue
 // (pending) first, the approved answers a key away. An answer is approved as
 // shown, corrected (picked from its options, or typed), or deleted.
 type answersTab struct {
 	loaded   bool
-	state    string // "pending" or "approved"
+	state    string // statePending or stateApproved; "" until switched: pending
 	answers  []memory.Remembered
 	problem  string
 	cursor   int
+	selected string // the selected answer's id: the selection follows it when the list is read again
 	top      int
 	width    int
 	height   int
@@ -34,8 +49,8 @@ type answersTab struct {
 }
 
 // answerEdit is the answer being corrected: a select or radio with remembered
-// options is picked (or typed: an option or the beginning of one), anything
-// else typed.
+// options is picked with ↑↓ or typed (an option or the beginning of exactly
+// one: the pick follows the typing), anything else typed.
 type answerEdit struct {
 	target  memory.Remembered
 	input   textinput.Model
@@ -50,8 +65,9 @@ type answersLoadedMsg struct {
 }
 
 type answerChangedMsg struct {
-	notice  notice
-	refusal string // the change was refused: keep editing
+	notice   notice
+	refusal  string // the correction was refused: keep editing
+	fromEdit bool   // the editor's own result: it closes
 }
 
 // loadAnswers reads the answers in state.
@@ -71,7 +87,7 @@ func (a answersTab) editing() bool { return a.edit != nil || a.deleting != nil }
 // shownState is the filter, pending until the user switches.
 func (a answersTab) shownState() string {
 	if a.state == "" {
-		return "pending"
+		return statePending
 	}
 	return a.state
 }
@@ -91,9 +107,11 @@ func (a answersTab) listHeight() int {
 	if a.notice.text != "" || a.problem != "" {
 		head++
 	}
-	return max(1, a.height-head-answersDetailLines)
+	return max(1, a.height-head-max(answersDetailLines, len(a.detail(measure, a.width))))
 }
 
+// scrolled keeps the selection in the list and in view, and remembers whose
+// it is.
 func (a answersTab) scrolled() answersTab {
 	n := a.listHeight()
 	a.cursor = max(0, min(a.cursor, len(a.answers)-1))
@@ -102,6 +120,10 @@ func (a answersTab) scrolled() answersTab {
 	}
 	if a.cursor >= a.top+n {
 		a.top = a.cursor - n + 1
+	}
+	a.selected = ""
+	if r, ok := a.current(); ok {
+		a.selected = r.ID
 	}
 	return a
 }
@@ -113,15 +135,23 @@ func (a answersTab) update(msg tea.Msg, d Deps) (answersTab, tea.Cmd) {
 			return a, nil // the filter changed meanwhile
 		}
 		a.loaded, a.answers, a.problem = true, msg.answers, msg.problem
+		for i, r := range a.answers { // the same answer stays selected, wherever it moved
+			if r.ID == a.selected {
+				a.cursor = i
+			}
+		}
 		return a.scrolled(), nil
 	case answerChangedMsg:
-		if msg.refusal != "" && a.edit != nil {
+		if msg.fromEdit && a.edit != nil && msg.refusal != "" {
 			e := *a.edit
 			e.refusal = msg.refusal
 			a.edit = &e
 			return a, nil
 		}
-		a.edit, a.notice = nil, msg.notice
+		if msg.fromEdit {
+			a.edit = nil
+		}
+		a.notice = msg.notice
 		return a, loadAnswers(d, a.shownState())
 	case tea.KeyMsg:
 		switch {
@@ -135,8 +165,9 @@ func (a answersTab) update(msg tea.Msg, d Deps) (answersTab, tea.Cmd) {
 	return a, nil
 }
 
-func (a answersTab) selected() (memory.Remembered, bool) {
-	if a.cursor >= len(a.answers) {
+// current is the selected answer, if the list has any.
+func (a answersTab) current() (memory.Remembered, bool) {
+	if !a.loaded || a.cursor >= len(a.answers) {
 		return memory.Remembered{}, false
 	}
 	return a.answers[a.cursor], true
@@ -157,28 +188,31 @@ func (a answersTab) browseKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 	case "end", "G":
 		a.cursor = len(a.answers) - 1
 	case "tab":
-		a.state = map[string]string{"pending": "approved", "approved": "pending"}[a.shownState()]
-		a.loaded, a.cursor, a.top, a.notice = false, 0, 0, notice{}
+		a.state = otherState(a.shownState())
+		a.loaded, a.answers, a.cursor, a.top, a.notice = false, nil, 0, 0, notice{}
 		return a, loadAnswers(d, a.state)
 	case "a":
-		if r, ok := a.selected(); ok {
+		if r, ok := a.current(); ok {
 			return a, approveAnswer(d, r)
 		}
 	case "e", "enter":
-		if r, ok := a.selected(); ok {
-			if r.Kind == string(questions.Checkbox) {
+		if r, ok := a.current(); ok {
+			if isCheckbox(r) {
 				a.notice = notice{"A checkbox takes only Approve (a) or Delete (d).", levelWarn}
-				return a, nil
+				return a.scrolled(), nil
 			}
 			a.edit, a.notice = newAnswerEdit(r, a.width), notice{}
 		}
 	case "d":
-		if r, ok := a.selected(); ok {
+		if r, ok := a.current(); ok {
 			a.deleting = &r
 		}
 	}
 	return a.scrolled(), nil
 }
+
+func isCheckbox(r memory.Remembered) bool    { return r.Kind == string(questions.Checkbox) }
+func unansweredYet(r memory.Remembered) bool { return strings.TrimSpace(r.Answer) == "" }
 
 func newAnswerEdit(r memory.Remembered, width int) *answerEdit {
 	e := &answerEdit{target: r, input: textinput.New()}
@@ -203,43 +237,40 @@ func newAnswerEdit(r memory.Remembered, width int) *answerEdit {
 func (a answersTab) editKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 	e := *a.edit
 	options := e.target.Options
-	switch msg.String() {
-	case "esc":
+	switch key := msg.String(); {
+	case key == "esc":
 		a.edit = nil
-		return a, nil
-	case "enter":
+		return a.scrolled(), nil
+	case key == "enter":
 		text := strings.TrimSpace(e.input.Value())
 		if len(options) > 0 {
-			i := e.choice
-			if text != "" {
-				if i = questions.PickOption(text, options); i < 0 {
-					e.refusal = fmt.Sprintf("%q is not one of the options, nor the beginning of just one.", text)
-					a.edit = &e
-					return a, nil
-				}
+			if text != "" && questions.PickOption(text, options) < 0 {
+				e.refusal = fmt.Sprintf("%q is not one of the options, nor the beginning of just one.", text)
+				a.edit = &e
+				return a, nil
 			}
-			text = options[i]
+			text = options[e.choice] // the pick follows what was typed
 		}
 		e.refusal = ""
 		a.edit = &e
 		return a, correctAnswer(d, e.target, text)
-	case "up":
-		if len(options) > 0 {
-			e.choice = max(0, e.choice-1)
-			a.edit = &e
-			return a, nil
+	case len(options) > 0 && (key == "up" || key == "down"):
+		step := 1
+		if key == "up" {
+			step = -1
 		}
-	case "down":
-		if len(options) > 0 {
-			e.choice = min(len(options)-1, e.choice+1)
-			a.edit = &e
-			return a, nil
-		}
+		e.choice = max(0, min(len(options)-1, e.choice+step))
+		e.input.SetValue("") // picking replaces whatever was typed
+		a.edit = &e
+		return a, nil
 	}
 	var cmd tea.Cmd
 	e.input, cmd = e.input.Update(msg)
+	if i := questions.PickOption(e.input.Value(), options); i >= 0 {
+		e.choice = i
+	}
 	a.edit = &e
-	return a, cmd
+	return a.scrolled(), cmd
 }
 
 func (a answersTab) deleteKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
@@ -251,11 +282,13 @@ func (a answersTab) deleteKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 	case "n", "esc":
 		a.deleting = nil
 	}
-	return a, nil
+	return a.scrolled(), nil
 }
 
-// approveAnswer approves r as shown: if the memory's answer changed since (a
-// run answered it again), nothing is approved and the list is read again.
+// approveAnswer approves r as shown: if the answer memory has another answer
+// by now (a run answered again), nothing is approved and the list is read
+// again. (The answer memory has no compare-and-set, so a change in the
+// instant between the check and the approval still gets through.)
 func approveAnswer(d Deps, r memory.Remembered) tea.Cmd {
 	return func() tea.Msg {
 		mem := memory.New(d.Store, d.logger())
@@ -264,7 +297,7 @@ func approveAnswer(d Deps, r memory.Remembered) tea.Cmd {
 		case err != nil:
 			return answerChangedMsg{notice: notice{"Could not read the answer memory: " + err.Error(), levelFail}}
 		case live == nil:
-			return answerChangedMsg{notice: notice{"That answer is no longer in the memory.", levelWarn}}
+			return answerChangedMsg{notice: notice{"That answer is no longer in the answer memory.", levelWarn}}
 		case live.Answer != r.Answer:
 			return answerChangedMsg{notice: notice{fmt.Sprintf("Not approved: the answer changed meanwhile, to %q. Check it again.", live.Answer), levelWarn}}
 		}
@@ -279,27 +312,36 @@ func approveAnswer(d Deps, r memory.Remembered) tea.Cmd {
 	}
 }
 
-// correctAnswer saves text as r's answer, the user's and approved.
+// correctAnswer saves text as r's answer, the user's and approved; the same
+// text is an approval as shown.
 func correctAnswer(d Deps, r memory.Remembered, text string) tea.Cmd {
 	return func() tea.Msg {
 		if text == "" {
-			return answerChangedMsg{refusal: "type an answer (Delete forgets the question instead)"}
+			return answerChangedMsg{fromEdit: true, refusal: "type an answer (Delete forgets the question instead)"}
+		}
+		if text == r.Answer {
+			msg := approveAnswer(d, r)().(answerChangedMsg)
+			msg.fromEdit = true
+			return msg
 		}
 		if _, err := memory.New(d.Store, d.logger()).Approve(r.ID, text); err != nil {
 			if errors.Is(err, memory.ErrUnknownID) {
-				return answerChangedMsg{notice: notice{"That answer is no longer in the memory.", levelWarn}}
+				return answerChangedMsg{fromEdit: true, notice: notice{"That answer is no longer in the answer memory.", levelWarn}}
 			}
-			return answerChangedMsg{refusal: err.Error()}
+			return answerChangedMsg{fromEdit: true, refusal: err.Error()}
 		}
-		d.logger().Info("answer corrected from the TUI", "id", r.ID, "question", r.Label, "answer", text)
-		return answerChangedMsg{notice: notice{text: fmt.Sprintf("Saved: %s = %s", r.Label, text)}}
+		d.logger().Info("answer corrected from the TUI", "id", r.ID, "question", r.Label)
+		return answerChangedMsg{fromEdit: true, notice: notice{text: fmt.Sprintf("Saved: %s = %s", r.Label, text)}}
 	}
 }
 
 func deleteAnswer(d Deps, r memory.Remembered) tea.Cmd {
 	return func() tea.Msg {
 		err := memory.New(d.Store, d.logger()).Delete(r.ID)
-		if err != nil && !errors.Is(err, memory.ErrUnknownID) {
+		switch {
+		case errors.Is(err, memory.ErrUnknownID):
+			return answerChangedMsg{notice: notice{"That answer was gone already.", levelWarn}}
+		case err != nil:
 			return answerChangedMsg{notice: notice{"Could not delete: " + err.Error(), levelFail}}
 		}
 		d.logger().Info("answer deleted from the TUI", "id", r.ID, "question", r.Label)
@@ -311,8 +353,7 @@ func deleteAnswer(d Deps, r memory.Remembered) tea.Cmd {
 const answerColumns = "  %-9s %-46s %-22s %s"
 
 func (a answersTab) view(s styles, width int) string {
-	other := map[string]string{"pending": "approved", "approved": "pending"}[a.shownState()]
-	lines := []string{s.section.Render("Answers") + "  " + s.activeTab.Render(a.shownState()) + s.dim.Render("   tab shows the "+other+" ones")}
+	lines := []string{s.section.Render("Answers") + "  " + s.activeTab.Render(a.shownState()) + s.dim.Render("   tab shows the "+otherState(a.shownState())+" ones")}
 	switch {
 	case a.problem != "":
 		lines = append(lines, s.fail.Render(a.problem))
@@ -324,7 +365,7 @@ func (a answersTab) view(s styles, width int) string {
 	}
 	if len(a.answers) == 0 {
 		empty := "No pending answers: the review queue is empty."
-		if a.shownState() == "approved" {
+		if a.shownState() == stateApproved {
 			empty = "No approved answers yet."
 		}
 		return strings.Join(append(lines, "", s.dim.Render(empty)), "\n")
@@ -342,7 +383,7 @@ func (a answersTab) view(s styles, width int) string {
 			mark = s.key.Render("> ")
 		}
 		answer := r.Answer
-		if strings.TrimSpace(answer) == "" {
+		if unansweredYet(r) {
 			answer = "(none yet)"
 		}
 		lines = append(lines, mark+strings.TrimPrefix(fmt.Sprintf(answerColumns, r.Kind, clip(r.Label, 46), clip(answer, 22), sourceName(r.Source)), "  "))
@@ -354,7 +395,7 @@ func (a answersTab) view(s styles, width int) string {
 // confirmation.
 func (a answersTab) detail(s styles, width int) []string {
 	lines := []string{s.dim.Render(strings.Repeat("─", width))}
-	r, ok := a.selected()
+	r, ok := a.current()
 	if !ok {
 		return lines
 	}
@@ -379,7 +420,7 @@ func (a answersTab) detail(s styles, width int) []string {
 	}
 	lines = append(lines, wrap(r.Label, width)...)
 	answer := r.Answer
-	if strings.TrimSpace(answer) == "" {
+	if unansweredYet(r) {
 		answer = "none yet: e gives it one"
 	}
 	lines = append(lines, fmt.Sprintf("%s · answer: %s (%s) · used %d time(s)", r.Kind, answer, sourceName(r.Source), r.Uses))

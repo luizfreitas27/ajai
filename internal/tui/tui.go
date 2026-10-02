@@ -175,6 +175,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dash = m.dash.apply(msg)
 		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs, m.deps.Now())
 		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+		if m.tab == tabAnswers && !m.setupShown && !m.ans.editing() { // a run queues answers, Telegram answers them
+			next = tea.Batch(next, loadAnswers(m.deps, m.ans.shownState()))
+		}
 		if m.refreshes++; m.refreshes%doctorEvery == 0 {
 			var check tea.Cmd
 			m, check = m.checkAgain()
@@ -217,7 +220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, loadConfig(m.deps)) // the subcommand may have written the config
 	case openConfigMsg:
 		m.setupShown, m.tab = false, tabConfig
-		return m, loadConfig(m.deps)
+		return m, m.loadTab()
 	case runStartedMsg, stopAskedMsg:
 		var cmd tea.Cmd
 		m.runs, cmd = m.runs.update(msg, m.deps)
@@ -267,6 +270,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.help = false
 		case m.setupShown && !m.checks.noConfig:
 			m.setupShown = false
+			return m, m.loadTab() // it may never have loaded, or changed meanwhile
 		}
 		return m, nil
 	case "s":
@@ -292,13 +296,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.tab, m.help, m.setupShown = t, false, false
-		switch m.tab { // what the tab shows may have changed meanwhile
-		case tabConfig:
-			return m, loadConfig(m.deps)
-		case tabAnswers:
-			return m, loadAnswers(m.deps, m.ans.shownState())
-		}
-		return m, nil
+		return m, m.loadTab()
 	}
 	switch {
 	case m.help:
@@ -316,6 +314,18 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+// loadTab reads what the tab shown displays: it may have changed since it was
+// last shown, or never have been read.
+func (m Model) loadTab() tea.Cmd {
+	switch m.tab {
+	case tabConfig:
+		return loadConfig(m.deps)
+	case tabAnswers:
+		return loadAnswers(m.deps, m.ans.shownState())
+	}
+	return nil
 }
 
 // bodyHeight is the room between the tab bar and the key hints.
@@ -355,7 +365,7 @@ func (m Model) tabBar() string {
 		parts = append(parts, m.styles.activeTab.Render("Setup"))
 	}
 	for i, name := range tabNames {
-		label := fmt.Sprintf("%d %s", i+1, name)
+		label := tabKey(tab(i)) + " " + name
 		if tab(i) == tabAnswers && m.dash.snap.pending > 0 {
 			label += fmt.Sprintf(" (%d)", m.dash.snap.pending)
 		}
@@ -405,7 +415,7 @@ func (m Model) helpView() string {
 		lines = append(lines, "  "+m.styles.key.Render(fmt.Sprintf("%-11s", key))+" "+what)
 	}
 	for i, name := range tabNames {
-		row(fmt.Sprint(i+1), name)
+		row(tabKey(tab(i)), name)
 	}
 	row("?", "this list; Esc closes it")
 	row("q, Ctrl-C", "quit (a run in progress keeps running)")

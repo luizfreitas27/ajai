@@ -137,11 +137,12 @@ is done, recorded as "stopped from the TUI". When a run ends while the TUI is op
 says how it went.
 
 The **Answers** tab is the answer memory, the review queue first (its tab title counts the
-pending answers) and the approved ones a Tab away. Each answer shows its question, kind,
+pending answers) and the approved ones a Tab away; it keeps up as runs queue questions and
+Telegram answers them. Each answer shows its question, kind,
 options, who gave it, how often it was used and the last job. `a` approves it as shown (if a
 run answered it again meanwhile, nothing is approved and the new answer is shown), `e`
-corrects it: a select or radio is picked from its options or typed (an option, or the
-beginning of just one), anything else typed; a correction is yours and approved. A checkbox
+corrects it: a select or radio is picked from its options with ↑↓, or typed (an option, or
+the beginning of just one; the pick follows what you type), anything else typed; a correction is yours and approved. A checkbox
 takes only `a` or `d`; `d` deletes after asking, and aja asks the question again next time.
 
 The **Config** tab lists every setting by section, with its value in the config file and

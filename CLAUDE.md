@@ -80,9 +80,9 @@ to the tag before tagging and the workflow publishes that section as the release
   Tests drive the model synchronously (`harness_test.go`: keys, sizes, explicit ticks,
   a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
   with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them; the
-  temporary AJA_HOME is written as `$AJA_HOME`). While a tab edits a value every key but
-  Ctrl-C goes to it (`configTab.editing`). The Config tab reads and saves through
-  `config.LoadFile` (the YAML alone: no environment, no `.env`), and loads with the real
+  temporary AJA_HOME is written as `$AJA_HOME`). While a tab edits a value or asks a
+  question, every key but Ctrl-C goes to it (`Model.typing`). The Config tab reads and
+  saves through `config.LoadFile` (the YAML alone: no environment, no `.env`), and loads with the real
   environment only to mark `AJA_CFG_` overrides; secrets go through `config.SetDotenv`
   (single-quoted values, refusing quotes, backslashes and line breaks; 0600, atomic) and
   their values are never rendered or logged, nor is godotenv's error text (it quotes the
@@ -190,7 +190,7 @@ to the tag before tagging and the workflow publishes that section as the release
   changed answer is shown again, never approved unseen) / `delete:<id>`, and records
   (bot, chat, message) → answer id in `telegram_messages`, which is how a reply finds its
   answer after a restart (links expire after `linkMaxAge`). A reply to a select or radio
-  must be an option or the beginning of exactly one (`pickOption`), never a guess. Every
+  must be an option or the beginning of exactly one (`questions.PickOption`), never a guess. Every
   outcome edits the message. `getUpdates` asks for `message` and `callback_query`
   (Telegram remembers that list). Tests run against an httptest fake of the Bot API with a
   real store and answer memory.
