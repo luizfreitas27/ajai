@@ -27,3 +27,5 @@ no such section the notes are the commit list.
   market and dry run); `aja status` shows the next opening.
 - `aja daemon`: starts an unattended run when a window opens and stops it when it closes,
   with Telegram notices; `aja logs --daemon` shows its log, `aja status` whether it runs.
+- `aja daemon install` / `status` / `uninstall`: the daemon from a systemd user unit tied
+  to your desktop session.

@@ -119,7 +119,7 @@ The part of the daemon that watches the clock and starts and stops runs for the 
 _Avoid_: cron job, timer, background worker
 
 **Daemon**:
-The long-lived `aja daemon` process, installed as a systemd user service of the user's desktop session, that hosts the scheduler and the remote commands and runs their runs itself.
+The long-lived `aja daemon` process, usually started by a systemd user unit with the user's desktop session (`aja daemon install`), that hosts the scheduler and the remote commands and runs their runs itself.
 _Avoid_: server, service, agent, background mode
 
 **Remote command**:
