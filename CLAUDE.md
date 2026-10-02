@@ -66,7 +66,12 @@ to the tag before tagging and the workflow publishes that section as the release
   Telegram's `/status`; never re-derive it from the lock and state file.
   Tests drive the model synchronously (`harness_test.go`: keys, sizes, explicit ticks,
   a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
-  with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them). No adaptive
+  with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them; the
+  temporary AJA_HOME is written as `$AJA_HOME`). While a tab edits a value every key but
+  Ctrl-C goes to it (`configTab.editing`). The Config tab loads the file with
+  `config.MapEnv(nil)` both to show and to save (as `aja config set`), and with the real
+  environment only to mark `AJA_CFG_` overrides; secrets go through `config.SetDotenv`
+  (single-quoted values, 0600, atomic) and their values are never rendered or logged. No adaptive
   colours: they make the renderer query the terminal's background while Bubble Tea reads
   the keyboard, and the reply arrives as key presses. To try it outside tests, run it in a
   pty that answers the OSC 11 query Bubble Tea's own init sends, or termenv eats the

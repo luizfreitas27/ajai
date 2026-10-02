@@ -32,7 +32,9 @@ no such section the notes are the commit list.
 - Telegram commands while the daemon runs: `/status`, `/stop`, `/run [market] [dry]`,
   `/help`, from your configured chat only.
 - `aja` with no command opens the TUI in a terminal: a live Dashboard with the run in
-  progress, the last runs, pending answers, the next window, the daemon and today's log.
+  progress, the last runs, pending answers, the next window, the daemon and today's log;
+  and a Config tab that edits every setting (validated, environment overrides marked) and
+  saves the secrets in aja's `.env` from hidden fields.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a
   question by replying to its message (checked against the options a select or radio
   offered). Answers remembered from now on keep those options.

@@ -73,7 +73,7 @@ func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
 			continue
 		}
 		if err := l.Config.Set(key, value); err != nil {
-			return nil, fmt.Errorf("environment override %s%s: %w", EnvOverridePrefix, strings.ToUpper(strings.Replace(key, ".", "_", 1)), err)
+			return nil, fmt.Errorf("environment override %s: %w", EnvOverrideName(key), err)
 		}
 		l.Overrides = append(l.Overrides, key)
 	}

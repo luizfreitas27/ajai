@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -17,15 +18,26 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/store"
 )
 
 // Deps is what the TUI works on.
 type Deps struct {
-	Paths paths.Paths
-	Store *store.Store
-	Now   func() time.Time
+	Paths  paths.Paths
+	Store  *store.Store
+	Env    config.Env // the process environment: secrets and AJA_CFG_ overrides
+	Logger *slog.Logger
+	Now    func() time.Time
+}
+
+func (d Deps) logger() *slog.Logger {
+	if d.Logger == nil {
+		return logging.Discard
+	}
+	return d.Logger
 }
 
 // The smallest terminal the TUI lays out in.
@@ -40,7 +52,12 @@ const refreshEvery = time.Second
 // tab is an index into tabNames, the tabs in the order of their number keys.
 type tab int
 
-var tabNames = []string{"Dashboard"}
+const (
+	tabDashboard tab = iota
+	tabConfig
+)
+
+var tabNames = []string{"Dashboard", "Config"}
 
 // Model is the TUI.
 type Model struct {
@@ -52,6 +69,7 @@ type Model struct {
 	tab           tab
 	help          bool
 	dash          dashboard
+	conf          configTab
 }
 
 // New builds the TUI; r renders its colours (see Run).
@@ -80,32 +98,66 @@ func (m Model) Init() tea.Cmd { return m.dash.refresh(m.deps) }
 
 // Update handles keys, the terminal's size and the refresh cycle: a refresh
 // reads, and the next one is scheduled only once its result is in, so two never
-// overlap.
+// overlap. While a tab edits a value, every key but Ctrl-C goes to it.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.conf = m.conf.resized(m.width, m.bodyHeight())
 	case tea.KeyMsg:
-		switch key := msg.String(); key {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		case "?":
-			m.help = !m.help
-		case "esc":
-			m.help = false
-		default:
-			if len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < len(tabNames) {
-				m.tab, m.help = tab(key[0]-'1'), false
-			}
-		}
+		return m.key(msg)
 	case tickMsg:
 		return m, m.dash.refresh(m.deps)
 	case refreshedMsg:
 		m.dash = m.dash.apply(msg)
 		return m, m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+	case configLoadedMsg, configSavedMsg:
+		var cmd tea.Cmd
+		m.conf, cmd = m.conf.update(msg, m.deps)
+		return m, cmd
 	}
 	return m, nil
 }
+
+func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if m.tab == tabConfig && m.conf.editing() {
+		var cmd tea.Cmd
+		m.conf, cmd = m.conf.update(msg, m.deps)
+		return m, cmd
+	}
+	switch key {
+	case "q":
+		return m, tea.Quit
+	case "?":
+		m.help = !m.help
+		return m, nil
+	case "esc":
+		if m.help {
+			m.help = false
+			return m, nil
+		}
+	}
+	if len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < len(tabNames) {
+		m.tab, m.help = tab(key[0]-'1'), false
+		if m.tab == tabConfig {
+			return m, loadConfig(m.deps) // the file may have changed meanwhile
+		}
+		return m, nil
+	}
+	if m.tab == tabConfig && !m.help {
+		var cmd tea.Cmd
+		m.conf, cmd = m.conf.update(msg, m.deps)
+		return m, cmd
+	}
+	return m, nil
+}
+
+// bodyHeight is the room between the tab bar and the key hints.
+func (m Model) bodyHeight() int { return m.height - 4 } // tab bar, two rules, key hints
 
 // View lays out the tab bar, the screen and the key hints.
 func (m Model) View() string {
@@ -117,10 +169,15 @@ func (m Model) View() string {
 			minWidth, minHeight, m.width, m.height)
 	}
 	rule := m.styles.dim.Render(strings.Repeat("─", m.width))
-	height := m.height - 4 // tab bar, two rules, key hints
-	body := m.dash.view(m.styles, m.width, height, m.deps.Now())
-	if m.help {
+	height := m.bodyHeight()
+	var body string
+	switch {
+	case m.help:
 		body = m.helpView()
+	case m.tab == tabConfig:
+		body = m.conf.view(m.styles, m.deps, m.width)
+	default:
+		body = m.dash.view(m.styles, m.width, height, m.deps.Now())
 	}
 	return strings.Join([]string{m.tabBar(), rule, fit(body, m.width, height), rule, m.hints()}, "\n")
 }
@@ -139,7 +196,16 @@ func (m Model) tabBar() string {
 }
 
 func (m Model) hints() string {
-	return m.styles.dim.Render("? keys · q quit")
+	hint := "? keys · q quit"
+	switch {
+	case m.help:
+		hint = "esc closes the list · q quit"
+	case m.tab == tabConfig && m.conf.editing():
+		hint = "enter saves · esc cancels"
+	case m.tab == tabConfig:
+		hint = "↑↓ move · enter edit · ? keys · q quit"
+	}
+	return m.styles.dim.Render(hint)
 }
 
 func (m Model) helpView() string {
@@ -152,6 +218,10 @@ func (m Model) helpView() string {
 	}
 	row("?", "this list; Esc closes it")
 	row("q, Ctrl-C", "quit (a run in progress keeps running)")
+	lines = append(lines, "", m.styles.section.Render("Config"), "")
+	row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
+	row("Enter", "edit the setting or secret, then Enter saves")
+	row("Esc", "cancel the edit")
 	return strings.Join(lines, "\n")
 }
 

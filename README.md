@@ -122,10 +122,23 @@ The **Dashboard** refreshes every second. It shows:
 - whether the daemon runs;
 - today's log as it grows. A run the daemon started is followed in the daemon's log.
 
+The **Config** tab lists every setting by section, with its value in the config file and
+what it does. Enter edits one:
+- a setting with fixed values is picked from a list;
+- anything else is typed, and refused with the reason if it is not valid;
+- a setting your environment overrides (`AJA_CFG_...`) is marked, and an edit changes the
+  file, never saving the environment's value.
+
+The three secrets (`AJA_AI_API_KEY`, `AJA_TELEGRAM_BOT_TOKEN`, `AJA_TELEGRAM_CHAT_ID`) show
+only whether they are set, and where (your environment or `.env`). Each one is typed into a
+hidden field and saved in aja's `.env`, readable only by you; an empty value removes it. If
+the daemon runs, the TUI tells you when it needs a restart: it reads the Telegram settings
+when it starts, while settings take effect on its next run.
+
 Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24 and honours `--no-color` and
-`NO_COLOR`. More tabs (answers, schedule, jobs, configuration) and starting and stopping runs
-from it are coming (issue #36).
+`NO_COLOR`. More tabs (answers, schedule, jobs), the setup checklist, and starting and
+stopping runs from it are coming (issue #36).
 
 ## Everyday commands
 
