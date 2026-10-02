@@ -12,12 +12,18 @@ import (
 )
 
 func newSup(t *testing.T) (*Supervisor, *fakeRuns, chan Ended) {
+	s, f, ended, _ := newSupWithNotices(t)
+	return s, f, ended
+}
+
+func newSupWithNotices(t *testing.T) (*Supervisor, *fakeRuns, chan Ended, *notices) {
 	t.Helper()
 	f := &fakeRuns{dataDir: t.TempDir()}
-	s := NewSupervisor(f.dataDir, f.Start, nil)
+	n := &notices{}
+	s := NewSupervisor(f.dataDir, f.Start, n, nil)
 	ended := make(chan Ended, 10)
 	s.OnEnd = func(e Ended) { ended <- e }
-	return s, f, ended
+	return s, f, ended, n
 }
 
 func TestTheSupervisorRunsOneRunAtATimeAndStopsItWithAReason(t *testing.T) {
@@ -72,7 +78,8 @@ func TestARunThatEndsEarlyFailsToStartOrPanicsLeavesTheSupervisorReady(t *testin
 	if err := s.Start(ctx, Request{Origin: run.OriginSchedule}); err != nil {
 		t.Fatal(err)
 	}
-	if e := <-ended; e.Err == nil || !strings.Contains(e.Err.Error(), "the run crashed: a nil card") {
+	var crash *run.Crash
+	if e := <-ended; !errors.As(e.Err, &crash) || crash.Value != "a nil card" {
 		t.Errorf("panic: %+v", e)
 	}
 	if _, held, _ := run.ReadLock(f.dataDir); held {
@@ -96,7 +103,7 @@ func TestARunThatEndsEarlyFailsToStartOrPanicsLeavesTheSupervisorReady(t *testin
 
 func TestTheSupervisorDefersToARunOfAnotherProcess(t *testing.T) {
 	s, f, _ := newSup(t)
-	terminal, err := run.AcquireLock(f.dataDir, run.OriginTerminal, time.Now())
+	terminal, err := run.AcquireLock(f.dataDir, run.Holder{Origin: run.OriginTerminal, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,5 +155,91 @@ func TestTheDaemonCtxEndsTheRunLikeCtrlC(t *testing.T) {
 	s.Wait()
 	if e := <-ended; e.Err != nil || !errors.Is(f.causes[0], context.Canceled) {
 		t.Errorf("%+v %v", e, f.causes)
+	}
+}
+
+func TestACrashIsReportedOnceAndLeavesNoPhantomRun(t *testing.T) {
+	s, f, ended, notes := newSupWithNotices(t)
+	ctx := context.Background()
+	state := run.StatePath(f.dataDir)
+
+	// A crash the runner did not see (the non-stop loop): the supervisor reports
+	// it, and the live state it left behind (naming this very process) goes.
+	f.behave = func(context.Context, Request) ([]run.Summary, error) {
+		_ = run.WriteState(state, run.State{PID: os.Getpid()})
+		panic("in the non-stop loop")
+	}
+	if err := s.Start(ctx, Request{Origin: run.OriginSchedule}); err != nil {
+		t.Fatal(err)
+	}
+	<-ended
+	if n := notes.all(); len(n) != 1 || !strings.Contains(n[0], "aja crashed: in the non-stop loop") {
+		t.Errorf("%q", n)
+	}
+	if _, err := run.ReadState(state); !errors.Is(err, run.ErrNoState) {
+		t.Error("aja status would show a run that is not there")
+	}
+
+	// A crash inside a run: the runner recorded and reported it (*run.Crash); not twice.
+	f.behave = func(context.Context, Request) ([]run.Summary, error) { panic(&run.Crash{Value: "a nil card"}) }
+	if err := s.Start(ctx, Request{Origin: run.OriginSchedule}); err != nil {
+		t.Fatal(err)
+	}
+	<-ended
+	if n := notes.all(); len(n) != 1 {
+		t.Errorf("reported twice: %q", n)
+	}
+}
+
+func TestAPanicWhileOpeningARunIsAnError(t *testing.T) {
+	s, f, _ := newSup(t)
+	s.start = func(context.Context, Request) (Opened, error) { panic("a nil config") }
+	if err := s.Start(context.Background(), Request{Origin: run.OriginSchedule}); err == nil || !strings.Contains(err.Error(), "starting the run crashed: a nil config") {
+		t.Errorf("%v", err)
+	}
+	if _, ok := s.Current(); ok {
+		t.Error("nothing in progress")
+	}
+	s.start = f.Start
+	if err := s.Start(context.Background(), Request{Origin: run.OriginSchedule}); err != nil {
+		t.Errorf("ready again: %v", err)
+	}
+	_, _ = s.Stop("x")
+	s.Wait()
+}
+
+func TestAnotherProcesssRunIsSeenBeforeTheStarterReadsAnything(t *testing.T) {
+	s, f, _ := newSup(t)
+	f.startErr = errors.New("fix the configuration first") // a broken config must not hide the skip
+	terminal, err := run.AcquireLock(f.dataDir, run.Holder{Origin: run.OriginTerminal, Started: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terminal.Release()
+	var held *run.HeldError
+	if err := s.Start(context.Background(), Request{Origin: run.OriginSchedule}); !errors.As(err, &held) {
+		t.Errorf("%v", err)
+	}
+}
+
+func TestShutdownIsToldApartFromAStopRequest(t *testing.T) {
+	s, _, ended := newSup(t)
+	if err := s.Start(context.Background(), Request{Origin: run.OriginSchedule}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = s.Stop(ReasonWindowClosed)
+	if e := <-ended; e.Shutdown {
+		t.Error("a stop request is not the daemon stopping")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := s.Start(ctx, Request{Origin: run.OriginSchedule}); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if e := <-ended; !e.Shutdown {
+		t.Error("the daemon stopping is a shutdown")
+	}
+	if _, ok := s.StopIf("x", func(Info) bool { return false }); ok {
+		t.Error("StopIf with no run, or not the one meant, stops nothing")
 	}
 }

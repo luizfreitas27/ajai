@@ -9,59 +9,68 @@ import (
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/filelock"
+	"github.com/luizfreitas27/aja/internal/procs"
 )
 
 const lockFileName = "daemon.lock"
 
+// lockSettle: see filelock.Acquire; a probe or a starting daemon lasts microseconds.
+const lockSettle = time.Second
+
 func lockPath(dataDir string) string { return filepath.Join(dataDir, lockFileName) }
 
-// Running describes the daemon that holds the daemon lock.
-type Running struct {
+// Process is the daemon that holds the daemon lock.
+type Process struct {
 	PID     int       `json:"pid"`
 	Started time.Time `json:"started"`
 }
 
-// ErrRunning: a daemon is already running.
-type ErrRunning struct{ Running Running }
+// String is "pid 42, since Mon 05 Oct 09:00".
+func (p Process) String() string {
+	return fmt.Sprintf("pid %d, since %s", p.PID, p.Started.Local().Format("Mon 02 Jan 15:04"))
+}
+
+// RunningError: a daemon is already running.
+type RunningError struct{ Daemon Process }
 
 // Error names the daemon that runs.
-func (e *ErrRunning) Error() string {
-	return fmt.Sprintf("aja daemon is already running (pid %d, since %s)", e.Running.PID, e.Running.Started.Local().Format("Mon 02 Jan 15:04"))
+func (e *RunningError) Error() string {
+	return "aja daemon is already running (" + e.Daemon.String() + ")"
 }
 
 // Lock is held by the one daemon of a data directory.
 type Lock struct{ f *filelock.File }
 
-// AcquireLock makes this process the daemon, or returns *ErrRunning.
+// AcquireLock makes this process the daemon, or returns a *RunningError.
 func AcquireLock(dataDir string, now time.Time) (*Lock, error) {
-	f, err := filelock.TryLock(lockPath(dataDir))
+	data, _ := json.Marshal(Process{PID: os.Getpid(), Started: now})
+	f, desc, err := filelock.Acquire(lockPath(dataDir), data, lockSettle, func(desc []byte) bool {
+		p := parseProcess(desc)
+		return p.PID != 0 && procs.Alive(p.PID)
+	})
 	if errors.Is(err, filelock.ErrLocked) {
-		r, _, _ := ReadLock(dataDir)
-		return nil, &ErrRunning{Running: r}
+		return nil, &RunningError{Daemon: parseProcess(desc)}
 	}
 	if err != nil {
 		return nil, err
 	}
-	data, _ := json.Marshal(Running{PID: os.Getpid(), Started: now})
-	if err := f.Describe(data); err != nil {
-		f.Unlock()
-		return nil, err
-	}
 	return &Lock{f: f}, nil
+}
+
+func parseProcess(desc []byte) Process {
+	var p Process
+	_ = json.Unmarshal(desc, &p)
+	return p
 }
 
 // Release gives the lock up when the daemon exits.
 func (l *Lock) Release() { l.f.Unlock() }
 
 // ReadLock reports whether a daemon runs, and which.
-func ReadLock(dataDir string) (Running, bool, error) {
-	held, err := filelock.Held(lockPath(dataDir))
+func ReadLock(dataDir string) (Process, bool, error) {
+	desc, held, err := filelock.ReadHeld(lockPath(dataDir))
 	if err != nil || !held {
-		return Running{}, false, err
+		return Process{}, false, err
 	}
-	var r Running
-	if data, err := filelock.Read(lockPath(dataDir)); err == nil && len(data) > 0 {
-		_ = json.Unmarshal(data, &r)
-	}
-	return r, true, nil
+	return parseProcess(desc), true, nil
 }

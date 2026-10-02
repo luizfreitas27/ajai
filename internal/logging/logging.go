@@ -19,6 +19,9 @@ func FileName(dir string, day time.Time) string {
 	return filepath.Join(dir, "aja-"+day.Format("2006-01-02")+".log")
 }
 
+// FileNamer names a day's log file in a directory: FileName or DaemonFileName.
+type FileNamer func(dir string, day time.Time) string
+
 // DaemonFileName is the daemon's log file for a given day.
 func DaemonFileName(dir string, day time.Time) string {
 	return filepath.Join(dir, "daemon-"+day.Format("2006-01-02")+".log")
@@ -63,7 +66,7 @@ var Discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 // OpenDaily is Open for a process that lives for days (the daemon): it writes
 // to name(dir, day) and moves to the next day's file after midnight, so each
 // day's file holds that day.
-func OpenDaily(dir string, name func(dir string, day time.Time) string, level slog.Level) (*slog.Logger, io.Closer, error) {
+func OpenDaily(dir string, name FileNamer, level slog.Level) (*slog.Logger, io.Closer, error) {
 	d := &dailyFile{dir: dir, name: name, now: time.Now}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("log directory: %w", err)
@@ -75,12 +78,13 @@ func OpenDaily(dir string, name func(dir string, day time.Time) string, level sl
 }
 
 type dailyFile struct {
-	mu   sync.Mutex
-	dir  string
-	name func(string, time.Time) string
-	now  func() time.Time
-	path string
-	f    *os.File
+	mu     sync.Mutex
+	dir    string
+	name   FileNamer
+	now    func() time.Time
+	path   string
+	f      *os.File
+	closed bool
 }
 
 // file returns today's file, opening it (and closing yesterday's) when the day changed.
@@ -103,6 +107,9 @@ func (d *dailyFile) file() (*os.File, error) {
 func (d *dailyFile) Write(p []byte) (int, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.closed {
+		return 0, os.ErrClosed
+	}
 	f, err := d.file()
 	if err != nil {
 		return 0, err
@@ -113,6 +120,7 @@ func (d *dailyFile) Write(p []byte) (int, error) {
 func (d *dailyFile) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.closed = true
 	if d.f == nil {
 		return nil
 	}

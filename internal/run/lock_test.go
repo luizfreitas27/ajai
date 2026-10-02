@@ -24,7 +24,7 @@ func TestOneRunHoldsTheLockAndTheRefusalNamesIt(t *testing.T) {
 		t.Fatalf("nothing holds it yet: %v %v", held, err)
 	}
 	at := time.Date(2026, 10, 2, 9, 30, 0, 0, time.Local)
-	a, err := AcquireLock(dir, OriginTerminal, at)
+	a, err := AcquireLock(dir, Holder{Origin: OriginTerminal, Started: at})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestOneRunHoldsTheLockAndTheRefusalNamesIt(t *testing.T) {
 	if err != nil || !held || h.Origin != OriginTerminal || h.PID != os.Getpid() || !h.Started.Equal(at) {
 		t.Errorf("%+v %v %v", h, held, err)
 	}
-	_, err = AcquireLock(dir, OriginSchedule, time.Now())
+	_, err = AcquireLock(dir, Holder{Origin: OriginSchedule, Started: time.Now()})
 	var he *HeldError
 	if !errors.As(err, &he) || he.Holder.Origin != OriginTerminal {
 		t.Fatalf("a second run must be refused, naming the first: %v", err)
@@ -42,7 +42,7 @@ func TestOneRunHoldsTheLockAndTheRefusalNamesIt(t *testing.T) {
 		t.Errorf("%q", err)
 	}
 	a.Release()
-	b, err := AcquireLock(dir, OriginTelegram, time.Now())
+	b, err := AcquireLock(dir, Holder{Origin: OriginTelegram, Started: time.Now()})
 	if err != nil {
 		t.Fatalf("free once released: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestALockACrashedRunLeftNeverBlocksTheNext(t *testing.T) {
 	if _, held, _ := ReadLock(dir); held {
 		t.Error("a dead run's description is not a holder")
 	}
-	l, err := AcquireLock(dir, OriginTerminal, time.Now())
+	l, err := AcquireLock(dir, Holder{Origin: OriginTerminal, Started: time.Now()})
 	if err != nil {
 		t.Fatalf("a stale lock must not block a run: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestALockACrashedRunLeftNeverBlocksTheNext(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() { time.Sleep(30 * time.Millisecond); probe.Unlock() }()
-	l, err = AcquireLock(dir, OriginTerminal, time.Now())
+	l, err = AcquireLock(dir, Holder{Origin: OriginTerminal, Started: time.Now()})
 	if err != nil {
 		t.Fatalf("a probe over a dead run's description must not refuse the run: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestAStopRequestNeedsARunAndOnlyOneMadeDuringTheRunCounts(t *testing.T) {
 	if err := os.Chtimes(StopPath(dir), past, past); err != nil {
 		t.Fatal(err)
 	}
-	l, err := AcquireLock(dir, OriginTerminal, time.Now())
+	l, err := AcquireLock(dir, Holder{Origin: OriginTerminal, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestAStopRequestEndsTheRunLikeCtrlCWithItsReason(t *testing.T) {
 	rec := &recorder{}
 	r.Notifier = rec
 	dir := t.TempDir()
-	l, err := AcquireLock(dir, OriginTerminal, time.Now())
+	l, err := AcquireLock(dir, Holder{Origin: OriginTerminal, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}

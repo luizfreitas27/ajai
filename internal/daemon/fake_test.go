@@ -22,11 +22,11 @@ type fakeRuns struct {
 	causes   []error       // the context cause each session ended with
 }
 
-func (f *fakeRuns) Start(ctx context.Context, req Request) (Session, error) {
+func (f *fakeRuns) Start(ctx context.Context, req Request) (Opened, error) {
 	if f.startErr != nil {
 		return nil, f.startErr
 	}
-	lock, err := run.AcquireLock(f.dataDir, req.Origin, time.Now())
+	lock, err := run.AcquireLock(f.dataDir, run.Holder{Origin: req.Origin, Window: req.Opening.WindowID, Started: time.Now()})
 	if err != nil {
 		return nil, err
 	}
@@ -73,5 +73,3 @@ func stopReason(err error) string {
 	}
 	return ""
 }
-
-var discard = slogDiscard()

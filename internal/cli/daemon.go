@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -41,11 +40,8 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 				return err
 			}
 			defer lock.Release()
-			level := config.Defaults().Settings.LogLevel
-			if l, err := a.load(); l != nil && err == nil {
-				level = l.Config.Settings.LogLevel
-			}
-			logger, closer, err := logging.OpenDaily(a.paths.LogDir, logging.DaemonFileName, logging.ParseLevel(level))
+			l, _ := a.load() // the log level: fixed for the daemon's life; runs reread everything else
+			logger, closer, err := logging.OpenDaily(a.paths.LogDir, logging.DaemonFileName, logging.ParseLevel(logLevel(l)))
 			if err != nil {
 				return err
 			}
@@ -55,14 +51,9 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 			if err != nil {
 				return err
 			}
-			// The daemon's own notices use the secrets of the moment it started; every
-			// run reads them afresh with the configuration.
-			secrets := a.secrets(nil)
-			telegram := notify.New(secrets.TelegramBotToken, secrets.TelegramChatID, logger)
-
-			sup := daemon.NewSupervisor(a.paths.DataDir, a.daemonStarter(st, logger), logger)
-			sched := &daemon.Scheduler{Store: st, Sup: sup, Notifier: telegram, Logger: logger, Now: a.now}
-			sup.OnEnd = sched.RunEnded
+			telegram := freshTelegram{app: a, logger: logger}
+			sup := daemon.NewSupervisor(a.paths.DataDir, a.daemonStarter(st, logger), telegram, logger)
+			sched := daemon.NewScheduler(st, sup, telegram, logger, a.now)
 
 			a.ui.Banner(a.Version)
 			a.ui.OK("daemon", fmt.Sprintf("running (pid %d); Ctrl-C to stop", os.Getpid()))
@@ -91,19 +82,10 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 // daemonStarter opens a run for the daemon: the configuration and secrets read
 // afresh (with the request's market), unattended, through launch like aja run.
 func (a *App) daemonStarter(st *store.Store, logger *slog.Logger) daemon.Starter {
-	return func(ctx context.Context, req daemon.Request) (daemon.Session, error) {
-		flags := map[string]string{}
-		if req.Market != "" {
-			flags["markets.active"] = req.Market
-		}
-		l, err := config.Load(a.paths, a.Env, flags)
-		switch {
-		case l == nil:
+	return func(ctx context.Context, req daemon.Request) (daemon.Opened, error) {
+		l, err := config.Load(a.paths, a.Env, marketFlag(req.Market))
+		if err := a.configProblem(l, err); err != nil {
 			return nil, err
-		case !l.FileExisted:
-			return nil, errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
-		case err != nil:
-			return nil, fmt.Errorf("fix the configuration first (`aja config validate`): %w", err)
 		}
 		plan, err := launch.NewPlan(l, a.paths, logger)
 		if err != nil {
@@ -111,11 +93,24 @@ func (a *App) daemonStarter(st *store.Store, logger *slog.Logger) daemon.Starter
 		}
 		telegram := notify.New(l.Secrets.TelegramBotToken, l.Secrets.TelegramChatID, logger)
 		opts := run.Options{DryRun: req.DryRun, Unattended: true}
-		opened, err := plan.Open(ctx, opts, launch.Deps{Origin: req.Origin, Paths: a.paths, Store: st, Logger: logger,
-			Notifier: telegram, Events: a.printEvent, OpenBrowser: OpenBrowser})
+		// No help pause and no filter pause to offer: a daemon run is unattended.
+		opened, err := plan.Open(ctx, opts, launch.Deps{Origin: req.Origin, Window: req.Opening.WindowID, Paths: a.paths, Store: st,
+			Logger: logger, Notifier: telegram, Events: a.printEvent, OpenBrowser: OpenBrowser})
 		if err != nil {
 			return nil, err
 		}
 		return opened, nil
 	}
+}
+
+// freshTelegram sends the daemon's own notices with the secrets of the moment,
+// so a token set while the daemon runs is used without a restart.
+type freshTelegram struct {
+	app    *App
+	logger *slog.Logger
+}
+
+func (f freshTelegram) Send(ctx context.Context, text string) bool {
+	s := f.app.secrets(nil)
+	return notify.New(s.TelegramBotToken, s.TelegramChatID, f.logger).Send(ctx, text)
 }

@@ -95,6 +95,13 @@ func (s *Store) RecordOpening(k schedule.Key, outcome schedule.Outcome, detail s
 	return err
 }
 
+// ForgetOpening removes the record of an opening, so the scheduler treats it as
+// not handled (the daemon stopped in the middle of its run).
+func (s *Store) ForgetOpening(k schedule.Key) error {
+	_, err := s.db.Exec(`DELETE FROM schedule_openings WHERE window_id = ? AND date = ?`, k.WindowID, k.Date)
+	return err
+}
+
 // HandledOpenings returns the openings handled on or after a local date ("2006-01-02").
 func (s *Store) HandledOpenings(since string) (map[schedule.Key]bool, error) {
 	rows, err := s.db.Query(`SELECT window_id, date FROM schedule_openings WHERE date >= ?`, since)

@@ -187,7 +187,8 @@ type Runner struct {
 
 	filtersPaused bool // the user typed "off" at a filter pause
 
-	started time.Time
+	started    time.Time
+	inProgress *Summary // the summary run() is filling, for Run's crash path
 }
 
 func (r *Runner) emit(kind EventKind, text string, card *linkedin.Card) {
@@ -222,14 +223,21 @@ func (r *Runner) saveState(sum *Summary, term string) {
 // run cleanly with reason "stopped by user" (or a stop request's). The run is recorded in the store,
 // with the review queue's size, however it ends.
 func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error) {
+	r.inProgress = nil
 	defer func() {
-		// A bug must not end a run silently: report it, then let it crash as before.
+		// A bug must not end a run silently: record it and report it, then crash on
+		// with a *Crash, so a caller that recovers (the daemon) knows it is done.
 		if p := recover(); p != nil {
-			if sum.Reason == "" {
-				sum.ended(EndError, fmt.Sprintf("crashed: %v", p))
+			crash := &Crash{Value: p}
+			if r.inProgress != nil {
+				sum = *r.inProgress
 			}
-			r.notifyEnd(sum, fmt.Errorf("aja crashed: %v", p))
-			panic(p)
+			if sum.Reason == "" {
+				sum.ended(EndError, "crashed: "+fmt.Sprint(p))
+			}
+			r.record(&sum)
+			r.notifyEnd(sum, crash)
+			panic(crash)
 		}
 	}()
 	sum, err = r.run(ctx, opts)
@@ -239,21 +247,34 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	if errors.Is(err, errInvalidOptions) {
 		return sum, err // a mistake on the command line, not a run
 	}
-	if sum.RunID != 0 { // 0: the run could not even be recorded
-		if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
-			sum.PendingAnswers = n
-		}
-		_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
-			Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
-		if r.StatePath != "" {
-			RemoveState(r.StatePath)
-		}
-	}
+	r.record(&sum)
 	r.notifyEnd(sum, err)
 	ended := sum
 	r.emitEvent(Event{Kind: EventRunEnd, Text: sum.Reason, Summary: &ended})
 	return sum, err
 }
+
+// record writes how the run ended to the store and removes the live state.
+// A run that could not even be recorded (RunID 0) has nothing to finish.
+func (r *Runner) record(sum *Summary) {
+	if sum.RunID == 0 {
+		return
+	}
+	if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
+		sum.PendingAnswers = n
+	}
+	_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
+		Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
+	if r.StatePath != "" {
+		RemoveState(r.StatePath)
+	}
+}
+
+// Crash is what Run panics with after recording and reporting a panic in a run.
+type Crash struct{ Value any }
+
+// Error says the run crashed, with what.
+func (c *Crash) Error() string { return fmt.Sprintf("aja crashed: %v", c.Value) }
 
 func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	r.defaults()
@@ -262,6 +283,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	}
 	r.started = r.Now()
 	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
+	r.inProgress = &sum
 	id, err := r.Store.StartRun(context.Background(), sum.Market, opts.DryRun) // the record must exist even when ctx is already cancelled
 	if err != nil {
 		return sum, err

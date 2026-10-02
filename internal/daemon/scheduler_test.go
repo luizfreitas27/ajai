@@ -64,8 +64,8 @@ func newWorld(t *testing.T, windows ...schedule.Window) *world {
 	w := &world{t: t, st: st, runs: &fakeRuns{dataDir: dir}, notes: &notices{}, ended: make(chan Ended, 10)}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	t.Cleanup(func() { w.cancel(); w.sup.Wait() })
-	w.sup = NewSupervisor(dir, w.runs.Start, nil)
-	w.sched = &Scheduler{Store: st, Sup: w.sup, Notifier: w.notes, Logger: discard, Now: func() time.Time { return w.now }}
+	w.sup = NewSupervisor(dir, w.runs.Start, w.notes, nil)
+	w.sched = NewScheduler(st, w.sup, w.notes, nil, func() time.Time { return w.now })
 	w.sup.OnEnd = func(e Ended) { w.sched.RunEnded(e); w.ended <- e }
 	return w
 }
@@ -187,7 +187,7 @@ func TestADaemonStartedMidWindowRunsItOnceAndRecordsTheRunID(t *testing.T) {
 
 func TestAnOpeningDuringAnotherRunIsSkippedRecordedAndNotified(t *testing.T) {
 	w := newWorld(t, window(t, "mon", "09:00", "11:00"))
-	terminal, err := run.AcquireLock(w.runs.dataDir, run.OriginTerminal, w.now)
+	terminal, err := run.AcquireLock(w.runs.dataDir, run.Holder{Origin: run.OriginTerminal, Started: w.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,4 +301,21 @@ func TestLoopTicksAtOnceAndWhenWoken(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestAWindowInterruptedByTheDaemonStoppingResumesWhenItIsBack(t *testing.T) {
+	w := newWorld(t, window(t, "mon", "09:00", "11:00"))
+	w.at("Mon 09:00")
+	w.cancel() // a reboot
+	if e := <-w.ended; !e.Shutdown {
+		t.Fatalf("%+v", e)
+	}
+	if got := w.outcome(1, "2026-10-05"); got != "" {
+		t.Errorf("the interrupted opening is not handled: %q", got)
+	}
+	w.ctx, w.cancel = context.WithCancel(context.Background()) // the daemon is back
+	w.at("Mon 09:40")
+	if n := len(w.runs.requests()); n != 2 {
+		t.Errorf("the window resumes: %d runs", n)
+	}
 }

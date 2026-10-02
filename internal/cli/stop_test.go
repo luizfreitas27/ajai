@@ -15,7 +15,7 @@ import (
 func TestRunRefusesWhileAnotherRunHoldsTheLockWithoutOpeningChrome(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
-	lock, err := run.AcquireLock(h.home, run.OriginSchedule, time.Now())
+	lock, err := run.AcquireLock(h.home, run.Holder{Origin: run.OriginSchedule, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestStopAsksTheRunInProgressAndWaitsForItToEnd(t *testing.T) {
 		t.Errorf("nothing to stop: %d %s", code, errText)
 	}
 
-	lock, err := run.AcquireLock(h.home, run.OriginTerminal, time.Now())
+	lock, err := run.AcquireLock(h.home, run.Holder{Origin: run.OriginTerminal, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}

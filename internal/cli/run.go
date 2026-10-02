@@ -54,17 +54,9 @@ daily limit, the hourly cap, --max, an error or Ctrl-C.
 else on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := map[string]string{}
-			if market != "" {
-				flags["markets.active"] = market
-			}
 			ctx := cmd.Context()
-			l, err := config.Load(a.paths, a.Env, flags)
-			level := config.Defaults().Settings.LogLevel
-			if l != nil {
-				level = l.Config.Settings.LogLevel
-			}
-			a.openLog(level) // before the notifier, which logs its warnings through it
+			l, err := config.Load(a.paths, a.Env, marketFlag(market))
+			a.openLog(logLevel(l)) // before the notifier, which logs its warnings through it
 			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
 			// too: an unattended run has nobody watching the terminal. The secrets come from
 			// the environment, so they are there even when the config file is broken.
@@ -74,14 +66,8 @@ else on stdout.`,
 				run.ReportStartFailure(ctx, telegram, err)
 				return err
 			}
-			if l == nil {
+			if err := a.configProblem(l, err); err != nil {
 				return cannotStart(err)
-			}
-			if !l.FileExisted {
-				return cannotStart(errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first"))
-			}
-			if err != nil {
-				return cannotStart(fmt.Errorf("fix the configuration first (`aja config validate`): %w", err))
 			}
 			if err := opts.Validate(); err != nil {
 				return err
@@ -138,6 +124,36 @@ else on stdout.`,
 	f.StringVar(&market, "market", "", "market for this run: brasil or internacional")
 	f.BoolVar(&a.eventsAsJSON, "json", false, "print events and summaries as JSON lines (implies --unattended)")
 	return cmd
+}
+
+// configProblem says why a loaded configuration cannot run (no file, a parse
+// error, a validation error), or nil.
+func (a *App) configProblem(l *config.Loaded, err error) error {
+	switch {
+	case l == nil:
+		return err
+	case !l.FileExisted:
+		return errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
+	case err != nil:
+		return fmt.Errorf("fix the configuration first (`aja config validate`): %w", err)
+	}
+	return nil
+}
+
+// logLevel is the configured log level, or the default without a configuration.
+func logLevel(l *config.Loaded) string {
+	if l == nil {
+		return config.Defaults().Settings.LogLevel
+	}
+	return l.Config.Settings.LogLevel
+}
+
+// marketFlag is the override for a run's market ("" keeps markets.active).
+func marketFlag(market string) map[string]string {
+	if market == "" {
+		return map[string]string{}
+	}
+	return map[string]string{"markets.active": market}
 }
 
 func aiMode(c config.Config, on bool) string {
@@ -250,7 +266,7 @@ func (a *App) statusCmd() *cobra.Command {
 			case state.Alive() && !state.NextRun.IsZero():
 				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
 				if held {
-					a.ui.KV("started from", string(holder.Origin))
+					a.ui.KV("started from", holder.From())
 				}
 			case state.Alive():
 				mode := "live"
@@ -259,7 +275,7 @@ func (a *App) statusCmd() *cobra.Command {
 				}
 				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), mode, state.Market))
 				if held {
-					a.ui.KV("started from", string(holder.Origin))
+					a.ui.KV("started from", holder.From())
 				}
 				a.ui.KV("term", state.Term)
 				a.ui.KV("applied", fmt.Sprintf("%d (external %d, failed %d, would apply %d)", state.Applied, state.External, state.Failed, state.WouldApply))
@@ -276,7 +292,7 @@ func (a *App) statusCmd() *cobra.Command {
 				return err
 			}
 			if d, running, _ := daemon.ReadLock(a.paths.DataDir); running {
-				a.ui.KV("daemon", fmt.Sprintf("running (pid %d, since %s)", d.PID, d.Started.Local().Format("Mon 02 Jan 15:04")))
+				a.ui.KV("daemon", "running ("+d.String()+")")
 			} else if len(windows) > 0 {
 				a.ui.KV("daemon", "not running: schedule windows start runs only while aja daemon runs")
 			}
@@ -325,7 +341,7 @@ func (a *App) logsCmd() *cobra.Command {
 		Short: "Print today's log; -f follows it like tail -f",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := logging.FileName
+			var name logging.FileNamer = logging.FileName
 			if ofDaemon {
 				name = logging.DaemonFileName // the daemon and the runs it starts
 			}
@@ -357,7 +373,7 @@ func (a *App) logsCmd() *cobra.Command {
 
 // follow prints what is appended to the day's log, surviving truncation (the
 // offset resets) and midnight (the file name changes with the day).
-func (a *App) follow(ctx context.Context, name func(string, time.Time) string, path string, offset int64) error {
+func (a *App) follow(ctx context.Context, name logging.FileNamer, path string, offset int64) error {
 	for {
 		select {
 		case <-ctx.Done():

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/schedule"
 	"github.com/luizfreitas27/aja/internal/store"
@@ -24,20 +25,27 @@ const (
 
 // Scheduler starts and stops runs on the schedule windows.
 type Scheduler struct {
-	Store    *store.Store
-	Sup      *Supervisor
-	Notifier run.Notifier // nil: no Telegram notices
-	Logger   *slog.Logger
-	Now      func() time.Time
+	store      *store.Store
+	supervisor *Supervisor
+	notifier   run.Notifier // nil: no Telegram notices
+	logger     *slog.Logger
+	now        func() time.Time
+	wake       chan struct{}
+}
 
-	wake chan struct{}
+// NewScheduler makes the scheduler and has it told when the supervisor's runs
+// end (Supervisor.OnEnd).
+func NewScheduler(st *store.Store, sup *Supervisor, notifier run.Notifier, logger *slog.Logger, now func() time.Time) *Scheduler {
+	if logger == nil {
+		logger = logging.Discard
+	}
+	s := &Scheduler{store: st, supervisor: sup, notifier: notifier, logger: logger, now: now, wake: make(chan struct{}, 1)}
+	sup.OnEnd = s.RunEnded
+	return s
 }
 
 // Wake asks for a tick now (a run just ended: the next opening may be waiting).
 func (s *Scheduler) Wake() {
-	if s.wake == nil {
-		return
-	}
 	select {
 	case s.wake <- struct{}{}:
 	default:
@@ -46,12 +54,11 @@ func (s *Scheduler) Wake() {
 
 // Loop ticks at once, every interval, and when woken, until ctx ends.
 func (s *Scheduler) Loop(ctx context.Context, every time.Duration) {
-	s.wake = make(chan struct{}, 1)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		if err := s.Tick(ctx); err != nil && ctx.Err() == nil {
-			s.Logger.Error("scheduler tick failed", "error", err)
+			s.logger.Error("scheduler tick failed", "error", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -70,17 +77,20 @@ func (s *Scheduler) Loop(ctx context.Context, every time.Duration) {
 //     scheduler's own run of the window before is still ending, the next opening
 //     waits for it instead (back-to-back windows hand over).
 func (s *Scheduler) Tick(ctx context.Context) error {
-	now := s.Now()
-	windows, err := s.Store.ListWindows()
+	now := s.now()
+	windows, err := s.store.ListWindows()
 	if err != nil {
 		return err
 	}
-	if info, ok := s.Sup.Current(); ok && info.Request.Origin == run.OriginSchedule && info.Stopping == "" {
+	if info, ok := s.supervisor.Current(); ok && info.Request.Origin == run.OriginSchedule && info.Stopping == "" {
 		if reason := closedReason(windows, info.Request.Opening, now); reason != "" {
-			_, _ = s.Sup.Stop(reason)
+			opening := info.Request.Opening
+			s.supervisor.StopIf(reason, func(i Info) bool {
+				return i.Request.Origin == run.OriginSchedule && i.Request.Opening == opening
+			})
 		}
 	}
-	handled, err := s.Store.HandledOpenings(now.Format(time.DateOnly))
+	handled, err := s.store.HandledOpenings(now.Format(time.DateOnly))
 	if err != nil {
 		return err
 	}
@@ -88,35 +98,47 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	if info, busy := s.Sup.Current(); busy && info.Request.Origin == run.OriginSchedule && info.Stopping != "" {
+	if info, busy := s.supervisor.Current(); busy && info.Request.Origin == run.OriginSchedule && info.Stopping != "" {
 		return nil // our run of the window before is ending; this opening starts after it
 	}
 	w := due.Window
-	err = s.Sup.Start(ctx, Request{Origin: run.OriginSchedule, Market: w.Market, DryRun: w.DryRun, Opening: due.Key()})
+	err = s.supervisor.Start(ctx, Request{Origin: run.OriginSchedule, Market: w.Market, DryRun: w.DryRun, Opening: due.Key()})
 	var held *run.HeldError
 	switch {
 	case errors.As(err, &held):
-		s.Logger.Info("schedule window skipped", "window", w.ID, "holder", held.Holder.String())
+		s.logger.Info("schedule window skipped", "window", w.ID, "holder", held.Holder.String())
 		s.notify(fmt.Sprintf("aja skipped schedule window %d (%s) today: %s was in progress.", w.ID, w, held.Holder))
-		return s.Store.RecordOpening(due.Key(), schedule.OutcomeSkipped, held.Holder.String(), 0)
+		return s.store.RecordOpening(due.Key(), schedule.OutcomeSkipped, held.Holder.String(), 0)
 	case err != nil:
 		if ctx.Err() != nil {
 			return nil // the daemon is stopping: this opening is not handled
 		}
-		s.Logger.Error("schedule window could not start", "window", w.ID, "error", err)
+		s.logger.Error("schedule window could not start", "window", w.ID, "error", err)
 		s.notify(fmt.Sprintf("aja could not start the run for schedule window %d (%s).\n\n%s", w.ID, w, err))
-		return s.Store.RecordOpening(due.Key(), schedule.OutcomeFailed, err.Error(), 0)
+		return s.store.RecordOpening(due.Key(), schedule.OutcomeFailed, err.Error(), 0)
 	}
 	s.notify(fmt.Sprintf("aja started a run for schedule window %d: %s.", w.ID, w))
-	return s.Store.RecordOpening(due.Key(), schedule.OutcomeStarted, "", 0)
+	return s.store.RecordOpening(due.Key(), schedule.OutcomeStarted, "", 0)
 }
 
-// RunEnded records the run id of a scheduled run once it has ended, and wakes
-// the loop: an opening may be waiting for this run (Supervisor.OnEnd).
+// RunEnded is told of every run the supervisor ran (Supervisor.OnEnd). For a
+// scheduled run it records the run id on the opening, or, when the daemon's own
+// stop cut the run short (a reboot, a logout), forgets the opening, so the
+// window resumes when the daemon is back within it. Then it wakes the loop: an
+// opening may be waiting for this run.
 func (s *Scheduler) RunEnded(e Ended) {
-	if e.Info.Request.Origin == run.OriginSchedule && len(e.Summaries) > 0 && e.Summaries[0].RunID != 0 {
-		if err := s.Store.RecordOpening(e.Info.Request.Opening, schedule.OutcomeStarted, "", e.Summaries[0].RunID); err != nil {
-			s.Logger.Warn("could not record the run of an opening", "error", err)
+	if e.Info.Request.Origin == run.OriginSchedule {
+		key := e.Info.Request.Opening
+		var err error
+		switch {
+		case e.Shutdown:
+			err = s.store.ForgetOpening(key)
+			s.logger.Info("schedule window interrupted by the daemon stopping; it resumes when the daemon is back", "window", key.WindowID)
+		case len(e.Summaries) > 0 && e.Summaries[0].RunID != 0:
+			err = s.store.RecordOpening(key, schedule.OutcomeStarted, "", e.Summaries[0].RunID)
+		}
+		if err != nil {
+			s.logger.Warn("could not record the end of a scheduled run", "error", err)
 		}
 	}
 	s.Wake()
@@ -139,7 +161,7 @@ func closedReason(windows []schedule.Window, key schedule.Key, now time.Time) st
 }
 
 func (s *Scheduler) notify(text string) {
-	if s.Notifier != nil {
-		s.Notifier.Send(context.Background(), text)
+	if s.notifier != nil {
+		s.notifier.Send(context.Background(), text)
 	}
 }
