@@ -1,0 +1,30 @@
+aja   1 Dashboard   2 Config
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Config  $AJA_HOME/config.yaml
+There is no config file yet: run `aja init`. The secrets can be set already.
+secrets, kept in $AJA_HOME/.env
+> AJA_AI_API_KEY                     set (your environment)
+  AJA_TELEGRAM_BOT_TOKEN             not set
+  AJA_TELEGRAM_CHAT_ID               not set
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+The AI provider's API key, used when ai.enabled is true and the provider needs one.
+Your environment sets it, and wins over .env.
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+↑↓ move · enter edit · ? keys · q quit

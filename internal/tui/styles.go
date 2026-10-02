@@ -9,11 +9,23 @@ import "github.com/charmbracelet/lipgloss"
 // arrive as key presses. Dim text is faint, as in the printer, which every
 // terminal draws against its own background.
 type styles struct {
-	brand, tab, activeTab, dim, ok, warn, fail, key, section lipgloss.Style
+	plain, brand, tab, activeTab, dim, ok, warn, fail, key, section lipgloss.Style
+}
+
+// byLevel is the style of a notice.
+func (s styles) byLevel(l level) lipgloss.Style {
+	switch l {
+	case levelWarn:
+		return s.warn
+	case levelFail:
+		return s.fail
+	}
+	return s.ok
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
 	return styles{
+		plain:     r.NewStyle(),
 		brand:     r.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED")),
 		activeTab: r.NewStyle().Bold(true).Underline(true),
 		tab:       r.NewStyle().Faint(true),

@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"bytes"
 	"flag"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/luizfreitas27/aja/internal/config"
 	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/store"
 )
@@ -22,13 +25,16 @@ var update = flag.Bool("update", false, "rewrite the golden screens in testdata"
 // harness drives the TUI the way Bubble Tea would, synchronously: messages go
 // to Update and the commands it returns run at once, their messages fed back.
 // Ticks never fire by themselves; refresh sends one. Everything lives in a
-// temporary AJA_HOME with a real store, and the clock is h.now.
+// temporary AJA_HOME with a real store; the clock is h.now, the environment
+// h.env, and the log goes to h.logs.
 type harness struct {
 	t    *testing.T
 	m    tea.Model
 	p    paths.Paths
 	st   *store.Store
 	now  time.Time
+	env  map[string]string
+	logs *bytes.Buffer
 	quit bool
 }
 
@@ -44,7 +50,7 @@ func newHarness(t *testing.T) *harness {
 	if err := p.EnsureDataDirs(); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, p: p, now: time.Date(2026, 10, 5, 9, 30, 0, 0, time.Local)}
+	h := &harness{t: t, p: p, now: time.Date(2026, 10, 5, 9, 30, 0, 0, time.Local), env: map[string]string{}, logs: &bytes.Buffer{}}
 	st, err := store.Open(p.DBFile)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +65,9 @@ func (h *harness) open(width, height int) {
 	h.t.Helper()
 	r := lipgloss.NewRenderer(io.Discard)
 	r.SetColorProfile(termenv.Ascii)
-	m := New(Deps{Paths: h.p, Store: h.st, Now: func() time.Time { return h.now }}, r)
+	d := Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
+		Now: func() time.Time { return h.now }}
+	m := New(d, r)
 	m.tickAfter = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
 	h.m = m
 	h.do(m.Init())
@@ -91,7 +99,8 @@ func (h *harness) do(cmd tea.Cmd) {
 
 // press sends keys: names like "esc", "enter", "ctrl+c", or text typed as is.
 func (h *harness) press(keys ...string) {
-	special := map[string]tea.KeyType{"esc": tea.KeyEsc, "enter": tea.KeyEnter, "ctrl+c": tea.KeyCtrlC, "tab": tea.KeyTab,
+	special := map[string]tea.KeyType{"esc": tea.KeyEsc, "enter": tea.KeyEnter, "ctrl+c": tea.KeyCtrlC, "ctrl+u": tea.KeyCtrlU, "tab": tea.KeyTab,
+		"backspace": tea.KeyBackspace, "pgdown": tea.KeyPgDown, "pgup": tea.KeyPgUp,
 		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight, "space": tea.KeySpace}
 	for _, k := range keys {
 		if t, ok := special[k]; ok {
@@ -122,7 +131,7 @@ func (h *harness) shows(texts ...string) {
 func (h *harness) golden(name string) {
 	h.t.Helper()
 	path := filepath.Join("testdata", name+".golden")
-	screen := h.screen()
+	screen := strings.ReplaceAll(h.screen(), h.p.DataDir, "$AJA_HOME") // a new temporary directory each run
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			h.t.Fatal(err)

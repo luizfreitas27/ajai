@@ -58,7 +58,8 @@ func TestBareAjaOpensTheTUIInATerminal(t *testing.T) {
 		t.Fatalf("%d calls", len(calls))
 	}
 	first := calls[0]
-	if first.deps.Store == nil || first.deps.Now == nil || first.deps.Paths.DataDir != h.home || first.plain {
+	if first.deps.Store == nil || first.deps.Now == nil || first.deps.Logger == nil || first.deps.Env.Lookup == nil ||
+		first.deps.Paths.DataDir != h.home || first.plain {
 		t.Errorf("colour on in a terminal by default: %+v", first)
 	}
 	if !calls[1].plain || !calls[3].plain {

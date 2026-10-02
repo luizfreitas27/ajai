@@ -1,17 +1,17 @@
-aja   1 Dashboard
+aja   1 Dashboard   2 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Keys
 
   1           Dashboard
+  2           Config
   ?           this list; Esc closes it
   q, Ctrl-C   quit (a run in progress keeps running)
 
+Config
 
-
-
-
-
-
+  ↑ ↓, k j    move; PgUp PgDn, g G jump
+  Enter       edit the setting or secret, then Enter saves
+  Esc         cancel the edit
 
 
 
@@ -27,4 +27,4 @@ Keys
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-? keys · q quit
+esc closes the list · q quit

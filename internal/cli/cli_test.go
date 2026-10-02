@@ -215,6 +215,19 @@ func TestSecretsComeOnlyFromEnvAndAreMaskedInShow(t *testing.T) {
 	}
 }
 
+func TestConfigSetNeverWritesAnOverrideFromDotenv(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	h.write(".env", "AJA_CFG_SEARCH_LOCATION=Lisboa\n")
+	if code, _, errText := h.run("config", "set", "search.terms", "Go"); code != 0 {
+		t.Fatal(errText)
+	}
+	data, err := os.ReadFile(filepath.Join(h.home, "config.yaml"))
+	if text := string(data); err != nil || strings.Contains(text, "Lisboa") || !strings.Contains(text, "- Go") {
+		t.Errorf("the file got the .env override, or not the edit: %v\n%s", err, text)
+	}
+}
+
 func TestConfigValidateListsEveryProblemWithExitCodeOne(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
