@@ -139,7 +139,8 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 		HiddenTitleXPath, ResumeUploadInputXPath, TodayButtonXPath, NextButtonXPath, ReviewButtonXPath, SubmitButtonXPath,
 		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
 		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, AppliedOnPageXPath, PaginationActiveXPath,
-		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a")}
+		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
+		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath)}
 	for _, loc := range EasyApplyLocators {
 		all = append(all, loc.XPath)
 	}
@@ -186,8 +187,8 @@ func TestModalAndFormAnchors(t *testing.T) {
 			t.Error("a text question without a label[@for]")
 		}
 	}
-	if count(t, dialog, ResumeUploadInputXPath) != 1 || count(t, dialog, "//input[@id='"+FollowCompanyCheckbox+"']") == 0 {
-		t.Error("resume input / follow checkbox")
+	if count(t, dialog, ResumeUploadInputXPath) != 1 || count(t, dialog, FollowCompanyInputXPath) != 1 || count(t, dialog, FollowCompanyLabelXPath) != 1 {
+		t.Error("resume input / follow checkbox and its label")
 	}
 	submit := one(t, dialog, SubmitButtonXPath)
 	if htmlquery.SelectAttr(submit, "type") != "button" {

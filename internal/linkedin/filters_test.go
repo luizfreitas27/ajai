@@ -82,7 +82,7 @@ func TestApplyFiltersClicksEveryConfiguredControlInThePythonOrder(t *testing.T) 
 		`"acme"`, `"add a company"`, `placeholder='Add a company'`, `"easy apply"`, "apply current filters to show")
 	// The switch: an h3 "Easy Apply" inside a fieldset whose input[@role=switch] is the element clicked.
 	page.elements[`role="switch"`] = &fakeElement{name: "switch", page: page}
-	s := NewSession(page, quick(), nil)
+	s := NewSession(page, nil, quick(), nil)
 	f := config.Defaults().Search
 	f.SortBy, f.DatePosted, f.ExperienceLevel, f.OnSite = "Most recent", "Past week", []string{"Mid-Senior level"}, []string{"Remote"}
 	f.Companies = []string{"ACME", "Globex"} // Globex is not in the list: typed into "Add a company"
@@ -106,12 +106,12 @@ func TestApplyFiltersClicksEveryConfiguredControlInThePythonOrder(t *testing.T) 
 }
 
 func TestApplyFiltersFailsOnlyWhenThePanelItselfIsMissing(t *testing.T) {
-	s := NewSession(newFakePage("apply current filters to show"), quick(), nil)
+	s := NewSession(newFakePage("apply current filters to show"), nil, quick(), nil)
 	if err := s.ApplyFilters(context.Background(), config.Defaults().Search, ""); err == nil || !strings.Contains(err.Error(), "All filters") {
 		t.Errorf("%v", err)
 	}
 	page := newFakePage("All filters", "apply current filters to show")
-	s = NewSession(page, quick(), nil)
+	s = NewSession(page, nil, quick(), nil)
 	f := config.Defaults().Search
 	f.DatePosted = "Past week" // not on the page: logged and skipped, the search still runs
 	if err := s.ApplyFilters(context.Background(), f, ""); err != nil {

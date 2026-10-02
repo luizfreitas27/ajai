@@ -38,8 +38,12 @@ go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
   pure: configured answers, then the answer memory, then the AI, never a guess. Sensitive
   questions are gated here. `internal/textmatch` is the whole-word matcher every label
   test uses, plus `Normalise` and the difflib `Ratio`.
-- `internal/apply`: the Easy Apply modal loop (reads controls into `questions.Question`,
-  applies `Decision`s).
+- `internal/apply`: the Easy Apply modal loop. `ReadForm` reads the page's controls into
+  `questions.Question` values with their DOM handles; `Applier.Apply` clicks the button,
+  answers page by page, uploads the resume once, walks Next/Review/Submit, discards on a
+  dry run or on stalled unanswered questions, screenshots failures. Unit-tested with a fake
+  DOM (`fake_test.go`); `e2e_browser_test.go` (build tag `browser`) drives the captured
+  modal fixture through the rod adapter in a headless Chrome.
 - `internal/memory`, `internal/store`: answer memory and SQLite (pure Go driver).
 - `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
   `selectors_test.go`. Update both together when LinkedIn changes.
