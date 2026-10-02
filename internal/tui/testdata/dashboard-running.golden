@@ -1,0 +1,30 @@
+aja   1 Dashboard
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Run           running since 09:10, started from the terminal
+              market brasil, dry run
+              searching Go developer
+              applied 2 · external 0 · failed 0 · skipped 5 · would apply 2
+Pending       1 to review
+Next window   Mon 05 Oct 14:00, window 1 (Mon, Wed 14:00-16:00, market brasil)
+Daemon        not running: schedule windows start runs only while it runs
+
+Last runs
+  #     started           market         mode     appl   ext  fail  skip  ended
+  #2    Sun 04 Oct 19:00  internacional  live        3     1     1     9  stopped from Telegram
+  #1    Sun 04 Oct 14:00  brasil         dry run     0     0     0     4  the search ran out of jobs
+
+Today's log
+  09:29:00 INFO  searching term="Go developer" page=2
+  09:29:30 INFO  skipped a job reason="already applied"
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+? keys · q quit

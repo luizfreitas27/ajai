@@ -53,6 +53,12 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
+// WithClock stamps records with now instead of the wall clock (tests).
+func (s *Store) WithClock(now func() time.Time) *Store {
+	s.now = now
+	return s
+}
+
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 

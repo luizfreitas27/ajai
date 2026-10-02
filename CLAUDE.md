@@ -54,6 +54,20 @@ to the tag before tagging and the workflow publishes that section as the release
   `Lock.WatchStops` (started by `launch.Opened.Session`) polls it and cancels the session's
   context with a `*StopRequested` cause, whose reason the run records instead of "stopped
   by user". A request older than the lock (left as the previous run ended) is discarded.
+- `internal/tui`: the TUI, on Bubble Tea v1 (the version huh brings). Bare `aja` opens it
+  only when stdin and stdout are terminals (`cli.inTerminal`, `cli.showTUI` are the test
+  seams); otherwise the help, as before. `tui.New(Deps, renderer)` builds the model;
+  everything outside the process goes through `Deps`. Refreshes are chained (a tick
+  starts a read, its result schedules the next tick), so two never overlap and the
+  Dashboard's `logging.Tail` is used by one at a time. The Dashboard follows the daemon's
+  log while a run the daemon started holds the lock, the terminal runs' log otherwise.
+  Tests drive the model synchronously (`harness_test.go`: keys, sizes, explicit ticks,
+  a real store with `Store.WithClock`, a temporary AJA_HOME) and compare whole screens
+  with `testdata/*.golden` (`go test ./internal/tui -update` rewrites them). No adaptive
+  colours: they make the renderer query the terminal's background while Bubble Tea reads
+  the keyboard, and the reply arrives as key presses. To try it outside tests, run it in a
+  pty that answers the OSC 11 query Bubble Tea's own init sends, or termenv eats the
+  first keys.
 - `internal/launch`: the one place a loaded configuration becomes a run: `NewPlan` (market,
   AI client, resume, Chrome; no side effects, so the caller can print it first) then
   `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `aja run`

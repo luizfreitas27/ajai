@@ -341,7 +341,8 @@ func (a *App) logsCmd() *cobra.Command {
 			if ofDaemon {
 				name = logging.DaemonFileName // the daemon and the runs it starts
 			}
-			path := name(a.paths.LogDir, time.Now())
+			today := time.Now()
+			path := name(a.paths.LogDir, today)
 			data, err := os.ReadFile(path)
 			if err != nil && !os.IsNotExist(err) {
 				return err
@@ -358,7 +359,7 @@ func (a *App) logsCmd() *cobra.Command {
 			if !follow {
 				return nil
 			}
-			return a.follow(cmd.Context(), name, path, int64(len(data)))
+			return a.follow(cmd.Context(), name, today, int64(len(data)))
 		},
 	}
 	cmd.Flags().BoolVar(&ofDaemon, "daemon", false, "the daemon's log (with the runs it started) instead of the terminal's")
@@ -367,39 +368,19 @@ func (a *App) logsCmd() *cobra.Command {
 	return cmd
 }
 
-// follow prints what is appended to the day's log, surviving truncation (the
-// offset resets) and midnight (the file name changes with the day).
-func (a *App) follow(ctx context.Context, name logging.FileNamer, path string, offset int64) error {
+// follow prints what is appended to day's log after offset, surviving
+// truncation and midnight.
+func (a *App) follow(ctx context.Context, name logging.FileNamer, day time.Time, offset int64) error {
+	tail := logging.NewTail(name, a.paths.LogDir, day, offset)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(500 * time.Millisecond):
 		}
-		if today := name(a.paths.LogDir, time.Now()); today != path {
-			path, offset = today, 0
+		if data, _ := tail.Read(time.Now()); len(data) > 0 {
+			a.ui.Printf("%s", data)
 		}
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		if info, err := f.Stat(); err == nil && info.Size() < offset {
-			offset = 0
-		}
-		if _, err := f.Seek(offset, 0); err == nil {
-			buf := make([]byte, 64*1024)
-			for {
-				n, err := f.Read(buf)
-				if n > 0 {
-					a.ui.Printf("%s", buf[:n])
-					offset += int64(n)
-				}
-				if err != nil {
-					break
-				}
-			}
-		}
-		_ = f.Close()
 	}
 }
 

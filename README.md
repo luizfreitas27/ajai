@@ -108,6 +108,25 @@ go build ./cmd/aja && ./aja version
 keep the old behaviour. On the aja profile a run closes its Chrome when it ends; on yours
 it leaves the window open, as before.
 
+## The TUI
+
+Type `aja` with no command, in a terminal, and it opens a full-screen interface. Outside a
+terminal (a pipe, a script, systemd) it prints the help instead, and every command below
+works exactly as without the TUI.
+
+The **Dashboard** refreshes every second. It shows:
+- the run in progress: who started it (the terminal, a schedule window, Telegram), the
+  market, dry run or live, the term being searched and the counts so far;
+- the last runs and why each ended;
+- the pending answers and the next schedule window;
+- whether the daemon runs;
+- today's log as it grows. A run the daemon started is followed in the daemon's log.
+
+Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
+never stops a run. The TUI needs a terminal of at least 80×24 and honours `--no-color` and
+`NO_COLOR`. More tabs (answers, schedule, jobs, configuration) and starting and stopping runs
+from it are coming (issue #36).
+
 ## Everyday commands
 
 | Command | What it does |

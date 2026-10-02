@@ -61,7 +61,7 @@ func (a *App) Command() *cobra.Command {
 		Long: `aja drives your real, visible Chrome through LinkedIn job search and Easy Apply,
 answering forms from your configuration, its answer memory and (optionally) an AI
 model. Start with "aja init", sign in once with "aja login", check with "aja doctor",
-try "aja run --dry-run".`,
+try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -69,6 +69,13 @@ try "aja run --dry-run".`,
 			a.paths = paths.Resolve(a.configFlag, a.Env.Getenv)
 			a.logger = logging.Discard
 			return nil
+		},
+		// With no command: the TUI in a real terminal, the help anywhere else.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !inTerminal(a) {
+				return cmd.Help()
+			}
+			return a.openTUI(cmd.Context())
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			for i := len(a.cleanups) - 1; i >= 0; i-- {
