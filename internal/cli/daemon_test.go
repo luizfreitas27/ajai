@@ -2,15 +2,22 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/browser"
 	"github.com/luizfreitas27/aja/internal/daemon"
 	"github.com/luizfreitas27/aja/internal/logging"
+	"github.com/luizfreitas27/aja/internal/notify"
 	"github.com/luizfreitas27/aja/internal/schedule"
 	"github.com/luizfreitas27/aja/internal/store"
 )
@@ -80,5 +87,83 @@ func TestTheDaemonRunsUntilCtrlCAndRecordsAWindowItCouldNotStart(t *testing.T) {
 	}
 	if _, running, _ := daemon.ReadLock(h.home); running {
 		t.Error("the daemon lock must be released")
+	}
+}
+
+func TestARunAskedOnTelegramGoesThroughTheRealStarterAndSaysWhyNot(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	var mu sync.Mutex
+	var sent []string
+	served := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.HasSuffix(r.URL.Path, "/sendMessage") {
+			sent = append(sent, body["text"].(string))
+			_, _ = io.WriteString(w, `{"ok":true,"result":{}}`)
+			return
+		}
+		updates := "[]"
+		if !served {
+			served = true
+			updates = fmt.Sprintf(`[{"update_id":1,"message":{"message_id":1,"date":%d,"chat":{"id":42},"text":"/run dry"}}]`, time.Now().Unix())
+		}
+		_, _ = io.WriteString(w, `{"ok":true,"result":`+updates+`}`)
+	}))
+	defer srv.Close()
+	saved := notify.APIBase
+	notify.APIBase = srv.URL
+	defer func() { notify.APIBase = saved }()
+	savedOpen := OpenBrowser
+	t.Cleanup(func() { OpenBrowser = savedOpen })
+	OpenBrowser = func(context.Context, browser.Options) (browser.Browser, error) { return nil, browser.ErrProfileInUse }
+	h.env["AJA_TELEGRAM_BOT_TOKEN"], h.env["AJA_TELEGRAM_CHAT_ID"] = "1:tok", "42"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int)
+	go func() { code, _, _ := h.runCtx(ctx, "daemon"); done <- code }()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		mu.Lock()
+		got := strings.Join(sent, "\n")
+		mu.Unlock()
+		if strings.Contains(got, "Not started: the aja profile is in use") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no refusal sent: %q", got)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	if code := <-done; code != 0 {
+		t.Errorf("exit %d", code)
+	}
+}
+
+func TestTheDaemonListensForTelegramCommandsWhenTheBotIsSet(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
+		_, _ = io.WriteString(w, `{"ok":true,"result":[]}`)
+	}))
+	defer srv.Close()
+	saved := notify.APIBase
+	notify.APIBase = srv.URL
+	defer func() { notify.APIBase = saved }()
+	h.env["AJA_TELEGRAM_BOT_TOKEN"], h.env["AJA_TELEGRAM_CHAT_ID"] = "1:tok", "42"
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(300 * time.Millisecond); cancel() }()
+	code, out, errText := h.runCtx(ctx, "daemon")
+	if code != 0 || !strings.Contains(out, "listening for commands: /status, /stop, /run, /help") {
+		t.Errorf("%d %s %s", code, out, errText)
+	}
+	logs, _ := os.ReadFile(logging.DaemonFileName(filepath.Join(h.home, "logs"), time.Now()))
+	if !strings.Contains(string(logs), "listening for remote commands") || strings.Contains(string(logs), "1:tok") {
+		t.Errorf("%s", logs)
 	}
 }

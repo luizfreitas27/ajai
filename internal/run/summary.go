@@ -11,12 +11,16 @@ func (s Summary) Fields() [][2]string {
 	return s.fields(true)
 }
 
-func (s Summary) fields(withEnded bool) [][2]string {
-	mode := "live"
-	if s.DryRun {
-		mode = "dry run"
+// Mode is how a run is described: "live" or "dry run".
+func Mode(dryRun bool) string {
+	if dryRun {
+		return "dry run"
 	}
-	f := [][2]string{{"Run", fmt.Sprintf("#%d (%s, %s)", s.RunID, s.Market, mode)}}
+	return "live"
+}
+
+func (s Summary) fields(withEnded bool) [][2]string {
+	f := [][2]string{{"Run", fmt.Sprintf("#%d (%s, %s)", s.RunID, s.Market, Mode(s.DryRun))}}
 	if s.DryRun {
 		f = append(f, [2]string{"Would apply", fmt.Sprint(s.WouldApply)})
 	} else {

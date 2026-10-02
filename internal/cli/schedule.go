@@ -39,15 +39,6 @@ Windows never cross midnight: split one in two (22:00-24:00 and 00:00-02:00 the 
 	return cmd
 }
 
-// marketNames are the markets a window may name.
-func marketNames() []string {
-	out := make([]string, len(config.MarketNames))
-	for i, m := range config.MarketNames {
-		out[i] = string(m)
-	}
-	return out
-}
-
 func (a *App) scheduleAddCmd() *cobra.Command {
 	var days, start, end, market string
 	var dryRun bool
@@ -77,7 +68,7 @@ func (a *App) scheduleAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := schedule.Validate(w, others, marketNames()); err != nil {
+			if err := schedule.Validate(w, others, config.MarketNameList()); err != nil {
 				return err
 			}
 			if w.ID, err = st.AddWindow(w); err != nil {
@@ -176,7 +167,7 @@ func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
 			}
 			w.Enabled = on
 			if on {
-				if err := schedule.Validate(*w, windows, marketNames()); err != nil {
+				if err := schedule.Validate(*w, windows, config.MarketNameList()); err != nil {
 					return fmt.Errorf("cannot enable window %d: %w", w.ID, err)
 				}
 			}

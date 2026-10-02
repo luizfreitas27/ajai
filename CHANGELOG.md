@@ -29,3 +29,5 @@ no such section the notes are the commit list.
   with Telegram notices; `aja logs --daemon` shows its log, `aja status` whether it runs.
 - `aja daemon install` / `status` / `uninstall`: the daemon from a systemd user unit tied
   to your desktop session.
+- Telegram commands while the daemon runs: `/status`, `/stop`, `/run [market] [dry]`,
+  `/help`, from your configured chat only.

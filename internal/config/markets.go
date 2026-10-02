@@ -12,6 +12,15 @@ const (
 // MarketNames lists the valid names in display order.
 var MarketNames = []MarketName{MarketBrasil, MarketInternacional}
 
+// MarketNameList is MarketNames as plain strings.
+func MarketNameList() []string {
+	out := make([]string, len(MarketNames))
+	for i, m := range MarketNames {
+		out[i] = string(m)
+	}
+	return out
+}
+
 // IsValidMarket reports whether name is one of MarketNames.
 func IsValidMarket(name string) bool {
 	for _, m := range MarketNames {

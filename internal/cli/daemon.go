@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 	"github.com/luizfreitas27/aja/internal/launch"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/notify"
+	"github.com/luizfreitas27/aja/internal/remote"
 	"github.com/luizfreitas27/aja/internal/run"
 	"github.com/luizfreitas27/aja/internal/service"
 	"github.com/luizfreitas27/aja/internal/store"
@@ -26,10 +28,11 @@ func (a *App) daemonCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Start and stop runs on the schedule windows, until stopped",
-		Long: `Runs in the foreground until Ctrl-C (or a service stop): every 30 seconds it looks at
-the schedule windows (aja schedule), starts one unattended run when a window opens and
-stops it when the window closes. The configuration is read afresh for every run. A run in
-progress when the daemon stops ends cleanly first.
+		Long: `Runs in the foreground until Ctrl-C (or its systemd unit stops): every 30 seconds it
+looks at the schedule windows (aja schedule), starts one unattended run when a window opens
+and stops it when the window closes. With AJA_TELEGRAM_BOT_TOKEN and AJA_TELEGRAM_CHAT_ID set
+it also takes commands from that chat: /status, /stop, /run, /help. The configuration is
+read afresh for every run. A run in progress when the daemon stops ends cleanly first.
 
 Only one daemon runs at a time. Its log is the daemon file in the log directory
 (aja logs --daemon). To have it start with your desktop session: aja daemon install.`,
@@ -74,12 +77,24 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 			} else {
 				a.printNextOpening(windows)
 			}
+			// Remote commands need the bot's token and chat id when the daemon starts.
+			var listening sync.WaitGroup
+			if s := a.secrets(nil); s.TelegramBotToken != "" && s.TelegramChatID != "" {
+				bot := notify.New(s.TelegramBotToken, s.TelegramChatID, logger)
+				listener := remote.New(bot, sup, st, a.paths.DataDir, logger, a.now)
+				listening.Add(1)
+				go func() { defer listening.Done(); listener.Loop(ctx) }()
+				a.ui.OK("telegram", "listening for commands: /status, /stop, /run, /help")
+			} else {
+				a.ui.Hint("Telegram commands are off: set AJA_TELEGRAM_BOT_TOKEN and AJA_TELEGRAM_CHAT_ID, then restart the daemon.")
+			}
 			logger.Info("daemon started", "pid", os.Getpid(), "windows", len(windows))
 			sched.Loop(ctx, daemon.TickEvery)
 			if _, ok := sup.Current(); ok {
 				a.ui.Println("Stopping: the run in progress is ending…")
 			}
 			sup.Wait()
+			listening.Wait()
 			logger.Info("daemon stopped")
 			a.ui.OK("daemon", "stopped")
 			return nil

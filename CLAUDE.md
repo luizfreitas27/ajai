@@ -113,6 +113,17 @@ to the tag before tagging and the workflow publishes that section as the release
   `XDG_CONFIG_HOME`. `Unit` is golden-tested (`go test ./internal/service -update`
   rewrites `testdata/`); `systemctl --user` goes through the `Systemctl` seam (stdout only;
   stderr in the error). Check a changed unit with `systemd-analyze --user verify`.
+- `internal/remote`: the remote commands. `Listener.Loop` long-polls `notify.Telegram.Updates`
+  (the `Bot` interface), acts only on the configured (numeric) chat, others logged once.
+  The update offset is saved per bot, with its date, *before* acting (a restart never
+  repeats a command; a failed save skips the command; an offset older than 6 days is dropped
+  because Telegram renumbers after a quiet week). Only the first batch after starting or
+  reconnecting is "backlog": there a `/run` or `/stop` older than `MaxAge` is refused and a
+  `/stop` never hits a run that started after it; live messages are never judged by their
+  date (clock skew). 401 ends the loop, 409 is said once (also on Telegram), other errors
+  back off with one warning. A panic in a command is reported, not fatal. Commands go
+  through the `Runs` interface (the daemon's `Supervisor`). Tests run against an httptest
+  fake of the Bot API.
 - `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
   goroutine (one at a time; a second `Start` gets a `*run.HeldError`, and so does a run of
   another process, checked before the `Starter` reads any config). The CLI's `Starter`
