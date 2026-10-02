@@ -54,6 +54,7 @@ type Chat struct {
 type APIError struct {
 	Status      int
 	Description string
+	RetryAfter  time.Duration // 429: how long Telegram asks to wait
 }
 
 // Error is Telegram's own description, never the URL (it carries the token).
@@ -86,22 +87,29 @@ func (t *Telegram) Updates(ctx context.Context, offset int64, wait time.Duration
 // message's id. Unlike Send, a failure is returned, not logged.
 func (t *Telegram) SendButtons(ctx context.Context, text string, buttons []Button) (int64, error) {
 	var sent Message
-	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": truncate(text), "disable_web_page_preview": true,
+	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": truncate(text, MaxMessageLength), "disable_web_page_preview": true,
 		"reply_markup": map[string]any{"inline_keyboard": [][]Button{buttons}}}, &sent)
 	return sent.MessageID, err
 }
 
-// Edit replaces the text of one of the bot's messages in the chat and removes
-// its buttons.
-func (t *Telegram) Edit(ctx context.Context, messageID int64, text string) error {
-	return t.call(ctx, t.client, "editMessageText", map[string]any{"chat_id": t.chatID, "message_id": messageID, "text": truncate(text),
-		"disable_web_page_preview": true, "reply_markup": map[string]any{"inline_keyboard": [][]Button{}}}, nil)
+// Edit replaces the text and buttons of one of the bot's messages in the chat;
+// no buttons removes them.
+func (t *Telegram) Edit(ctx context.Context, messageID int64, text string, buttons []Button) error {
+	rows := [][]Button{}
+	if len(buttons) > 0 {
+		rows = append(rows, buttons)
+	}
+	return t.call(ctx, t.client, "editMessageText", map[string]any{"chat_id": t.chatID, "message_id": messageID, "text": truncate(text, MaxMessageLength),
+		"disable_web_page_preview": true, "reply_markup": map[string]any{"inline_keyboard": rows}}, nil)
 }
+
+// maxCallbackNote is Telegram's limit for a button's acknowledgement.
+const maxCallbackNote = 200
 
 // AnswerCallback acknowledges a pressed button, which stops it spinning, with a
 // short note shown on top of the chat.
 func (t *Telegram) AnswerCallback(ctx context.Context, id, text string) error {
-	return t.call(ctx, t.client, "answerCallbackQuery", map[string]any{"callback_query_id": id, "text": text}, nil)
+	return t.call(ctx, t.client, "answerCallbackQuery", map[string]any{"callback_query_id": id, "text": truncate(text, maxCallbackNote)}, nil)
 }
 
 // call posts a Bot API method and decodes its result.
@@ -125,13 +133,16 @@ func (t *Telegram) call(ctx context.Context, client *http.Client, method string,
 		OK          bool            `json:"ok"`
 		Result      json.RawMessage `json:"result"`
 		Description string          `json:"description"`
+		Parameters  struct {
+			RetryAfter int `json:"retry_after"` // seconds
+		} `json:"parameters"`
 	}
 	if err := json.Unmarshal(data, &reply); err != nil || !reply.OK {
 		desc := reply.Description
 		if desc == "" {
 			desc = "an unreadable answer (" + strconv.Itoa(len(data)) + " bytes)"
 		}
-		return &APIError{Status: res.StatusCode, Description: desc}
+		return &APIError{Status: res.StatusCode, Description: desc, RetryAfter: time.Duration(reply.Parameters.RetryAfter) * time.Second}
 	}
 	if result != nil {
 		return json.Unmarshal(reply.Result, result)

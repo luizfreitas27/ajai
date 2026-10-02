@@ -30,7 +30,7 @@ type Bot interface {
 	Updates(ctx context.Context, offset int64, wait time.Duration) ([]notify.Update, error)
 	Send(ctx context.Context, text string) bool
 	SendButtons(ctx context.Context, text string, buttons []notify.Button) (int64, error)
-	Edit(ctx context.Context, messageID int64, text string) error
+	Edit(ctx context.Context, messageID int64, text string, buttons []notify.Button) error
 	AnswerCallback(ctx context.Context, id, text string) error
 	ChatID() string
 	BotID() string
@@ -184,7 +184,7 @@ func (l *Listener) handle(ctx context.Context, u notify.Update, backlog bool) {
 	switch q, m := u.CallbackQuery, u.Message; {
 	case q != nil:
 		if q.Message != nil && l.fromChat(q.Message.Chat.ID) {
-			l.guard(ctx, "a button", func() { l.press(ctx, q) })
+			l.guard(ctx, "a button", func() { l.pressed(ctx, q) })
 		}
 	case m != nil && l.fromChat(m.Chat.ID):
 		name, args := parse(m.Text)
@@ -192,7 +192,7 @@ func (l *Listener) handle(ctx context.Context, u notify.Update, backlog bool) {
 		case name != "":
 			l.guard(ctx, "/"+name, func() { l.command(ctx, name, args, m.Time(), backlog) })
 		case m.ReplyTo != nil && strings.TrimSpace(m.Text) != "":
-			l.guard(ctx, "your reply", func() { l.answer(ctx, *m) })
+			l.guard(ctx, "your reply", func() { l.replied(ctx, *m) })
 		}
 	}
 }

@@ -408,29 +408,36 @@ func (s *Store) ListAnswers(state string) ([]Answer, error) {
 	return out, rows.Err()
 }
 
-// LinkTelegramMessage records that message messageID in chat shows the answer
-// answerID, so a reply to it reaches the answer.
-func (s *Store) LinkTelegramMessage(chatID string, messageID int64, answerID string) error {
-	_, err := s.db.Exec(`INSERT OR REPLACE INTO telegram_messages (chat_id, message_id, answer_id, sent_at) VALUES (?,?,?,?)`,
-		chatID, messageID, answerID, Timestamp(s.now()))
+// TelegramMessage names one message a bot sent: message ids are counted per
+// bot and chat.
+type TelegramMessage struct {
+	Bot, Chat string
+	ID        int64
+}
+
+// LinkTelegramMessage records that m shows the answer answerID, so a reply to
+// it reaches the answer.
+func (s *Store) LinkTelegramMessage(m TelegramMessage, answerID string) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO telegram_messages (bot_id, chat_id, message_id, answer_id, sent_at) VALUES (?,?,?,?,?)`,
+		m.Bot, m.Chat, m.ID, answerID, Timestamp(s.now()))
 	return err
 }
 
-// TelegramMessageAnswer returns the id of the answer message messageID in chat
-// shows, or "" when it shows none.
-func (s *Store) TelegramMessageAnswer(chatID string, messageID int64) (string, error) {
+// TelegramMessageAnswer returns the id of the answer m shows, or "" when it
+// shows none.
+func (s *Store) TelegramMessageAnswer(m TelegramMessage) (string, error) {
 	var id string
-	err := s.db.QueryRow(`SELECT answer_id FROM telegram_messages WHERE chat_id = ? AND message_id = ?`, chatID, messageID).Scan(&id)
+	err := s.db.QueryRow(`SELECT answer_id FROM telegram_messages WHERE bot_id = ? AND chat_id = ? AND message_id = ?`, m.Bot, m.Chat, m.ID).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
 	return id, err
 }
 
-// ForgetTelegramMessagesOfGoneAnswers drops the links to answers no longer in
-// the memory.
-func (s *Store) ForgetTelegramMessagesOfGoneAnswers() error {
-	_, err := s.db.Exec(`DELETE FROM telegram_messages WHERE answer_id NOT IN (SELECT id FROM answers)`)
+// ForgetTelegramMessages drops the links recorded before cutoff and those to
+// answers no longer in the memory.
+func (s *Store) ForgetTelegramMessages(cutoff time.Time) error {
+	_, err := s.db.Exec(`DELETE FROM telegram_messages WHERE sent_at < ? OR answer_id NOT IN (SELECT id FROM answers)`, Timestamp(cutoff))
 	return err
 }
 

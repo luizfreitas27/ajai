@@ -125,12 +125,15 @@ to the tag before tagging and the workflow publishes that section as the release
   date (clock skew). 401 ends the loop, 409 is said once (also on Telegram), other errors
   back off with one warning. A panic in a command, button or reply is reported, not fatal.
   Commands go through the `Runs` interface (the daemon's `Supervisor`). `/pending` sends
-  one message per pending answer (at most `pendingShown`) with inline buttons whose
-  callback data is `approve:<id>` / `delete:<id>`, and records message → answer id in the
-  `telegram_messages` table, which is how a reply finds its answer after a restart; every
-  outcome edits the message (`Telegram.Edit` also removes the buttons). `getUpdates` asks
-  for `message` and `callback_query` (Telegram remembers that list). Tests run against an
-  httptest fake of the Bot API with a real store and answer memory.
+  one message per pending answer (at most `pendingShown`; a 429 is waited out once) with
+  inline buttons whose callback data is `approve:<id>:<digest of the answer shown>` (a
+  changed answer is shown again, never approved unseen) / `delete:<id>`, and records
+  (bot, chat, message) → answer id in `telegram_messages`, which is how a reply finds its
+  answer after a restart (links expire after `linkMaxAge`). A reply to a select or radio
+  must be an option or the beginning of exactly one (`pickOption`), never a guess. Every
+  outcome edits the message. `getUpdates` asks for `message` and `callback_query`
+  (Telegram remembers that list). Tests run against an httptest fake of the Bot API with a
+  real store and answer memory.
 - `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
   goroutine (one at a time; a second `Start` gets a `*run.HeldError`, and so does a run of
   another process, checked before the `Starter` reads any config). The CLI's `Starter`

@@ -103,27 +103,33 @@ func TestAnswerOptionsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTelegramMessagesLeadToTheirAnswerUntilItIsGone(t *testing.T) {
+func TestTelegramMessagesLeadToTheirAnswerUntilForgotten(t *testing.T) {
 	s := open(t)
+	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.Local)
 	must(t, s.UpsertAnswer(Answer{ID: "a1", Label: "Years", Normalised: "years", Kind: "text", Source: "form", State: "pending"}))
 	must(t, s.UpsertAnswer(Answer{ID: "a2", Label: "City", Normalised: "city", Kind: "text", Source: "form", State: "pending"}))
-	must(t, s.LinkTelegramMessage("42", 7, "a1"))
-	must(t, s.LinkTelegramMessage("42", 8, "a2"))
-	if id, err := s.TelegramMessageAnswer("42", 7); id != "a1" || err != nil {
+	must(t, s.UpsertAnswer(Answer{ID: "a3", Label: "Shift", Normalised: "shift", Kind: "text", Source: "form", State: "pending"}))
+	s.now = func() time.Time { return t0 }
+	must(t, s.LinkTelegramMessage(TelegramMessage{"1", "42", 7}, "a1"))
+	must(t, s.LinkTelegramMessage(TelegramMessage{"1", "42", 8}, "a2"))
+	s.now = func() time.Time { return t0.Add(40 * 24 * time.Hour) }
+	must(t, s.LinkTelegramMessage(TelegramMessage{"1", "42", 9}, "a3"))
+	if id, err := s.TelegramMessageAnswer(TelegramMessage{"1", "42", 7}); id != "a1" || err != nil {
 		t.Errorf("message 7: %q %v", id, err)
 	}
-	if id, _ := s.TelegramMessageAnswer("43", 7); id != "" {
-		t.Errorf("another chat's message 7 shows nothing: %q", id)
+	for _, other := range []TelegramMessage{{"1", "43", 7}, {"2", "42", 7}} {
+		if id, _ := s.TelegramMessageAnswer(other); id != "" {
+			t.Errorf("%+v is another chat's or another bot's message: %q", other, id)
+		}
 	}
 	if _, err := s.DeleteAnswer("a1"); err != nil {
 		t.Fatal(err)
 	}
-	must(t, s.ForgetTelegramMessagesOfGoneAnswers())
-	if id, _ := s.TelegramMessageAnswer("42", 7); id != "" {
-		t.Errorf("the link to a deleted answer is forgotten: %q", id)
-	}
-	if id, _ := s.TelegramMessageAnswer("42", 8); id != "a2" {
-		t.Errorf("the link to a kept answer stays: %q", id)
+	must(t, s.ForgetTelegramMessages(t0.Add(10*24*time.Hour)))
+	for msg, want := range map[int64]string{7: "", 8: "", 9: "a3"} {
+		if id, _ := s.TelegramMessageAnswer(TelegramMessage{"1", "42", msg}); id != want {
+			t.Errorf("message %d after forgetting: %q, want %q (a deleted answer's and an old link go)", msg, id, want)
+		}
 	}
 }
 

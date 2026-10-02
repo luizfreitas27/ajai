@@ -232,13 +232,15 @@ summaries; the chat id is the numeric one), `aja daemon` also takes commands fro
 
 `/pending` sends one message per pending answer, the 10 newest at a time: the question, its
 kind, the options it offered (select and radio), the current answer and who gave it, and the
-job it came from. **Approve** keeps the answer, **Delete** forgets it; a question with no
-answer yet has only Delete. To give or correct an answer, reply to its message with the text:
-for a select or radio it must name one of the options (case does not matter; the option's own
-text is saved), otherwise the reply is refused with the options listed. A checkbox takes only
-the buttons: approving it ticks it from now on. Each button or reply edits the message to show
-what was done, and replies and buttons keep working after the daemon restarts. Questions
-remembered before this version have no options saved, so any reply is taken for them.
+job it came from. **Approve** keeps the answer shown (if a run changed it meanwhile, the
+message is updated for you to check again), **Delete** forgets it; a question with no answer
+yet has only Delete. To give or correct an answer, reply to its message with the text: for a
+select or radio it must be one of the options, or the beginning of just one of them (case and
+spacing do not matter; the option's own text is saved), otherwise the reply is refused with
+the options listed. A checkbox takes only the buttons: approving it ticks it from now on. Each
+button or reply edits the message to show what was done; replies keep working for 30 days,
+also after the daemon restarts. Questions remembered before this version have no options
+saved, so any reply is taken for them.
 
 Messages from any other chat are ignored. The daemon asks Telegram for new messages (long
 polling), so nothing on your machine is reachable from the internet, and it remembers what

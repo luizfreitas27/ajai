@@ -73,7 +73,7 @@ The tool's persistent record of answers it has given to unrecognised questions, 
 _Avoid_: cache, learned answers, Q&A store
 
 **Remembered answer**:
-One answer in the answer memory: a question (normalised label plus control kind), the answer text, where it came from (the AI, the user, or a form control the tool saw and left alone) and its review state. A question nothing could answer is remembered with no answer yet, so the user can supply one; until then it answers nothing.
+One answer in the answer memory: a question (normalised label plus control kind, and for a select or radio the options it offered), the answer text, where it came from (the AI, the user, or a form control the tool saw and left alone) and its review state. A question nothing could answer is remembered with no answer yet, so the user can supply one; until then it answers nothing.
 _Avoid_: memory entry, record, saved answer, learned answer
 
 **Review state**:

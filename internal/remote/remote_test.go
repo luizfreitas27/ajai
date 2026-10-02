@@ -38,6 +38,7 @@ type fakeTelegram struct {
 	edits    []outgoing // ID is the edited message
 	acks     []string   // answerCallbackQuery texts
 	lastMsg  int64      // the last message id sendMessage gave
+	tooMany  int        // the next sendMessage calls answered 429
 	fail     int        // the next getUpdates calls that fail with a dropped connection
 	conflict int        // the next getUpdates calls answered 409 (a webhook is set)
 	nextID   int64
@@ -98,6 +99,13 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": out})
 		case "sendMessage":
 			f.mu.Lock()
+			if f.tooMany > 0 {
+				f.tooMany--
+				f.mu.Unlock()
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 3","parameters":{"retry_after":3}}`))
+				return
+			}
 			f.lastMsg++
 			f.sent = append(f.sent, outgoing{ID: f.lastMsg, Text: body["text"].(string), Buttons: keyboard(body)})
 			id := f.lastMsg
@@ -119,13 +127,20 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 	return f
 }
 
-// say queues a message from chat c sent at when.
-func (f *fakeTelegram) say(c int64, text string, when time.Time) {
+// add queues the update fill makes from the next update id.
+func (f *fakeTelegram) add(fill func(id int64) notify.Update) {
 	f.mu.Lock()
 	f.nextID++
-	f.queue = append(f.queue, notify.Update{UpdateID: f.nextID, Message: &notify.Message{MessageID: f.nextID, Date: when.Unix(), Chat: notify.Chat{ID: c}, Text: text}})
+	f.queue = append(f.queue, fill(f.nextID))
 	f.mu.Unlock()
 	f.arrived <- struct{}{}
+}
+
+// say queues a message from chat c sent at when.
+func (f *fakeTelegram) say(c int64, text string, when time.Time) {
+	f.add(func(id int64) notify.Update {
+		return notify.Update{UpdateID: id, Message: &notify.Message{MessageID: id, Date: when.Unix(), Chat: notify.Chat{ID: c}, Text: text}}
+	})
 }
 
 // outgoing is a message the bot sent or edited.
@@ -164,18 +179,35 @@ func (f *fakeTelegram) messages() []string {
 	return texts
 }
 
-// waitFor waits until the bot has sent n messages, or fails.
-func (f *fakeTelegram) waitFor(t *testing.T, n int) []string {
+// did is what the bot did: messages sent and edited, buttons acknowledged.
+type did struct {
+	sent, edits []outgoing
+	acks        []string
+}
+
+// until waits until cond holds for what the bot did, or fails.
+func (f *fakeTelegram) until(t *testing.T, what string, cond func(d did) bool) did {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if m := f.messages(); len(m) >= n {
-			return m
+	for {
+		f.mu.Lock()
+		d := did{append([]outgoing(nil), f.sent...), append([]outgoing(nil), f.edits...), append([]string(nil), f.acks...)}
+		f.mu.Unlock()
+		if cond(d) {
+			return d
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waiting for %s; sent %+v, edits %+v, acks %q", what, d.sent, d.edits, d.acks)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("expected %d messages, got %q", n, f.messages())
-	return nil
+}
+
+// waitFor waits until the bot has sent n messages, or fails.
+func (f *fakeTelegram) waitFor(t *testing.T, n int) []string {
+	t.Helper()
+	f.until(t, fmt.Sprint(n, " messages"), func(d did) bool { return len(d.sent) >= n })
+	return f.messages()
 }
 
 // fakeRuns is the supervisor: it records what it is asked and answers as told.

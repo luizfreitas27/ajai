@@ -67,7 +67,7 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 		}
 		return false
 	}
-	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": truncate(text), "disable_web_page_preview": true}, nil)
+	err := t.call(ctx, t.client, "sendMessage", map[string]any{"chat_id": t.chatID, "text": truncate(text, MaxMessageLength), "disable_web_page_preview": true}, nil)
 	var apiErr *APIError
 	switch {
 	case err == nil:
@@ -82,10 +82,10 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 	return false
 }
 
-// truncate cuts text to MaxMessageLength characters.
-func truncate(text string) string {
-	if r := []rune(text); len(r) > MaxMessageLength {
-		return string(r[:MaxMessageLength])
+// truncate cuts text to limit characters.
+func truncate(text string, limit int) string {
+	if r := []rune(text); len(r) > limit {
+		return string(r[:limit])
 	}
 	return text
 }
