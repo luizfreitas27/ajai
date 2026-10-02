@@ -15,8 +15,8 @@ The behaviour was ported, not reinvented: same selectors, same question heuristi
 
 Phase 1, the command-line tool, is complete. Next:
 
-- **F2**: `aja panel`, the web control panel served by the same binary, and `aja schedule`
-  with a daemon and generated system units.
+- **F2**: `aja daemon`, a systemd user service that starts and stops runs on schedule
+  windows and takes commands from your Telegram bot, all managed from the command line.
 - **F3**: a full-screen terminal view, installers, self-update.
 
 ## Install
@@ -25,8 +25,8 @@ You need Google Chrome or Chromium. `aja` drives your real, visible Chrome profi
 runs headless and never stores your LinkedIn password.
 
 **Release binaries.** Download the archive for your system from the
-[Releases](https://github.com/luizfreitas27/aja/releases) page (Linux, macOS and Windows,
-amd64 and arm64), check it against `checksums.txt`, unpack it and put `aja` on your `PATH`.
+[Releases](https://github.com/luizfreitas27/aja/releases) page (Linux amd64 and arm64;
+`aja` targets Linux only for now), check it against `checksums.txt`, unpack it and put `aja` on your `PATH`.
 While the repository is private, only its collaborators can download them.
 
 **With Go 1.26+:**
@@ -98,7 +98,8 @@ go build ./cmd/aja && ./aja version
 |---|---|
 | `aja run [--dry-run] [--max N] [--terms "a,b"] [--location X] [--market brasil]` | One run (or a non-stop session); flags override the config for this run only |
 | `aja run --json` | The same, with one JSON object per line for every event and summary, for scripts |
-| `aja status` | The run in progress (live counters) and the last runs |
+| `aja stop` | Stop the run in progress cleanly, from any terminal (as Ctrl-C in its own would) |
+| `aja status` | The run in progress (live counters, who started it) and the last runs |
 | `aja logs -f` | Follow today's log |
 | `aja answers review` | Work through the pending answers: approve, edit, delete, skip |
 | `aja answers list --state pending` | The review queue; `approve`, `edit`, `delete`, `clear` per id or state |
@@ -106,6 +107,10 @@ go build ./cmd/aja && ./aja version
 | `aja export --csv ./sheets` | The Python bot's two spreadsheets, from the database |
 | `aja config show` / `get` / `set` / `validate` | The configuration, secrets masked |
 | `aja doctor` | Everything a run needs, and every path |
+
+Only one run happens on a machine at a time: a second `aja run` refuses and says which run
+is in progress. `aja stop` asks that run to end: the job in progress is finished or
+discarded, the run is recorded with "stopped with aja stop" and its summary sent.
 
 ## Answers, the AI and the help pause
 

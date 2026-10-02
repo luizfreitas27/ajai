@@ -32,7 +32,7 @@ type Store struct {
 
 // Open opens (creating when needed) the database at path and applies pending
 // migrations. One connection: SQLite serialises writers anyway and this keeps
-// the panel and the bot from stepping on each other later.
+// a process's own goroutines from stepping on each other.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
