@@ -36,7 +36,13 @@ go build ./cmd/aja && ./aja version
 ./aja doctor                    # Chrome, profile, config, secrets, resume, data dir, and every path in use
 ./aja config set search.terms "Software Engineer, Python Developer"
 ./aja config show               # effective config, secrets masked
+./aja import ~/Auto_job_applier_linkedIn   # settings, answer memory, job history and resume from the Python fork
+./aja jobs list --failed --since 2026-10-01
+./aja export --csv ./sheets     # the Python bot's two spreadsheets, from the database
 ```
+
+History and the answer memory live in a SQLite database (`aja.db` in the data
+directory, pure-Go driver, no cgo).
 
 Config lives in the OS config directory (`~/.config/aja/config.yaml` on Linux);
 secrets go in the `.env` beside it as `AJA_AI_API_KEY`, `AJA_TELEGRAM_BOT_TOKEN`

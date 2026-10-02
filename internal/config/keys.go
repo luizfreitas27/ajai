@@ -234,3 +234,69 @@ func editDistance(a, b string) int {
 	}
 	return prev[len(rb)]
 }
+
+// SetValue assigns a JSON-typed value (string, bool, float64, []any) to a key,
+// for importers that already hold typed data. Type mismatches are errors that
+// name the key; lists accept only string items.
+func (c *Config) SetValue(key string, value any) error {
+	r, ok := c.find(key)
+	if !ok {
+		return &UnknownKeyError{Key: key, Suggestions: suggest(key)}
+	}
+	mismatch := func() error {
+		return &FieldError{Key: key, Problem: fmt.Sprintf("expected %s, got %T", r.value.Kind(), value)}
+	}
+	switch r.value.Kind() {
+	case reflect.String:
+		switch v := value.(type) {
+		case string:
+			r.value.SetString(v)
+		case float64:
+			r.value.SetString(strconv.FormatFloat(v, 'f', -1, 64))
+		case bool:
+			r.value.SetString(strconv.FormatBool(v))
+		case nil:
+			r.value.SetString("")
+		default:
+			return mismatch()
+		}
+	case reflect.Bool:
+		v, ok := value.(bool)
+		if !ok {
+			return mismatch()
+		}
+		r.value.SetBool(v)
+	case reflect.Int:
+		switch v := value.(type) {
+		case float64:
+			r.value.SetInt(int64(v))
+		case int:
+			r.value.SetInt(int64(v))
+		case nil:
+			r.value.SetInt(0)
+		default:
+			return mismatch()
+		}
+	case reflect.Slice:
+		items, ok := value.([]any)
+		if !ok {
+			if value == nil {
+				r.value.Set(reflect.ValueOf([]string{}))
+				return nil
+			}
+			return mismatch()
+		}
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			str, ok := it.(string)
+			if !ok {
+				return &FieldError{Key: key, Problem: fmt.Sprintf("list items must be text, got %T", it)}
+			}
+			out = append(out, str)
+		}
+		r.value.Set(reflect.ValueOf(out))
+	default:
+		return fmt.Errorf("%s: unsupported type %s", key, r.value.Kind())
+	}
+	return nil
+}
