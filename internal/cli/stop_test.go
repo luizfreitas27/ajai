@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +23,9 @@ func TestRunRefusesWhileAnotherRunHoldsTheLockWithoutOpeningChrome(t *testing.T)
 	saved := OpenBrowser
 	t.Cleanup(func() { OpenBrowser = saved })
 	opened := false
+	var asked browser.Options
 	OpenBrowser = func(ctx context.Context, o browser.Options) (browser.Browser, error) {
-		opened = true
+		opened, asked = true, o
 		return nil, browser.ErrProfileInUse
 	}
 	code, out, errText := h.run("run", "--dry-run")
@@ -43,6 +45,9 @@ func TestRunRefusesWhileAnotherRunHoldsTheLockWithoutOpeningChrome(t *testing.T)
 	}
 	if _, held, _ := run.ReadLock(h.home); held {
 		t.Error("a run that could not open Chrome must release the lock")
+	}
+	if asked.ProfileDir != filepath.Join(h.home, "chrome-profile") || !asked.QuitOnClose {
+		t.Errorf("with chrome_profile_dir blank a run uses the aja profile and closes Chrome after: %+v", asked)
 	}
 }
 

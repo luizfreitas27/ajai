@@ -67,11 +67,16 @@ func lockPath(dataDir string) string { return filepath.Join(dataDir, lockFileNam
 // StopPath is the stop-request file for a data directory.
 func StopPath(dataDir string) string { return filepath.Join(dataDir, stopFileName) }
 
+// lockSettle is how long AcquireLock waits for a lock held by nobody real (a
+// starting run, a probe) to settle; both last microseconds.
+const lockSettle = time.Second
+
 // AcquireLock takes the run lock for origin, or returns a *HeldError naming the
 // run that has it.
 func AcquireLock(dataDir string, origin Origin, now time.Time) (*Lock, error) {
 	path := lockPath(dataDir)
-	for attempt := 0; ; attempt++ {
+	settle := time.Now().Add(lockSettle)
+	for {
 		f, err := filelock.TryLock(path)
 		if err == nil {
 			since := time.Now()
@@ -86,10 +91,10 @@ func AcquireLock(dataDir string, origin Origin, now time.Time) (*Lock, error) {
 			return nil, err
 		}
 		h, held, _ := ReadLock(dataDir)
-		// Not a real holder yet: one between taking the lock and describing itself,
-		// or `aja status` probing the lock for an instant (over the description a
-		// crashed run left, naming a dead process). Look again.
-		if (!held || h.PID == 0 || !procs.Alive(h.PID)) && attempt < 5 {
+		// Not a real holder yet: a run between taking the lock and describing itself,
+		// or `aja status` probing the lock for an instant; either way the file may
+		// still name nobody or a crashed run's dead process. Look again, briefly.
+		if (!held || h.PID == 0 || !procs.Alive(h.PID)) && time.Now().Before(settle) {
 			time.Sleep(20 * time.Millisecond)
 			continue
 		}

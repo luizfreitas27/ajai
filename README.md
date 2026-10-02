@@ -21,8 +21,8 @@ Phase 1, the command-line tool, is complete. Next:
 
 ## Install
 
-You need Google Chrome or Chromium. `aja` drives your real, visible Chrome profile; it never
-runs headless and never stores your LinkedIn password.
+You need Google Chrome or Chromium. `aja` drives a real, visible Chrome, on a profile of its
+own (or yours, if you prefer); it never runs headless and never stores your LinkedIn password.
 
 **Release binaries.** Download the archive for your system from the
 [Releases](https://github.com/luizfreitas27/aja/releases) page (Linux amd64 and arm64;
@@ -71,26 +71,42 @@ go build ./cmd/aja && ./aja version
    AJA_TELEGRAM_CHAT_ID=987654321
    ```
 
-4. **Check.** `aja doctor` tests Chrome, your profile, the config, the secrets, the resume
-   and the data directory, and prints every path in use.
+4. **Sign in to LinkedIn, once.** aja uses a Chrome profile of its own, so your everyday
+   Chrome stays open and free while it works:
 
-5. **Dry run.** Close Chrome first (aja attaches to your profile), or point
-   `settings.chrome_profile_dir` at a profile aja can own. Then:
+   ```bash
+   aja login
+   ```
+
+   Chrome opens on LinkedIn; sign in by hand (aja never types your password) and it closes
+   once the feed appears. The session stays in the aja profile.
+
+5. **Check.** `aja doctor` tests Chrome, the profile (and whether LinkedIn is signed in
+   there), the config, the secrets, the resume and the data directory, and prints every
+   path in use.
+
+6. **Dry run.**
 
    ```bash
    aja run --dry-run --fast
    ```
 
-   Sign in to LinkedIn in the window if asked (once; the session persists). aja searches,
+   aja searches,
    screens each job, fills every form and discards it at the Review step, so you can see
    the answers it would send. `--fast` shortens the pauses and only works with `--dry-run`.
 
-6. **For real.** Start small, then let the pacing limits do their job:
+7. **For real.** Start small, then let the pacing limits do their job:
 
    ```bash
    aja run --max 1
    aja run
    ```
+
+**Coming from phase 1?** aja used to drive your everyday Chrome profile. A blank
+`settings.chrome_profile_dir` now means the aja profile, one of aja's own: run `aja login` once, or set
+`settings.chrome_profile_dir` to your everyday profile (`aja doctor` prints its path) to
+keep the old behaviour. On the aja profile a run closes its Chrome when it ends; on yours
+it leaves the window open, as before.
 
 ## Everyday commands
 
@@ -107,6 +123,7 @@ go build ./cmd/aja && ./aja version
 | `aja export --csv ./sheets` | The Python bot's two spreadsheets, from the database |
 | `aja config show` / `get` / `set` / `validate` | The configuration, secrets masked |
 | `aja doctor` | Everything a run needs, and every path |
+| `aja login` | Sign in to LinkedIn once in the profile aja uses |
 
 Only one run happens on a machine at a time: a second `aja run` refuses and says which run
 is in progress. `aja stop` asks that run to end: the job in progress is finished or

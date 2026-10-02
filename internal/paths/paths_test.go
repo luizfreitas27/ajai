@@ -36,3 +36,26 @@ func TestDefaultsFollowTheOSConventions(t *testing.T) {
 		t.Errorf("config %s data %s", p.ConfigFile, p.DataDir)
 	}
 }
+
+func TestTheChromeProfileIsAjasOwnUnlessTheSettingNamesAnother(t *testing.T) {
+	p := Resolve("", func(k string) string {
+		if k == "AJA_HOME" {
+			return "/data/aja"
+		}
+		return ""
+	})
+	cases := []struct {
+		setting string
+		dir     string
+		own     bool
+	}{
+		{"", "/data/aja/chrome-profile", true},
+		{"/home/u/.config/google-chrome", "/home/u/.config/google-chrome", false},
+		{"/data/aja/chrome-profile/", "/data/aja/chrome-profile/", true}, // the aja profile, named explicitly
+	}
+	for _, tc := range cases {
+		if got := p.ChromeProfile(tc.setting); got.Dir != tc.dir || got.Own != tc.own {
+			t.Errorf("%q: %+v, want %q %v", tc.setting, got, tc.dir, tc.own)
+		}
+	}
+}

@@ -1,5 +1,6 @@
-// Package chrome finds the Chrome or Chromium installed on this machine and the
-// default profile directory, for doctor and for the browser layer.
+// Package chrome finds the Chrome or Chromium installed on this machine, the
+// user's everyday profile for it, and whether a profile is signed in to
+// LinkedIn, for doctor, aja login and the browser layer.
 package chrome
 
 import (
@@ -74,21 +75,25 @@ func Version(binary string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// DefaultProfileDir is where this OS keeps the user's Chrome user-data directory.
-func DefaultProfileDir() string {
-	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
-	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "Google", "Chrome")
-	case "windows":
-		if l := os.Getenv("LocalAppData"); l != "" {
-			return filepath.Join(l, "Google", "Chrome", "User Data")
-		}
-		return filepath.Join(home, "AppData", "Local", "Google", "Chrome", "User Data")
+// EverydayProfileDir is where the browser at binary keeps the user's everyday
+// profile on Linux: ~/.config/chromium for Chromium, ~/.config/google-chrome
+// (or its -beta / -unstable sibling) for Chrome. The aja profile is
+// paths.Paths.ChromeProfileDir.
+func EverydayProfileDir(binary string) string {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".config")
+	}
+	name := strings.ToLower(filepath.Base(binary))
+	switch {
+	case strings.Contains(name, "chromium"):
+		return filepath.Join(base, "chromium")
+	case strings.Contains(name, "beta"):
+		return filepath.Join(base, "google-chrome-beta")
+	case strings.Contains(name, "unstable"), strings.Contains(name, "dev"):
+		return filepath.Join(base, "google-chrome-unstable")
 	default:
-		if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-			return filepath.Join(x, "google-chrome")
-		}
-		return filepath.Join(home, ".config", "google-chrome")
+		return filepath.Join(base, "google-chrome")
 	}
 }

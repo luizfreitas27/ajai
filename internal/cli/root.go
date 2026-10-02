@@ -58,7 +58,8 @@ func (a *App) Command() *cobra.Command {
 		Short: "Apply to LinkedIn Easy Apply jobs from your own Chrome",
 		Long: `aja drives your real, visible Chrome through LinkedIn job search and Easy Apply,
 answering forms from your configuration, its answer memory and (optionally) an AI
-model. Start with "aja init", check with "aja doctor", try "aja run --dry-run".`,
+model. Start with "aja init", sign in once with "aja login", check with "aja doctor",
+try "aja run --dry-run".`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -79,7 +80,7 @@ model. Start with "aja init", check with "aja doctor", try "aja run --dry-run".`
 	root.SetIn(a.Stdin)
 	root.PersistentFlags().StringVar(&a.configFlag, "config", "", "config file (default: the OS config dir, or $AJA_HOME/config.yaml)")
 	root.PersistentFlags().BoolVar(&a.noColor, "no-color", false, "plain output (also honours NO_COLOR)")
-	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd())
+	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.loginCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd())
 	return root
 }
 

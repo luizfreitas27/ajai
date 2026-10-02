@@ -69,7 +69,7 @@ var superseded = map[string]string{
 	"questions.pause_at_failed_question": "replaced by the help pause and `--unattended`",
 	"settings.stop_before_submit":        "replaced by `aja run --dry-run`",
 	"settings.run_in_background":         "aja never runs headless (ADR 0001)",
-	"settings.safe_mode":                 "aja always uses your Chrome profile; set settings.chrome_profile_dir to pick one",
+	"settings.safe_mode":                 "aja uses its own Chrome profile (sign in once with aja login); set settings.chrome_profile_dir to use another",
 	"settings.keep_screen_awake":         "not needed: no desktop dialogs",
 	"settings.auto_manage_driver":        "no WebDriver in aja",
 	"settings.showAiErrorAlerts":         "no desktop dialogs; errors go to the log",
@@ -80,12 +80,15 @@ var superseded = map[string]string{
 	"settings.stealth_mode":              "no stealth library in aja (ADR 0001)",
 	"settings.click_gap":                 config.RetiredKeys["settings.click_gap"],
 	"settings.stop_date_cycle_at_24hr":   "a non-stop session always narrows the date filter to \"Past 24 hours\" and stays there, the Python default",
-	"secrets.username":                   "aja never logs in with a password; sign in once in your Chrome profile",
-	"secrets.password":                   "aja never logs in with a password; sign in once in your Chrome profile",
+	"secrets.username":                   noPassword,
+	"secrets.password":                   noPassword,
 	"secrets.llm_temperature":            "not configurable in aja",
 	"secrets.ai_provider":                "folded into ai.provider together with llm_api_url",
 	"secrets.llm_api_url":                "folded into ai.provider / ai.base_url",
 }
+
+// noPassword is why the Python bot's LinkedIn credentials are not imported.
+const noPassword = "aja never logs in with a password; sign in once with aja login"
 
 // secrets are Python keys whose VALUE must never be copied; the user sets the variable.
 var secrets = map[string]string{
@@ -274,7 +277,7 @@ func noteDotenv(path string, rep *Report) error {
 		if ajaName, ok := pythonEnvNames[pyName]; ok {
 			rep.SecretsSeen = append(rep.SecretsSeen, ajaName)
 		} else if strings.HasPrefix(pyName, "LINKEDIN_") {
-			rep.Unmapped[".env "+pyName] = "aja never logs in with a password; sign in once in your Chrome profile"
+			rep.Unmapped[".env "+pyName] = noPassword
 		}
 	}
 	return nil
