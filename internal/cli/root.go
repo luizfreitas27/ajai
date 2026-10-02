@@ -30,10 +30,10 @@ type App struct {
 	configFlag string
 	noColor    bool
 
-	ui     *ui.Printer
-	paths  paths.Paths
-	logger *slog.Logger
-	closer io.Closer
+	ui       *ui.Printer
+	paths    paths.Paths
+	logger   *slog.Logger
+	cleanups []func() error // closed in reverse order when the command ends
 }
 
 // NewApp wires the process environment.
@@ -58,9 +58,10 @@ model. Start with "aja init", check with "aja doctor", try "aja run --dry-run".`
 			return nil
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			if a.closer != nil {
-				_ = a.closer.Close()
+			for i := len(a.cleanups) - 1; i >= 0; i-- {
+				_ = a.cleanups[i]()
 			}
+			a.cleanups = nil
 		},
 	}
 	root.SetOut(a.Stdout)
@@ -68,7 +69,7 @@ model. Start with "aja init", check with "aja doctor", try "aja run --dry-run".`
 	root.SetIn(a.Stdin)
 	root.PersistentFlags().StringVar(&a.configFlag, "config", "", "config file (default: the OS config dir, or $AJA_HOME/config.yaml)")
 	root.PersistentFlags().BoolVar(&a.noColor, "no-color", false, "plain output (also honours NO_COLOR)")
-	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd())
+	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd())
 	return root
 }
 
@@ -113,7 +114,8 @@ func (a *App) openLog(level string) {
 		a.ui.Warn("log", "could not open the log file: "+err.Error())
 		return
 	}
-	a.logger, a.closer = logger, closer
+	a.logger = logger
+	a.cleanups = append(a.cleanups, closer.Close)
 }
 
 func (a *App) versionCmd() *cobra.Command {
