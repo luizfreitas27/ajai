@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,5 +111,35 @@ func TestWindowsAndOpenings(t *testing.T) {
 	}
 	if err := s.RecordOpening(schedule.Key{WindowID: id2, Date: "2026-10-02"}, "maybe", "", 0); err == nil {
 		t.Error("an unknown outcome must not be stored")
+	}
+}
+
+func TestWindowsAreValidatedAgainstTheOthersBeforeTheyAreAddedOrTurnedOn(t *testing.T) {
+	s := open(t)
+	markets := []string{"brasil", "internacional"}
+	monday := func(start, end schedule.Clock) schedule.Window {
+		return schedule.Window{Days: []time.Weekday{time.Monday}, Start: start, End: end, Enabled: true}
+	}
+	first, err := s.AddValidWindow(monday(9*60, 11*60), markets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddValidWindow(monday(10*60, 12*60), markets); err == nil || !strings.Contains(err.Error(), "overlaps window") {
+		t.Fatalf("an overlap is refused: %v", err)
+	}
+	if w, err := s.SetWindowEnabledValid(first, false, markets); err != nil || w.Enabled {
+		t.Fatalf("%+v %v", w, err)
+	}
+	if _, err := s.AddValidWindow(monday(10*60, 12*60), markets); err != nil { // over a window that is off
+		t.Fatal(err)
+	}
+	if _, err := s.SetWindowEnabledValid(first, true, markets); err == nil || !strings.Contains(err.Error(), "overlaps window") {
+		t.Errorf("turning on a window something now overlaps is refused: %v", err)
+	}
+	if _, err := s.SetWindowEnabledValid(999, true, markets); !errors.Is(err, ErrNoWindow) {
+		t.Errorf("%v", err)
+	}
+	if _, err := s.AddValidWindow(schedule.Window{Days: []time.Weekday{time.Friday}, Start: 9 * 60, End: 10 * 60, Market: "usa", Enabled: true}, markets); err == nil {
+		t.Error("an unknown market is refused")
 	}
 }

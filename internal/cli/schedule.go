@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -64,19 +65,16 @@ func (a *App) scheduleAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			others, err := st.ListWindows()
-			if err != nil {
-				return err
-			}
-			if err := schedule.Validate(w, others, config.MarketNameList()); err != nil {
-				return err
-			}
-			if w.ID, err = st.AddWindow(w); err != nil {
+			if w.ID, err = st.AddValidWindow(w, config.MarketNameList()); err != nil {
 				return err
 			}
 			a.logger.Info("schedule window added", "id", w.ID, "window", w.String())
 			a.ui.OK("added", fmt.Sprintf("window %d: %s", w.ID, w))
-			a.printNextOpening(append(others, w))
+			windows, err := st.ListWindows()
+			if err != nil {
+				return err
+			}
+			a.printNextOpening(windows)
 			return nil
 		},
 	}
@@ -161,25 +159,14 @@ func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			windows, err := st.ListWindows()
-			if err != nil {
-				return err
-			}
-			w.Enabled = on
-			if on {
-				if err := schedule.Validate(*w, windows, config.MarketNameList()); err != nil {
-					return fmt.Errorf("cannot enable window %d: %w", w.ID, err)
-				}
-			}
-			if _, err := st.SetWindowEnabled(w.ID, on); err != nil {
-				return err
+			if w, err = st.SetWindowEnabledValid(w.ID, on, config.MarketNameList()); err != nil {
+				return fmt.Errorf("cannot %s window %s: %w", strings.TrimSuffix(verb, "d"), args[0], err)
 			}
 			a.logger.Info("schedule window "+verb, "id", w.ID, "window", w.String())
 			a.ui.OK(verb, fmt.Sprintf("window %d: %s", w.ID, w))
-			for i := range windows {
-				if windows[i].ID == w.ID {
-					windows[i].Enabled = on
-				}
+			windows, err := st.ListWindows()
+			if err != nil {
+				return err
 			}
 			a.printNextOpening(windows)
 			return nil

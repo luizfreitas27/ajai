@@ -1,0 +1,30 @@
+aja   1 Dashboard   2 Answers   3 Schedule   4 Config
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Schedule
+
+Add a schedule window  local time; a window cannot cross midnight (24:00 ends one)
+> Days     [x] Mon  [x] Tue  [x] Wed  [x] Thu  [x] Fri  [ ] Sat  [ ] Sun
+  Start    09:00  
+  End      11:00  
+  Market   ‹ the config's ›
+  Mode     ‹ live ›
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+↑↓ field · ←→ day or choice · space picks · enter adds · esc cancels

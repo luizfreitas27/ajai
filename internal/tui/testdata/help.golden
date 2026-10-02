@@ -1,10 +1,11 @@
-aja   1 Dashboard   2 Answers   3 Config
+aja   1 Dashboard   2 Answers   3 Schedule   4 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Keys
 
   1           Dashboard
   2           Answers
-  3           Config
+  3           Schedule
+  4           Config
   ?           this list; Esc closes it
   q, Ctrl-C   quit (a run in progress keeps running)
 
@@ -21,10 +22,9 @@ Answers
   e, Enter    correct it: pick or type an option, or type the answer
   d           delete it: aja asks the question again
 
-Setup checklist
+Schedule
 
-  Enter       fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab
-  i           import from the Python bot
-  r           check again
+  a           add a window: weekdays, hours, market, dry run or live
+  Space       turn the window on or off
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 esc closes the list · q quit

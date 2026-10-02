@@ -92,10 +92,11 @@ type tab int
 const (
 	tabDashboard tab = iota
 	tabAnswers
+	tabSchedule
 	tabConfig
 )
 
-var tabNames = []string{"Dashboard", "Answers", "Config"}
+var tabNames = []string{"Dashboard", "Answers", "Schedule", "Config"}
 
 // tabKey is the number key that shows t.
 func tabKey(t tab) string { return fmt.Sprint(int(t) + 1) }
@@ -117,6 +118,7 @@ type Model struct {
 	dash          dashboard
 	runs          runControl
 	ans           answersTab
+	sched         scheduleTab
 	conf          configTab
 	checks        checklist
 }
@@ -199,6 +201,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
 		return m, cmd
+	case windowsLoadedMsg, windowChangedMsg:
+		var cmd tea.Cmd
+		m.sched, cmd = m.sched.update(msg, m.deps)
+		return m, cmd
 	case checkAgainMsg:
 		return m.checkAgain()
 	case doctorMsg:
@@ -232,7 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // typing reports whether a tab holds a value being typed or a question asked,
 // which every key but Ctrl-C goes to.
 func (m Model) typing() bool {
-	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.checks.editing()
+	return m.conf.editing() || m.runs.editing() || m.ans.editing() || m.sched.editing() || m.checks.editing()
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -256,6 +262,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !m.setupShown && m.tab == tabAnswers && m.ans.editing():
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
+		return m, cmd
+	case !m.setupShown && m.tab == tabSchedule && m.sched.editing():
+		var cmd tea.Cmd
+		m.sched, cmd = m.sched.update(msg, m.deps)
 		return m, cmd
 	}
 	switch key {
@@ -312,6 +322,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ans, cmd = m.ans.update(msg, m.deps)
 		return m, cmd
+	case m.tab == tabSchedule:
+		var cmd tea.Cmd
+		m.sched, cmd = m.sched.update(msg, m.deps)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -324,6 +338,8 @@ func (m Model) loadTab() tea.Cmd {
 		return loadConfig(m.deps)
 	case tabAnswers:
 		return loadAnswers(m.deps, m.ans.shownState())
+	case tabSchedule:
+		return loadWindows(m.deps)
 	}
 	return nil
 }
@@ -352,6 +368,8 @@ func (m Model) View() string {
 		body = m.conf.view(m.styles, m.deps, m.width)
 	case m.tab == tabAnswers:
 		body = m.ans.view(m.styles, m.width)
+	case m.tab == tabSchedule:
+		body = m.sched.view(m.styles, m.width, m.deps.Now())
 	default:
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
@@ -399,6 +417,12 @@ func (m Model) hints() string {
 		hint = "enter saves · esc cancels"
 	case m.tab == tabAnswers:
 		hint = "↑↓ move · tab pending/approved · a approve · e edit · d delete · ? keys · q quit"
+	case m.tab == tabSchedule && m.sched.deleting != nil:
+		hint = "y deletes · n keeps"
+	case m.tab == tabSchedule && m.sched.form != nil:
+		hint = "↑↓ field · ←→ day or choice · space picks · enter adds · esc cancels"
+	case m.tab == tabSchedule:
+		hint = "↑↓ move · a add · space on/off · d delete · ? keys · q quit"
 	case m.runs.form != nil:
 		hint = "↑↓ field · ←→ change · enter starts · esc cancels"
 	case m.runs.confirm != nil:
@@ -428,6 +452,10 @@ func (m Model) helpView() string {
 	row("a", "approve the answer as shown")
 	row("e, Enter", "correct it: pick or type an option, or type the answer")
 	row("d", "delete it: aja asks the question again")
+	lines = append(lines, "", m.styles.section.Render("Schedule"), "")
+	row("a", "add a window: weekdays, hours, market, dry run or live")
+	row("Space", "turn the window on or off")
+	row("d", "delete it")
 	lines = append(lines, "", m.styles.section.Render("Setup checklist"), "")
 	row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
 	row("i", "import from the Python bot")

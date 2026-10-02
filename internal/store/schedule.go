@@ -85,6 +85,50 @@ func (s *Store) SetWindowEnabled(id int64, enabled bool) (bool, error) {
 	return n > 0, err
 }
 
+// AddValidWindow adds w once it passes schedule.Validate against the windows
+// there are (markets are the valid market names): what `aja schedule add` and
+// the TUI both do.
+func (s *Store) AddValidWindow(w schedule.Window, markets []string) (int64, error) {
+	others, err := s.ListWindows()
+	if err != nil {
+		return 0, err
+	}
+	if err := schedule.Validate(w, others, markets); err != nil {
+		return 0, err
+	}
+	return s.AddWindow(w)
+}
+
+// ErrNoWindow: no window has that id.
+var ErrNoWindow = errors.New("no such schedule window")
+
+// SetWindowEnabledValid turns window id on or off; on, it must first pass
+// schedule.Validate against the other windows (one may have been added over it
+// meanwhile). It returns the window as it is now.
+func (s *Store) SetWindowEnabledValid(id int64, on bool, markets []string) (*schedule.Window, error) {
+	w, err := s.GetWindow(id)
+	if err != nil {
+		return nil, err
+	}
+	if w == nil {
+		return nil, ErrNoWindow
+	}
+	w.Enabled = on
+	if on {
+		windows, err := s.ListWindows()
+		if err != nil {
+			return nil, err
+		}
+		if err := schedule.Validate(*w, windows, markets); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := s.SetWindowEnabled(id, on); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
 // RecordOpening records what the scheduler did with an opening; recording it
 // again replaces the earlier outcome. runID is 0 when no run started.
 func (s *Store) RecordOpening(k schedule.Key, outcome schedule.Outcome, detail string, runID int64) error {

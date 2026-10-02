@@ -145,6 +145,14 @@ corrects it: a select or radio is picked from its options with ↑↓, or typed 
 the beginning of just one; the pick follows what you type), anything else typed; a correction is yours and approved. A checkbox
 takes only `a` or `d`; `d` deletes after asking, and aja asks the question again next time.
 
+The **Schedule** tab lists the schedule windows (weekdays, hours, market, mode, on or off)
+with each one's next opening. `a` adds one in a form: tick the weekdays with Space, type
+the start and end (HH:MM, local time), choose the market and dry run or live. It is checked
+as `aja schedule add` checks it (no window crossing midnight, none overlapping another on
+the same weekday) and refused with the reason. Space turns the selected window off or back
+on (on again only if nothing overlaps it now), and `d` deletes it after asking. Windows open
+runs only while the daemon runs.
+
 The **Config** tab lists every setting by section, with its value in the config file and
 what it does. Enter edits one:
 - a setting with fixed values is picked from a list (several, with Space, for a list such
@@ -176,8 +184,8 @@ only the checklist and the Config tab (for the secrets) open.
 
 Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
-`NO_COLOR`, and writes paths under your home as `~/…`. More tabs (schedule, jobs) are
-coming (issue #36).
+`NO_COLOR`, and writes paths under your home as `~/…`. The daemon's controls and a Jobs tab
+are coming (issue #36).
 
 ## Everyday commands
 
