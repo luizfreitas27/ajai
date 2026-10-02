@@ -105,6 +105,11 @@ to the tag before tagging and the workflow publishes that section as the release
   (current and not yet handled) and `Next`. The store keeps the windows
   (`schedule_windows`) and each handled opening, keyed by window and local date
   (`schedule_openings`); `aja schedule` manages them.
+- `internal/service`: `aja daemon install/uninstall/status` as a systemd user unit
+  (`aja.service`, `WantedBy=graphical-session.target`, `KillSignal=SIGINT` so a run ends
+  as on Ctrl-C). `Unit` is golden-tested (`go test ./internal/service -update` rewrites
+  `testdata/`); `systemctl --user` goes through the `Systemctl` seam. Check a changed unit
+  with `systemd-analyze --user verify`.
 - `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
   goroutine (one at a time; a second `Start` gets a `*run.HeldError`, and so does a run of
   another process, checked before the `Starter` reads any config). The CLI's `Starter`

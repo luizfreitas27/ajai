@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,11 +17,12 @@ import (
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/notify"
 	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/aja/internal/service"
 	"github.com/luizfreitas27/aja/internal/store"
 )
 
 func (a *App) daemonCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Start and stop runs on the schedule windows, until stopped",
 		Long: `Runs in the foreground until Ctrl-C (or a service stop): every 30 seconds it looks at
@@ -28,7 +31,7 @@ stops it when the window closes. The configuration is read afresh for every run.
 progress when the daemon stops ends cleanly first.
 
 Only one daemon runs at a time. Its log is the daemon file in the log directory
-(aja logs --daemon).`,
+(aja logs --daemon). To have it start with your desktop session, aja daemon install.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -77,6 +80,8 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 			return nil
 		},
 	}
+	cmd.AddCommand(a.daemonInstallCmd(), a.daemonUninstallCmd(), a.daemonStatusCmd())
+	return cmd
 }
 
 // daemonStarter opens a run for the daemon: the configuration and secrets read
@@ -113,4 +118,112 @@ type freshTelegram struct {
 func (f freshTelegram) Send(ctx context.Context, text string) bool {
 	s := f.app.secrets(nil)
 	return notify.New(s.TelegramBotToken, s.TelegramChatID, f.logger).Send(ctx, text)
+}
+
+// Seams for the service commands; tests replace them.
+var (
+	systemctl  service.Systemctl = service.RealSystemctl
+	executable                   = os.Executable
+)
+
+// serviceManager is the systemd user service in the user's config directory.
+func (a *App) serviceManager() service.Manager {
+	base := a.Env.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".config")
+	}
+	return service.Manager{UnitDir: filepath.Join(base, "systemd", "user"), Systemctl: systemctl}
+}
+
+func (a *App) daemonInstallCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "install",
+		Short: "Run the daemon as a systemd user service that starts with your desktop session",
+		Long: `Writes a systemd user unit for this aja binary (with AJA_HOME and --config when you use
+them), enables it for your desktop session and (re)starts it. Run it again after moving or
+upgrading the binary. The service is stopped like Ctrl-C, so a run in progress ends cleanly.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bin, err := executable()
+			if err != nil {
+				return err
+			}
+			if resolved, err := filepath.EvalSymlinks(bin); err == nil {
+				bin = resolved
+			}
+			o := service.Options{Binary: bin}
+			if a.configFlag != "" {
+				if o.ConfigFile, err = filepath.Abs(a.configFlag); err != nil {
+					return err
+				}
+			}
+			if home := a.Env.Getenv("AJA_HOME"); home != "" {
+				if o.Home, err = filepath.Abs(home); err != nil {
+					return err
+				}
+			}
+			in, err := a.serviceManager().Install(o)
+			for _, c := range in.Commands {
+				a.ui.Hint("ran: " + c)
+			}
+			if err != nil {
+				return err
+			}
+			a.ui.OK("installed", in.Path)
+			for _, w := range in.Warnings {
+				a.ui.Warn("service", w)
+			}
+			a.ui.Hint("It starts with your desktop session. Check it with aja daemon status; follow it with aja logs --daemon -f.")
+			return nil
+		},
+	}
+}
+
+func (a *App) daemonUninstallCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "uninstall",
+		Short: "Stop the daemon service and remove it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			m := a.serviceManager()
+			commands, err := m.Uninstall()
+			if errors.Is(err, service.ErrNotInstalled) {
+				a.ui.Println("The aja service is not installed.")
+				return nil
+			}
+			for _, c := range commands {
+				a.ui.Hint("ran: " + c)
+			}
+			if err != nil {
+				return err
+			}
+			a.ui.OK("removed", m.UnitPath())
+			return nil
+		},
+	}
+}
+
+func (a *App) daemonStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Whether the daemon service is installed and running",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st := a.serviceManager().Status()
+			if st.Installed {
+				a.ui.KV("service", fmt.Sprintf("%s, %s (%s)", st.Enabled, st.Active, st.Path))
+			} else {
+				a.ui.KV("service", "not installed (aja daemon install)")
+			}
+			if d, running, err := daemon.ReadLock(a.paths.DataDir); err != nil {
+				return err
+			} else if running {
+				a.ui.KV("daemon", "running ("+d.String()+")")
+			} else {
+				a.ui.KV("daemon", "not running")
+			}
+			return nil
+		},
+	}
 }

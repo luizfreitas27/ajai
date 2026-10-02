@@ -1,0 +1,20 @@
+# Written by aja daemon install; aja daemon uninstall removes it.
+[Unit]
+Description=aja: applies to LinkedIn jobs on your schedule windows
+Documentation=https://github.com/luizfreitas27/aja
+# The Chrome window the runs open needs the desktop session.
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment="AJA_HOME=/home/u/aja 100%%"
+ExecStart="/opt/my apps/aja" daemon --config "/home/u/aja 100%%/config.yaml"
+# Stopped like Ctrl-C: the run in progress ends cleanly first.
+KillSignal=SIGINT
+TimeoutStopSec=3min
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=graphical-session.target

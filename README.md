@@ -126,6 +126,7 @@ it leaves the window open, as before.
 | `aja login` | Sign in to LinkedIn once in the profile aja uses |
 | `aja schedule add/list/rm/enable/disable` | Schedule windows (see below) |
 | `aja daemon` | Start and stop runs on the schedule windows, until Ctrl-C |
+| `aja daemon install` / `status` / `uninstall` | The daemon as a systemd user service |
 
 Only one run happens on a machine at a time: a second `aja run` refuses and says which run
 is in progress. `aja stop` asks that run to end: the job in progress is finished or
@@ -190,9 +191,18 @@ the next day). `aja status` shows the next opening.
 Windows are acted on by `aja daemon`, which runs until Ctrl-C:
 
 ```bash
-aja daemon               # in a terminal you leave open; a systemd service comes next
+aja daemon install       # a systemd user service that starts with your desktop session
+aja daemon status        # installed, running?
 aja logs --daemon -f     # what it decides, and the runs it starts
+aja daemon uninstall     # stop it and remove the service
 ```
+
+`aja daemon install` writes `~/.config/systemd/user/aja.service` for the binary you ran it
+with (and your `AJA_HOME` or `--config`, if you use them), enables it for your desktop
+session and starts it; run it again after moving or upgrading aja. It warns when your session
+does not reach `graphical-session.target` or systemd does not know your display, either of
+which would keep Chrome from opening. You can also just run `aja daemon` in a terminal you
+leave open.
 
 Every 30 seconds it looks at the windows: when one opens it starts an unattended run with
 that window's market and dry run (a non-stop session if `settings.run_non_stop` is on) and
