@@ -5,16 +5,23 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/luizfreitas27/aja/internal/cli"
 )
 
-// version is set by goreleaser through -ldflags at release time.
-var version = "dev"
+// Set by goreleaser through -ldflags at release time.
+var (
+	version = "dev"
+	commit  = ""
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	os.Exit(cli.NewApp(version).Execute(ctx, os.Args[1:]))
+	info, _ := debug.ReadBuildInfo()
+	app := cli.NewApp(cli.ResolveVersion(version, info))
+	app.Commit = commit
+	os.Exit(app.Execute(ctx, os.Args[1:]))
 }

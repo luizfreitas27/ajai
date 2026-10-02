@@ -1,0 +1,39 @@
+# Release builds: one static binary per OS and architecture, built by
+# .github/workflows/release.yml when a v* tag is pushed. Try it locally with
+#   goreleaser release --snapshot --clean
+version: 2
+project_name: aja
+
+builds:
+  - id: aja
+    main: ./cmd/aja
+    binary: aja
+    env:
+      - CGO_ENABLED=0 # the SQLite driver is pure Go: no C toolchain, easy cross-compiling
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Tag }} -X main.commit={{ .ShortCommit }}
+
+archives:
+  - id: aja
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, NOTICE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge pull request"
+      - "^Address review"
+
+release:
+  prerelease: auto # v0.x.y-rc1 and similar are marked as pre-releases

@@ -24,5 +24,25 @@ jobs:
           install-mode: goinstall
       - name: Browser tests (headless Chrome)
         run: go test -tags browser ./...
-        env:
-          AJA_TEST_HEADLESS: "1"
+
+  release-snapshot:
+    # Builds every release target without publishing, so a broken release is
+    # caught in the pull request rather than when a tag is pushed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: Six archives and the checksums
+        run: |
+          ls dist/*.tar.gz dist/*.zip dist/checksums.txt
+          test "$(ls dist/*.tar.gz dist/*.zip | wc -l)" -eq 6
+          ./dist/aja_linux_amd64_v1/aja version

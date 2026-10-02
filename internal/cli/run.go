@@ -57,11 +57,23 @@ skipped and the question waits for you in "aja answers review".`,
 			if l == nil {
 				return err
 			}
+			ctx := cmd.Context()
+			telegram := notify.New(l.Secrets.TelegramBotToken, l.Secrets.TelegramChatID, a.logger)
+			// A run that cannot even start (config, Chrome, AI settings) says so on Telegram
+			// too: an unattended run has nobody watching the terminal.
+			cannotStart := func(err error) error {
+				if ctx.Err() == nil {
+					sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+					defer cancel()
+					telegram.Send(sendCtx, run.StartFailureMessage(err))
+				}
+				return err
+			}
 			if !l.FileExisted {
-				return errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
+				return cannotStart(errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first"))
 			}
 			if err != nil {
-				return fmt.Errorf("fix the configuration first (`aja config validate`): %w", err)
+				return cannotStart(fmt.Errorf("fix the configuration first (`aja config validate`): %w", err))
 			}
 			if err := opts.Validate(); err != nil {
 				return err
@@ -78,14 +90,13 @@ skipped and the question waits for you in "aja answers review".`,
 			a.openLog(cfg.Settings.LogLevel)
 			st, err := a.openStore()
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
 			resolved := markets.Resolve(cfg)
 			aiClient, err := ai.FromConfig(cfg, l.Secrets, resolved, a.logger)
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
-			telegram := notify.New(l.Secrets.TelegramBotToken, l.Secrets.TelegramChatID, a.logger)
 			a.ui.Banner(a.Version)
 			a.ui.KV("market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
 			a.ui.KV("mode", runMode(opts))
@@ -93,16 +104,15 @@ skipped and the question waits for you in "aja answers review".`,
 
 			bin, err := chrome.Find(cfg.Settings.ChromeBinary)
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
 			profile := cfg.Settings.ChromeProfileDir
 			if profile == "" {
 				profile = chrome.DefaultProfileDir()
 			}
-			ctx := cmd.Context()
 			br, err := OpenBrowser(ctx, browser.Options{Bin: bin, ProfileDir: profile, DisableExtensions: cfg.Settings.DisableExtensions, Logger: a.logger})
 			if err != nil {
-				return err
+				return cannotStart(err)
 			}
 			defer func() { _ = br.Close() }()
 
@@ -129,7 +139,7 @@ skipped and the question waits for you in "aja answers review".`,
 				}
 			}
 			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
-				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume}
+				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume, Notifier: telegram}
 
 			sum, runErr := runner.Run(ctx, opts)
 			a.printSummary(sum)
@@ -208,20 +218,9 @@ func (a *App) printEvent(e run.Event) {
 func (a *App) printSummary(s run.Summary) {
 	a.ui.Println()
 	a.ui.Title("Run summary")
-	a.ui.KV("run", fmt.Sprintf("#%d (%s)", s.RunID, s.Market))
-	if s.DryRun {
-		a.ui.KV("would apply", fmt.Sprint(s.WouldApply))
-	} else {
-		a.ui.KV("applied", fmt.Sprint(s.Applied))
-		a.ui.KV("external", fmt.Sprint(s.External))
-		a.ui.KV("failed", fmt.Sprint(s.Failed))
+	for _, kv := range s.Fields() {
+		a.ui.KV(strings.ToLower(kv[0]), kv[1])
 	}
-	a.ui.KV("skipped", fmt.Sprint(s.Skipped))
-	if s.Captured > 0 {
-		a.ui.KV("captured", fmt.Sprintf("%d answer(s) you typed, remembered", s.Captured))
-	}
-	a.ui.KV("pending", fmt.Sprintf("%d answer(s) to review", s.PendingAnswers))
-	a.ui.KV("ended", s.Reason)
 	if s.PendingAnswers > 0 {
 		a.ui.Hint("Review them with `aja answers review`.")
 	}

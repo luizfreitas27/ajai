@@ -131,6 +131,9 @@ type Runner struct {
 	StatePath string
 	// ResumePath is the absolute resume to upload ("" keeps LinkedIn's previous one).
 	ResumePath string
+	// Notifier, when set, gets exactly one message when the run ends: the summary,
+	// or the error with what was done until then.
+	Notifier Notifier
 
 	started time.Time
 }
@@ -175,6 +178,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	if r.StatePath != "" {
 		RemoveState(r.StatePath)
 	}
+	r.notifyEnd(sum, err)
 	return sum, err
 }
 
