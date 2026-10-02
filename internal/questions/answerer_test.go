@@ -43,14 +43,22 @@ func answerer(t *testing.T, cfg config.Config) (*Answerer, *memory.Memory) {
 }
 
 // Builders mirroring the Python tests' fakes: one question each.
-func text(label string) Question     { return Question{Label: label, Kind: Text} }
-func textarea(label string) Question { return Question{Label: label, Kind: Textarea} }
+func text(label string) Question {
+	return Question{Label: label, Kind: Text}
+}
+
+func textarea(label string) Question {
+	return Question{Label: label, Kind: Textarea}
+}
+
 func dropdown(label string, opts ...string) Question {
 	return Question{Label: label, Kind: Select, Options: opts, Current: opts[0]}
 }
+
 func radio(label string, opts ...string) Question {
 	return Question{Label: label, Kind: Radio, Options: opts}
 }
+
 func checkbox(visible, hidden string) Question {
 	return Question{Label: visible, GroupTitle: hidden, Kind: Checkbox}
 }
