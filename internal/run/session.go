@@ -19,7 +19,8 @@ const defaultNonStopWait = 10 * time.Minute
 // settings.run_non_stop, run after run until one ends in a way that should not
 // be retried (End.Continues), with the Python bot's filter changes between runs
 // (FilterCycle) and NonStopWait in between. Each run is recorded and reported
-// on its own. The configuration is restored when the session ends.
+// on its own. The configuration is restored when the session ends. A context
+// cancelled with a *StopRequested cause (Lock.WatchStops) records its reason.
 func (r *Runner) Session(ctx context.Context, opts Options) ([]Summary, error) {
 	r.defaults()
 	r.filtersPaused = false

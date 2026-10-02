@@ -39,7 +39,7 @@ One keyword query the tool types into LinkedIn's job search. A run visits every 
 _Avoid_: query, keyword, role
 
 **Run**:
-One full pass over all search terms, ended by the end of the terms, a pacing limit, a schedule window closing, or the user. Recorded in the run history.
+One full pass over all search terms, ended by the end of the terms, a pacing limit, a schedule window closing, a stop request, or the user. Recorded in the run history. At most one run is in progress on a machine at a time, whichever process started it.
 _Avoid_: cycle, loop
 
 **Non-stop session**:
@@ -81,7 +81,7 @@ Whether a remembered answer is **pending** (not yet confirmed by the user) or **
 _Avoid_: status, verified, confirmed
 
 **Review queue**:
-The list of pending remembered answers the user works through, approving, correcting or deleting each one, in the terminal (`aja answers review`) or the control panel. It also holds the questions nothing could answer, waiting for the user's answer.
+The list of pending remembered answers the user works through, approving, correcting or deleting each one, in the terminal (`aja answers review`) or from Telegram. It also holds the questions nothing could answer, waiting for the user's answer.
 _Avoid_: inbox, backlog, pending list
 
 **Help pause**:
@@ -93,7 +93,7 @@ A remembered answer taken from what the user typed into the form by hand during 
 _Avoid_: manual answer, learned from user
 
 **Unattended run**:
-A run where nobody is at the terminal (the panel, the scheduler, `--unattended`, or a terminal missing on either end): no help pause; a job with an unanswerable question is skipped and the question goes to the review queue.
+A run where nobody is at the terminal (every run the daemon starts, `--unattended`, `--json`, or a terminal missing on either end): no help pause; a job with an unanswerable question is skipped and the question goes to the review queue.
 _Avoid_: background mode, headless, silent
 
 **Sensitive question**:
@@ -107,22 +107,30 @@ _Avoid_: user info, context, persona
 ### Scheduling and notifications
 
 **Schedule window**:
-A weekday-and-time span during which the scheduler starts a run on its own and stops it at the end.
+A span of local time on chosen weekdays, optionally with its own market and dry run. When it opens the scheduler starts one unattended run (a non-stop session if `run_non_stop` is on); when it closes the run is stopped. A run that ends early is not restarted in the same window, and a window that opens while another run is in progress is skipped with a notice.
 _Avoid_: cron, timer, slot
 
 **Scheduler**:
-The long-lived `aja` process (`aja schedule daemon`) that watches the clock and starts and stops runs for the schedule windows.
-_Avoid_: cron job, service, background worker
+The part of the daemon that watches the clock and starts and stops runs for the schedule windows.
+_Avoid_: cron job, timer, background worker
+
+**Daemon**:
+The long-lived `aja daemon` process, installed as a systemd user service of the user's desktop session, that hosts the scheduler and the remote commands and runs their runs itself.
+_Avoid_: server, service, agent, background mode
+
+**Remote command**:
+A Telegram message from the configured chat that the daemon acts on: show the status, stop the run, start a run, or work the review queue. Messages from any other chat are ignored.
+_Avoid_: bot command, webhook, chat command
+
+**Stop request**:
+A request, from `aja stop`, a remote command or a schedule window closing, that the run in progress end cleanly, as if the user had pressed Ctrl-C at its terminal. Honoured by any run on the machine; the run records the request's reason.
+_Avoid_: kill, abort, cancel
 
 **Run summary**:
 The counts the tool reports when a run ends: applied, external links collected, failed, skipped, and pending answers.
 _Avoid_: report, stats, results
 
 ### Running the tool
-
-**Control panel**:
-The local web page served by `aja panel` where the user edits settings, starts and stops runs, works the review queue and views history.
-_Avoid_: dashboard, UI, web app, admin
 
 **Chrome profile**:
 The user's own Chrome user-data directory that the tool attaches to, where the LinkedIn session lives. The tool never logs in with a password; the user logs in once in that profile.

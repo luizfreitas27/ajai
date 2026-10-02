@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag such as v0.1.0 publishes a GitHub Release with the binaries for
-# Linux, macOS and Windows (amd64 and arm64) and their checksums.
+# Linux (amd64 and arm64) and their checksums.
 on:
   push:
     tags: ["v*"]

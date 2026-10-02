@@ -11,18 +11,11 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/ai"
-	"github.com/luizfreitas27/aja/internal/apply"
 	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/chrome"
 	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/linkedin"
+	"github.com/luizfreitas27/aja/internal/launch"
 	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/memory"
 	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/pacing"
-	"github.com/luizfreitas27/aja/internal/questions"
 	"github.com/luizfreitas27/aja/internal/run"
 )
 
@@ -104,64 +97,32 @@ else on stdout.`,
 			if err != nil {
 				return cannotStart(err)
 			}
-			resolved := markets.Resolve(cfg)
-			aiClient, err := ai.FromConfig(cfg, l.Secrets, resolved, a.logger)
+			plan, err := launch.NewPlan(l, a.paths, a.logger)
 			if err != nil {
 				return cannotStart(err)
 			}
 			if !a.eventsAsJSON {
 				a.ui.Banner(a.Version)
 			}
-			a.note(run.EventStart, "market", fmt.Sprintf("%s (%s, %s)", resolved.Name, resolved.Currency, resolved.SalaryPeriod))
+			a.note(run.EventStart, "market", fmt.Sprintf("%s (%s, %s)", plan.Market.Name, plan.Market.Currency, plan.Market.SalaryPeriod))
 			a.note(run.EventStart, "mode", runMode(opts, cfg))
-			a.note(run.EventStart, "ai", aiMode(cfg, aiClient != nil))
+			a.note(run.EventStart, "ai", aiMode(cfg, plan.AI != nil))
 			for _, w := range l.Warnings {
 				a.note(run.EventWarn, "config", w)
 			}
+			if plan.ResumeNote != "" {
+				a.note(run.EventWarn, "resume", plan.ResumeNote)
+			}
 
-			bin, err := chrome.Find(cfg.Settings.ChromeBinary)
+			opened, err := plan.Open(ctx, opts, launch.Deps{Origin: run.OriginTerminal, Paths: a.paths, Store: st, Logger: a.logger,
+				Notifier: telegram, Events: a.report, OpenBrowser: OpenBrowser,
+				Helper:       &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout},
+				AfterFilters: a.filterPause(defaultHelpTimeout)})
 			if err != nil {
 				return cannotStart(err)
 			}
-			profile := cfg.Settings.ChromeProfileDir
-			if profile == "" {
-				profile = chrome.DefaultProfileDir()
-			}
-			br, err := OpenBrowser(ctx, browser.Options{Bin: bin, ProfileDir: profile, DisableExtensions: cfg.Settings.DisableExtensions,
-				SmoothScroll: cfg.Settings.SmoothScroll, Logger: a.logger})
-			if err != nil {
-				return cannotStart(err)
-			}
-			defer func() { _ = br.Close() }()
-
-			pacer := pacing.New(cfg.Pacing, opts.Fast)
-			session := linkedin.NewSession(br.Main(), br, pacer, a.logger)
-			session.CloseTabs = cfg.Settings.CloseTabs
-			mem := memory.New(st, a.logger)
-			answerer := questions.New(cfg, mem, nil, a.logger)
-			if aiClient != nil {
-				answerer.AI = aiClient
-			}
-			applier := &apply.Applier{Page: br.Main(), Pacer: pacer, Answerer: answerer, Logger: a.logger, ScreenshotDir: a.paths.ScreenshotDir}
-			if !opts.Unattended {
-				applier.Helper = &terminalHelper{app: a, notify: telegram, timeout: defaultHelpTimeout}
-			}
-			resume, note := run.ResolveResume(a.paths, resolved, cfg.Questions.Resume)
-			if note != "" {
-				a.note(run.EventWarn, "resume", note)
-			}
-			events := func(e run.Event) {
-				a.report(e)
-				if e.Kind == run.EventLogin {
-					telegram.Send(ctx, "aja is waiting for you to sign in to LinkedIn in the Chrome window.")
-				}
-			}
-			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Applier: applier, Store: st, Pacer: pacer, Logger: a.logger,
-				Events: events, StatePath: run.StatePath(a.paths.DataDir), ResumePath: resume, Notifier: telegram}
-			if opts.PausesAfterFilters(cfg) {
-				runner.AfterFilters = a.filterPause(defaultHelpTimeout)
-			}
-			_, runErr := runner.Session(ctx, opts)
+			defer opened.Close()
+			_, runErr := opened.Session(ctx)
 			return runErr
 		},
 	}
@@ -211,6 +172,57 @@ func (a *App) stdoutIsTerminal() bool {
 	return ok && term.IsTerminal(f.Fd())
 }
 
+// stopReasonCLI is the ending reason of a run stopped with `aja stop`.
+const stopReasonCLI = "stopped with aja stop"
+
+func (a *App) stopCmd() *cobra.Command {
+	var wait time.Duration
+	cmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the run in progress, wherever it was started",
+		Long: `Asks the run in progress to end cleanly, as Ctrl-C in its terminal would: the job in
+progress is finished or discarded, the run is recorded and its summary sent. Works for a run
+started from any terminal.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			holder, err := run.RequestStop(a.paths.DataDir, stopReasonCLI)
+			if errors.Is(err, run.ErrNoRun) {
+				return errors.New("no run in progress")
+			}
+			if err != nil {
+				return err
+			}
+			a.ui.Println("Asked " + holder.String() + " to stop.")
+			if wait <= 0 {
+				return nil
+			}
+			deadline := time.Now().Add(wait)
+			for time.Now().Before(deadline) {
+				_, held, err := run.ReadLock(a.paths.DataDir)
+				if err != nil {
+					return err
+				}
+				if !held {
+					a.ui.OK("stopped", "")
+					return nil
+				}
+				select {
+				case <-cmd.Context().Done():
+					return nil
+				case <-time.After(stopWaitPoll):
+				}
+			}
+			a.ui.Warn("still running", "it stops once the job in progress is done; check with `aja status`")
+			return nil
+		},
+	}
+	cmd.Flags().DurationVar(&wait, "wait", 3*time.Minute, "how long to wait for the run to end (0: do not wait)")
+	return cmd
+}
+
+// stopWaitPoll is how often `aja stop` checks whether the run has ended.
+var stopWaitPoll = 300 * time.Millisecond
+
 // ------------------------------------------------------------------ status / logs
 
 func (a *App) statusCmd() *cobra.Command {
@@ -219,20 +231,34 @@ func (a *App) statusCmd() *cobra.Command {
 		Short: "Show whether a run is in progress and the last runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			holder, held, lerr := run.ReadLock(a.paths.DataDir)
+			if lerr != nil {
+				a.ui.Warn("lock", lerr.Error())
+			}
 			state, err := run.ReadState(run.StatePath(a.paths.DataDir))
 			switch {
+			case errors.Is(err, run.ErrNoState) && held && holder.PID == 0:
+				a.ui.OK("running", "a run is starting")
+			case errors.Is(err, run.ErrNoState) && held:
+				a.ui.OK("running", holder.String()+", starting")
 			case errors.Is(err, run.ErrNoState):
 				a.ui.Println("No run in progress.")
 			case err != nil:
 				a.ui.Warn("state", err.Error())
 			case state.Alive() && !state.NextRun.IsZero():
 				a.ui.OK("waiting", fmt.Sprintf("pid %d, non-stop session; next run at %s (%s)", state.PID, state.NextRun.Local().Format("15:04"), state.Market))
+				if held {
+					a.ui.KV("started from", string(holder.Origin))
+				}
 			case state.Alive():
 				mode := "live"
 				if state.DryRun {
 					mode = "dry run"
 				}
 				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), mode, state.Market))
+				if held {
+					a.ui.KV("started from", string(holder.Origin))
+				}
 				a.ui.KV("term", state.Term)
 				a.ui.KV("applied", fmt.Sprintf("%d (external %d, failed %d, would apply %d)", state.Applied, state.External, state.Failed, state.WouldApply))
 				a.ui.KV("skipped", fmt.Sprint(state.Skipped))

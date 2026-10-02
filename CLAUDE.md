@@ -18,7 +18,7 @@ go build ./cmd/aja          # the binary (a pseudo-version from git; releases ge
 go test ./...               # unit tests: heuristics, config, memory, selector checks on fixtures
 go test -tags browser ./... # also the end-to-end tests that launch a headless Chrome
 go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
-goreleaser release --snapshot --clean   # all six release binaries into dist/, nothing published
+goreleaser release --snapshot --clean   # the two Linux release binaries into dist/, nothing published
 ```
 
 Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, config in
@@ -40,6 +40,17 @@ Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, c
   site; records runs and jobs in the store. `Runner.Session` repeats runs for
   `settings.run_non_stop` (`FilterCycle` changes the filters between them; `End.Continues`
   decides whether another run starts). `Runner.AfterFilters` is the filter pause hook.
+  One run at a time on the machine: `run.AcquireLock` (an OS file lock via
+  `internal/filelock`, so it dies with its process and never goes stale) records the
+  holder's PID, `Origin` and start time. `run.RequestStop` writes a stop-request file;
+  `Lock.WatchStops` (started by `launch.Opened.Session`) polls it and cancels the session's
+  context with a `*StopRequested` cause, whose reason the run records instead of "stopped
+  by user". A request older than the lock (left as the previous run ended) is discarded.
+- `internal/launch`: the one place a loaded configuration becomes a run: `NewPlan` (market,
+  AI client, resume, Chrome; no side effects, so the caller can print it first) then
+  `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `aja run`
+  and the daemon both use it; never wire a runner anywhere else. It decides attended-only
+  hooks (help pause, filter pause) from `run.Options`, so callers always pass them.
 - `internal/config/wired_test.go` fails when a config field is read nowhere outside the
   config package: a setting must do what its comment says. It type-checks the module
   (`golang.org/x/tools/go/packages`), counts reads only (an assignment, e.g. the importer's,
@@ -79,8 +90,8 @@ Releases: pushing a `v*` tag runs `.github/workflows/release.yml` (goreleaser, c
 - `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
   `selectors_test.go`. Update both together when LinkedIn changes.
 - `internal/schedule` (F2): schedule windows and the scheduler.
-- `internal/panel` (F2): embedded web panel with the same security rules as the Python one:
-  loopback only, no CORS, a required request header on mutations, masked secrets.
+- aja is a CLI and targets Linux only for now: no web panel, no Windows or macOS code paths
+  in new work (the few OS branches from phase 1 stay), releases for linux/amd64 and arm64.
 
 ## Conventions
 

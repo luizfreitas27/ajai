@@ -61,7 +61,7 @@ type Options struct {
 
 // ResolveUnattended decides whether a run may pause for help: only with a person
 // at a terminal on both ends. --unattended, --json (output for a script), a piped
-// stdout or a non-terminal stdin (the scheduler, the panel) all mean nobody can answer.
+// stdout or a non-terminal stdin (the daemon, a script) all mean nobody can answer.
 func ResolveUnattended(flag, jsonOutput, stdinIsTerminal, stdoutIsTerminal bool) bool {
 	return flag || jsonOutput || !stdinIsTerminal || !stdoutIsTerminal
 }
@@ -219,7 +219,7 @@ func (r *Runner) saveState(sum *Summary, term string) {
 }
 
 // Run executes one run and returns its summary. A cancelled context ends the
-// run cleanly with reason "stopped by user". The run is recorded in the store,
+// run cleanly with reason "stopped by user" (or a stop request's). The run is recorded in the store,
 // with the review queue's size, however it ends.
 func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error) {
 	defer func() {
@@ -274,7 +274,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	})
 	if err != nil {
 		if ctx.Err() != nil {
-			return r.stop(&sum, ctx.Err())
+			return r.stop(ctx, &sum, ctx.Err())
 		}
 		sum.ended(EndError, "login: "+err.Error())
 		return sum, err
@@ -303,11 +303,11 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		r.emit(EventTerm, term, nil)
 		r.saveState(&sum, term)
 		if err := r.Site.Search(ctx, term); err != nil {
-			return r.stop(&sum, err)
+			return r.stop(ctx, &sum, err)
 		}
 		if err := r.Site.ApplyFilters(ctx, r.Cfg.Search, location); err != nil {
 			if ctx.Err() != nil {
-				return r.stop(&sum, ctx.Err())
+				return r.stop(ctx, &sum, ctx.Err())
 			}
 			r.emit(EventWarn, "filters: "+err.Error(), nil)
 		}
@@ -316,12 +316,12 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 				r.filtersPaused = true
 			}
 			if ctx.Err() != nil {
-				return r.stop(&sum, ctx.Err())
+				return r.stop(ctx, &sum, ctx.Err())
 			}
 		}
 		if err := r.Site.WaitForCards(ctx); err != nil {
 			if ctx.Err() != nil {
-				return r.stop(&sum, ctx.Err())
+				return r.stop(ctx, &sum, ctx.Err())
 			}
 			r.emit(EventWarn, "no job cards appeared for this term", nil)
 			continue
@@ -331,11 +331,11 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		for {
 			for index := 0; ; index++ {
 				if ctx.Err() != nil {
-					return r.stop(&sum, ctx.Err())
+					return r.stop(ctx, &sum, ctx.Err())
 				}
 				cards, err := r.Site.Cards() // re-queried: the list is virtualised
 				if err != nil {
-					return r.stop(&sum, err)
+					return r.stop(ctx, &sum, err)
 				}
 				if index >= len(cards) {
 					break
@@ -345,7 +345,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 				}
 				outcome, err := r.handleCard(ctx, &sum, opts, rules, cards[index], &state)
 				if err != nil {
-					return r.stop(&sum, err)
+					return r.stop(ctx, &sum, err)
 				}
 				r.saveState(&sum, term)
 				switch outcome {
@@ -357,7 +357,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 			}
 			more, err := r.Site.NextPage(ctx)
 			if err != nil {
-				return r.stop(&sum, err)
+				return r.stop(ctx, &sum, err)
 			}
 			if !more {
 				break
@@ -557,10 +557,17 @@ func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error 
 		WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, RunID: sum.RunID})
 }
 
-func (r *Runner) stop(sum *Summary, err error) (Summary, error) {
+// stop ends the run for err. A cancelled context is the user stopping it: Ctrl-C,
+// or a stop request, whose reason is recorded.
+func (r *Runner) stop(ctx context.Context, sum *Summary, err error) (Summary, error) {
 	switch {
 	case errors.Is(err, context.Canceled):
-		sum.ended(EndStopped, "stopped by user")
+		reason := "stopped by user"
+		var sr *StopRequested
+		if errors.As(context.Cause(ctx), &sr) {
+			reason = sr.Reason
+		}
+		sum.ended(EndStopped, reason)
 		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	case errors.Is(err, context.DeadlineExceeded):
