@@ -19,6 +19,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/doctor"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/paths"
 	"github.com/luizfreitas27/aja/internal/store"
@@ -26,11 +27,44 @@ import (
 
 // Deps is what the TUI works on.
 type Deps struct {
-	Paths  paths.Paths
-	Store  *store.Store
-	Env    config.Env // the process environment: secrets and AJA_CFG_ overrides
-	Logger *slog.Logger
-	Now    func() time.Time
+	Paths    paths.Paths
+	Store    *store.Store
+	Env      config.Env // the process environment: secrets and AJA_CFG_ overrides
+	Logger   *slog.Logger
+	Now      func() time.Time
+	Probe    doctor.Probe // the machine, as `aja doctor` looks at it
+	Launcher Launcher
+	Home     string // the user's home directory, shown as ~
+}
+
+// tilde writes the home directory in text as ~: in ~/… and on its own, never
+// inside a longer name (/home/ana2 stays as it is for /home/ana).
+func (d Deps) tilde(text string) string {
+	if d.Home == "" {
+		return text
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(text, d.Home)
+		if i < 0 {
+			return b.String() + text
+		}
+		rest := text[i+len(d.Home):]
+		b.WriteString(text[:i])
+		if rest == "" || strings.ContainsRune("/ ,;:)", rune(rest[0])) {
+			b.WriteString("~")
+		} else {
+			b.WriteString(d.Home)
+		}
+		text = rest
+	}
+}
+
+// Launcher runs aja itself.
+type Launcher interface {
+	// InTerminal runs the aja subcommand args in the terminal, the TUI
+	// stepping aside until it ends; done turns its outcome into a message.
+	InTerminal(args []string, done func(error) tea.Msg) tea.Cmd
 }
 
 func (d Deps) logger() *slog.Logger {
@@ -68,8 +102,14 @@ type Model struct {
 	width, height int
 	tab           tab
 	help          bool
+	setupShown    bool // the setup checklist covers the tabs
+	setupOpened   bool // it has opened by itself once
+	doctorBusy    bool // the checks are running
+	doctorAgain   bool // and must run again once they end
+	refreshes     int
 	dash          dashboard
 	conf          configTab
+	checks        checklist
 }
 
 // New builds the TUI; r renders its colours (see Run).
@@ -93,8 +133,20 @@ func Run(ctx context.Context, d Deps, in io.Reader, out io.Writer, noColor bool)
 
 type tickMsg struct{}
 
-// Init reads what the Dashboard shows.
-func (m Model) Init() tea.Cmd { return m.dash.refresh(m.deps) }
+// Init reads what the Dashboard shows and runs the setup checks (Update sees
+// doctorBusy false then, so a request made meanwhile only asks for one more run).
+func (m Model) Init() tea.Cmd { return tea.Batch(m.dash.refresh(m.deps), checkAgain) }
+
+// checkAgain runs the setup checks, or, while they run, asks for one more run
+// once they end: two never overlap, so an older report never wins.
+func (m Model) checkAgain() (Model, tea.Cmd) {
+	if m.doctorBusy {
+		m.doctorAgain = true
+		return m, nil
+	}
+	m.doctorBusy = true
+	return m, runDoctor(m.deps)
+}
 
 // Update handles keys, the terminal's size and the refresh cycle: a refresh
 // reads, and the next one is scheduled only once its result is in, so two never
@@ -110,11 +162,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.dash.refresh(m.deps)
 	case refreshedMsg:
 		m.dash = m.dash.apply(msg)
-		return m, m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
-	case configLoadedMsg, configSavedMsg:
+		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+		if m.refreshes++; m.refreshes%doctorEvery == 0 {
+			var check tea.Cmd
+			m, check = m.checkAgain()
+			return m, tea.Batch(next, check)
+		}
+		return m, next
+	case configSavedMsg:
+		var cmd, check tea.Cmd
+		m.conf, cmd = m.conf.update(msg, m.deps)
+		if msg.refusal == "" { // a setting or a secret changed: so may the checks
+			m, check = m.checkAgain()
+		}
+		return m, tea.Batch(cmd, check)
+	case configLoadedMsg:
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
 		return m, cmd
+	case checkAgainMsg:
+		return m.checkAgain()
+	case doctorMsg:
+		m.checks, _ = m.checks.update(msg, m.deps)
+		m.doctorBusy = false
+		// Something a run needs is missing: open on the checklist, once, never
+		// over a value being typed.
+		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() {
+			m.setupOpened, m.setupShown, m.help = true, true, false
+		}
+		if m.doctorAgain {
+			m.doctorAgain = false
+			return m.checkAgain()
+		}
+		return m, nil
+	case subcommandDoneMsg:
+		var cmd tea.Cmd
+		m.checks, cmd = m.checks.update(msg, m.deps)
+		return m, tea.Batch(cmd, loadConfig(m.deps)) // the subcommand may have written the config
+	case openConfigMsg:
+		m.setupShown, m.tab = false, tabConfig
+		return m, loadConfig(m.deps)
 	}
 	return m, nil
 }
@@ -124,7 +211,12 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" {
 		return m, tea.Quit
 	}
-	if m.tab == tabConfig && m.conf.editing() {
+	switch {
+	case m.setupShown && m.checks.editing():
+		var cmd tea.Cmd
+		m.checks, cmd = m.checks.update(msg, m.deps)
+		return m, cmd
+	case !m.setupShown && m.tab == tabConfig && m.conf.editing():
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
 		return m, cmd
@@ -136,19 +228,38 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help = !m.help
 		return m, nil
 	case "esc":
-		if m.help {
+		switch {
+		case m.help:
 			m.help = false
-			return m, nil
+		case m.setupShown && !m.checks.noConfig:
+			m.setupShown = false
+		}
+		return m, nil
+	case "s":
+		if !m.setupShown && m.tab == tabDashboard {
+			m.setupShown, m.help = true, false
+			return m.checkAgain()
 		}
 	}
 	if len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < len(tabNames) {
-		m.tab, m.help = tab(key[0]-'1'), false
+		t := tab(key[0] - '1')
+		if m.checks.noConfig && t != tabConfig { // nothing else works without a config
+			m.tab, m.setupShown, m.help = t, true, false // shown once the checklist is left
+			return m, nil
+		}
+		m.tab, m.help, m.setupShown = t, false, false
 		if m.tab == tabConfig {
 			return m, loadConfig(m.deps) // the file may have changed meanwhile
 		}
 		return m, nil
 	}
-	if m.tab == tabConfig && !m.help {
+	switch {
+	case m.help:
+	case m.setupShown:
+		var cmd tea.Cmd
+		m.checks, cmd = m.checks.update(msg, m.deps)
+		return m, cmd
+	case m.tab == tabConfig:
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
 		return m, cmd
@@ -174,19 +285,24 @@ func (m Model) View() string {
 	switch {
 	case m.help:
 		body = m.helpView()
+	case m.setupShown:
+		body = m.checks.view(m.styles, m.deps, m.width)
 	case m.tab == tabConfig:
 		body = m.conf.view(m.styles, m.deps, m.width)
 	default:
-		body = m.dash.view(m.styles, m.width, height, m.deps.Now())
+		body = m.dash.view(m.styles, m.width, height, m.deps.Now(), m.checks.summary())
 	}
 	return strings.Join([]string{m.tabBar(), rule, fit(body, m.width, height), rule, m.hints()}, "\n")
 }
 
 func (m Model) tabBar() string {
 	parts := []string{m.styles.brand.Render("aja")}
+	if m.setupShown {
+		parts = append(parts, m.styles.activeTab.Render("Setup"))
+	}
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
-		if tab(i) == m.tab && !m.help {
+		if tab(i) == m.tab && !m.help && !m.setupShown {
 			parts = append(parts, m.styles.activeTab.Render(label))
 		} else {
 			parts = append(parts, m.styles.tab.Render(label))
@@ -196,10 +312,16 @@ func (m Model) tabBar() string {
 }
 
 func (m Model) hints() string {
-	hint := "? keys · q quit"
+	hint := "s setup · ? keys · q quit"
 	switch {
 	case m.help:
 		hint = "esc closes the list · q quit"
+	case m.setupShown && m.checks.editing():
+		hint = "enter imports · esc cancels"
+	case m.setupShown && m.checks.noConfig:
+		hint = "↑↓ move · enter fix · i import · r check again · 2 config · q quit"
+	case m.setupShown:
+		hint = "↑↓ move · enter fix · i import · r check again · esc back · q quit"
 	case m.tab == tabConfig && m.conf.editing():
 		hint = "enter saves · esc cancels"
 	case m.tab == tabConfig:
@@ -218,6 +340,12 @@ func (m Model) helpView() string {
 	}
 	row("?", "this list; Esc closes it")
 	row("q, Ctrl-C", "quit (a run in progress keeps running)")
+	row("s", "the setup checklist (from the Dashboard)")
+	lines = append(lines, "", m.styles.section.Render("Setup checklist"), "")
+	row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
+	row("i", "import from the Python bot")
+	row("r", "check again")
+	row("Esc", "back to the tabs (once there is a config file)")
 	lines = append(lines, "", m.styles.section.Render("Config"), "")
 	row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
 	row("Enter", "edit the setting or secret, then Enter saves")

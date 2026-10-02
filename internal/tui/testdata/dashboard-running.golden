@@ -7,6 +7,7 @@ Run           running since 09:10, started from the terminal
 Pending       1 to review
 Next opening  Mon 05 Oct 14:00, window 1 (Mon, Wed 14:00-16:00, market brasil)
 Daemon        not running: schedule windows start runs only while it runs
+Setup         every check passes
 
 Last runs
   started       market         mode    appl  ext fail skip  ended
@@ -25,6 +26,5 @@ Today's log
 
 
 
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-? keys · q quit
+s setup · ? keys · q quit

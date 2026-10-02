@@ -74,7 +74,7 @@ func load(p paths.Paths, env *Env, flags map[string]string) (*Loaded, error) {
 
 	if env != nil {
 		if err := env.LoadDotenv(p.EnvFile); err != nil {
-			return nil, fmt.Errorf("%s: %w", p.EnvFile, err)
+			return nil, DotenvError(p.EnvFile, err)
 		}
 		l.Secrets = env.Secrets()
 

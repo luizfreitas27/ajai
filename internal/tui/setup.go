@@ -1,0 +1,269 @@
+package tui
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/doctor"
+)
+
+// doctorEvery: the checks run again this often while the TUI is open, so a
+// change made elsewhere (`aja login` in another terminal) shows.
+const doctorEvery = 30 // refreshes, one a second
+
+// checklist is the setup checklist: `aja doctor`'s checks, each with what
+// fixes it. It opens by itself when something a run needs is missing, and
+// with s from the Dashboard.
+type checklist struct {
+	loaded       bool
+	report       doctor.Report
+	noConfig     bool // no config file: only the checklist and the Config tab make sense
+	dotenvBroken bool // aja's .env cannot be read
+	cursor       int
+	importing    *textinput.Model // the Python checkout's path being typed
+	notice       notice
+}
+
+// fix is what resolves a check.
+type fix int
+
+const (
+	noFix        fix = iota
+	fixInit          // aja init in the terminal
+	fixLogin         // aja login in the terminal
+	fixConfigTab     // a setting or a secret, in the Config tab
+)
+
+type doctorMsg struct {
+	report       doctor.Report
+	noConfig     bool
+	dotenvBroken bool
+}
+
+// checkAgainMsg asks for the checks to run again.
+type checkAgainMsg struct{}
+
+func checkAgain() tea.Msg { return checkAgainMsg{} }
+
+// subcommandDoneMsg: an aja subcommand run in the terminal has ended.
+type subcommandDoneMsg struct {
+	args []string
+	err  error
+}
+
+// openConfigMsg asks for the Config tab.
+type openConfigMsg struct{}
+
+// runDoctor runs `aja doctor`'s checks, which take a moment (Chrome's version,
+// the profile's cookies), away from the screen. Model.checkAgain keeps them
+// from overlapping.
+func runDoctor(d Deps) tea.Cmd {
+	return func() tea.Msg {
+		env := d.Env
+		msg := doctorMsg{dotenvBroken: env.LoadDotenv(d.Paths.EnvFile) != nil}
+		l, err := config.Load(d.Paths, d.Env, nil)
+		msg.report = doctor.Run(l, err, d.Paths, d.Probe)
+		if l != nil {
+			msg.noConfig = !l.FileExisted
+		} else { // the config or .env could not be read: is there a config at all?
+			_, statErr := os.Stat(d.Paths.ConfigFile)
+			msg.noConfig = os.IsNotExist(statErr)
+		}
+		return msg
+	}
+}
+
+// runInTerminal runs the aja subcommand args in the terminal.
+func runInTerminal(d Deps, args ...string) tea.Cmd {
+	return d.Launcher.InTerminal(args, func(err error) tea.Msg { return subcommandDoneMsg{args: args, err: err} })
+}
+
+// blocking reports whether the report says a run cannot work: a check failed,
+// or LinkedIn is not signed in.
+func blocking(r doctor.Report) bool {
+	for _, c := range r.Checks {
+		if c.Status == doctor.Fail || (c.Name == doctor.CheckChromeProfile && c.Status != doctor.OK) {
+			return true
+		}
+	}
+	return false
+}
+
+// fixFor is what resolves c, and how the checklist says so.
+func (v checklist) fixFor(c doctor.Check, d Deps) (fix, string) {
+	if c.Status == doctor.OK {
+		return noFix, ""
+	}
+	switch {
+	case c.Name == doctor.CheckConfig && v.dotenvBroken:
+		return noFix, "fix " + d.tilde(d.Paths.EnvFile) + " in an editor (aja never shows its content)"
+	case c.Name == doctor.CheckConfig && v.noConfig:
+		return fixInit, "create the config with the init wizard (`aja init`)"
+	case c.Name == doctor.CheckConfig:
+		return fixConfigTab, "fix it in the Config tab"
+	case c.Name == doctor.CheckChromeProfile:
+		return fixLogin, "sign in to LinkedIn once (`aja login` opens Chrome)"
+	case c.Name == doctor.CheckAI || c.Name == doctor.CheckTelegram:
+		return fixConfigTab, "set the secrets (or the AI settings) in the Config tab"
+	case doctor.IsResume(c.Name):
+		return fixConfigTab, "set the resume in the Config tab"
+	}
+	return noFix, ""
+}
+
+func (v checklist) update(msg tea.Msg, d Deps) (checklist, tea.Cmd) {
+	switch msg := msg.(type) {
+	case doctorMsg:
+		v.loaded, v.report, v.noConfig, v.dotenvBroken = true, msg.report, msg.noConfig, msg.dotenvBroken
+		v.cursor = max(0, min(v.cursor, len(v.report.Checks)-1))
+	case subcommandDoneMsg:
+		v.notice = notice{text: "`aja " + msg.args[0] + "` ended; checked again."}
+		if msg.err != nil {
+			v.notice = notice{text: fmt.Sprintf("`aja %s` ended with an error (%v); checked again.", msg.args[0], msg.err), level: levelWarn}
+		}
+		return v, checkAgain
+	case tea.KeyMsg:
+		if v.importing != nil {
+			return v.importKey(msg, d)
+		}
+		return v.key(msg, d)
+	}
+	return v, nil
+}
+
+func (v checklist) key(msg tea.KeyMsg, d Deps) (checklist, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		v.cursor = max(0, v.cursor-1)
+	case "down", "j":
+		v.cursor = max(0, min(len(v.report.Checks)-1, v.cursor+1))
+	case "r":
+		v.notice = notice{text: "Checked again."}
+		return v, checkAgain
+	case "i":
+		in := textinput.New()
+		in.Prompt = "> "
+		in.Placeholder = "the Python bot's folder, e.g. ~/Projects/Auto_job_applier_linkedIn"
+		in.Width = inputWidth(80)
+		in.Cursor.SetMode(cursor.CursorStatic)
+		in.Focus()
+		v.importing = &in
+	case "enter":
+		if v.cursor >= len(v.report.Checks) {
+			return v, nil
+		}
+		switch f, _ := v.fixFor(v.report.Checks[v.cursor], d); f {
+		case fixInit:
+			return v, runInTerminal(d, "init")
+		case fixLogin:
+			return v, runInTerminal(d, "login")
+		case fixConfigTab:
+			return v, func() tea.Msg { return openConfigMsg{} }
+		}
+	}
+	return v, nil
+}
+
+func (v checklist) importKey(msg tea.KeyMsg, d Deps) (checklist, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		v.importing = nil
+		return v, nil
+	case "enter":
+		path := d.expandHome(strings.TrimSpace(v.importing.Value()))
+		if path == "" {
+			return v, nil
+		}
+		v.importing = nil
+		return v, runInTerminal(d, "import", "--", path) // a folder named -x is not a flag
+	}
+	in, cmd := v.importing.Update(msg)
+	v.importing = &in
+	return v, cmd
+}
+
+// expandHome turns a leading ~/ into the home directory, as a shell would.
+func (d Deps) expandHome(path string) string {
+	if rest, ok := strings.CutPrefix(path, "~/"); ok && d.Home != "" {
+		return filepath.Join(d.Home, rest)
+	}
+	return path
+}
+
+// editing reports whether keys go to the import prompt.
+func (v checklist) editing() bool { return v.importing != nil }
+
+// summary is the Dashboard's line about the checks; empty until they ran.
+func (v checklist) summary() notice {
+	if !v.loaded {
+		return notice{}
+	}
+	var warn, fail int
+	for _, c := range v.report.Checks {
+		switch c.Status {
+		case doctor.Warn:
+			warn++
+		case doctor.Fail:
+			fail++
+		}
+	}
+	switch {
+	case fail > 0:
+		return notice{fmt.Sprintf("%d problem(s), %d warning(s): press s for the setup checklist", fail, warn), levelFail}
+	case warn > 0:
+		return notice{fmt.Sprintf("%d warning(s): press s for the setup checklist", warn), levelWarn}
+	}
+	return notice{"every check passes", levelOK}
+}
+
+func (v checklist) view(s styles, d Deps, width int) string {
+	lines := []string{s.section.Render("Setup checklist") + "  " + s.dim.Render("what a run needs, as `aja doctor` checks it")}
+	if v.notice.text != "" {
+		lines = append(lines, s.byLevel(v.notice.level).Render(v.notice.text))
+	}
+	lines = append(lines, "")
+	if !v.loaded {
+		return strings.Join(append(lines, "Checking…"), "\n")
+	}
+	for i, c := range v.report.Checks {
+		mark := "  "
+		if i == v.cursor {
+			mark = s.key.Render("> ")
+		}
+		status := s.ok.Render("✓")
+		switch c.Status {
+		case doctor.Warn:
+			status = s.warn.Render("!")
+		case doctor.Fail:
+			status = s.fail.Render("✗")
+		}
+		detail, _, _ := strings.Cut(d.tilde(c.Detail), "\n")
+		lines = append(lines, mark+status+" "+fmt.Sprintf("%-15s", c.Name)+" "+detail)
+	}
+	lines = append(lines, "")
+	if v.cursor < len(v.report.Checks) {
+		c := v.report.Checks[v.cursor]
+		lines = append(lines, wrap(c.Name+": "+d.tilde(c.Detail), width)...)
+		if _, how := v.fixFor(c, d); how != "" {
+			lines = append(lines, s.key.Render("Enter")+": "+how)
+		}
+	}
+	lines = append(lines, "")
+	if v.importing != nil {
+		return strings.Join(append(lines, s.section.Render("Import from the Python bot")+"  "+s.dim.Render("its settings, answer memory, job history and resume"),
+			v.importing.View()), "\n")
+	}
+	lines = append(lines, s.key.Render("i")+"  import settings, answers and history from the Python bot",
+		s.key.Render("r")+"  check again")
+	if v.noConfig {
+		lines = append(lines, s.dim.Render("The other tabs open once there is a config file; the Config tab already sets the secrets."))
+	}
+	return strings.Join(lines, "\n")
+}

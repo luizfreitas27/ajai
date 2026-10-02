@@ -113,7 +113,7 @@ func (dash dashboard) apply(msg refreshedMsg) dashboard {
 	return dash
 }
 
-func (dash dashboard) view(s styles, width, height int, now time.Time) string {
+func (dash dashboard) view(s styles, width, height int, now time.Time, setup notice) string {
 	if !dash.loaded {
 		return "Reading…"
 	}
@@ -154,6 +154,9 @@ func (dash dashboard) view(s styles, width, height int, now time.Time) string {
 		add("Daemon", s.warn.Render("not running")+": schedule windows start runs only while it runs")
 	default:
 		add("Daemon", "not running")
+	}
+	if setup.text != "" {
+		add("Setup", s.byLevel(setup.level).Render(setup.text))
 	}
 
 	// The runs table takes what the log can spare.

@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/luizfreitas27/aja/internal/tui"
@@ -67,5 +70,37 @@ func TestBareAjaOpensTheTUIInATerminal(t *testing.T) {
 	}
 	if calls[2].deps.Paths.ConfigFile != other {
 		t.Errorf("--config reaches the TUI: %q", calls[2].deps.Paths.ConfigFile)
+	}
+}
+
+// TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter runs the
+// shell line the launcher hands to Bubble Tea, with echo and false for aja.
+func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.T) {
+	run := func(self string, args ...string) (string, int) {
+		t.Helper()
+		cmd := exec.Command("/bin/sh", append([]string{"-c", afterwards, self}, args...)...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // its own group, as a terminal's job: Ctrl-C reaches only it
+		cmd.Stdin = strings.NewReader("\n")
+		out, err := cmd.Output()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return string(out), exit.ExitCode()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out), 0
+	}
+	out, code := run("/bin/echo", "import", "/home/ana/my bot; rm -rf x")
+	if code != 0 || !strings.HasPrefix(out, "import /home/ana/my bot; rm -rf x\n") || !strings.Contains(out, "[aja] Press Enter to go back to the TUI.") {
+		t.Errorf("%d %q", code, out)
+	}
+	if _, code := run("/bin/false"); code != 1 {
+		t.Errorf("aja's exit status is kept: %d", code)
+	}
+	// Ctrl-C ends aja (SIGINT to the whole group); the shell still waits for Enter.
+	out, code = run("/bin/sh", "-c", `kill -INT 0; echo never`)
+	if !strings.Contains(out, "[aja] Press Enter") || strings.Contains(out, "never") || code == 0 {
+		t.Errorf("after Ctrl-C: %d %q", code, out)
 	}
 }

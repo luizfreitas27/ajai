@@ -10,24 +10,6 @@ import (
 	"github.com/luizfreitas27/aja/internal/daemon"
 )
 
-// writeConfig writes a valid config file, as `aja init` would.
-func (h *harness) writeConfig() {
-	h.t.Helper()
-	resume := h.p.ResumeDir + "/cv.pdf"
-	if err := os.WriteFile(resume, []byte("%PDF"), 0o600); err != nil {
-		h.t.Fatal(err)
-	}
-	cfg := config.Defaults()
-	err := cfg.ApplyEssentials(config.Essentials{FirstName: "Ana", LastName: "Silva", Terms: "Dev Python, QA", Location: "Brasil",
-		Market: "brasil", DesiredSalary: 9000, Resume: resume})
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	if err := config.Write(h.p.ConfigFile, cfg); err != nil {
-		h.t.Fatal(err)
-	}
-}
-
 // fileValue reads key from the config file alone.
 func (h *harness) fileValue(key string) string {
 	h.t.Helper()
@@ -57,6 +39,7 @@ func (h *harness) moveTo(name string) {
 
 func TestTheConfigTabListsTheSecretsAndEverySetting(t *testing.T) {
 	h := newHarness(t)
+	h.removeConfig()
 	h.env[config.EnvAIAPIKey] = "sk-from-the-environment"
 	h.open(100, 30)
 	h.press("2")

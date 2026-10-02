@@ -1,0 +1,30 @@
+aja   Setup   1 Dashboard   2 Config
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Setup checklist  what a run needs, as `aja doctor` checks it
+
+> ✗ config          no config file at ~/config.yaml; run `aja init`
+  ✓ chrome          Chromium 152 (/usr/bin/chromium)
+  ✓ chrome profile  ~/chrome-profile (the aja profile), signed in to LinkedIn
+  ✓ data dir        ~
+
+config: no config file at ~/config.yaml; run `aja init`
+Enter: create the config with the init wizard (`aja init`)
+
+i  import settings, answers and history from the Python bot
+r  check again
+The other tabs open once there is a config file; the Config tab already sets the secrets.
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+↑↓ move · enter fix · i import · r check again · 2 config · q quit

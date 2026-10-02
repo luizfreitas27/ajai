@@ -47,6 +47,10 @@ go build ./cmd/aja && ./aja version
 
 ## First run
 
+The easiest way: type `aja`. With nothing set up yet it opens on the **setup checklist**
+(see [The TUI](#the-tui)), which walks you through the steps below, each one a key away.
+By hand:
+
 1. **Configure.** Either answer a short wizard:
 
    ```bash
@@ -136,10 +140,25 @@ hidden field and saved in aja's `.env`, readable only by you; an empty value rem
 the daemon runs, the TUI tells you when it needs a restart: it reads the Telegram settings
 when it starts, while settings take effect on its next run.
 
+The **setup checklist** lists every check `aja doctor` makes, with what fixes it. The TUI
+opens on it when something a run needs is missing (a check failed, or LinkedIn is not
+signed in in the aja profile); `s` on the Dashboard opens it at any time, and the Dashboard
+says whether every check passes (they run again every half minute and after every
+change). Enter fixes the selected check:
+- no config file: the init wizard (`aja init`);
+- no LinkedIn session in the aja profile: `aja login`, which opens Chrome to sign in;
+- the AI key, Telegram or the resume: the Config tab.
+
+`i` imports from the Python bot after asking for its folder (`aja import`), and `r` checks
+again. The wizard, the sign-in and the import run in the same terminal while the TUI steps
+aside (with the same `--config` and `--no-color`); press Enter at the end to come back,
+and the checks run again. Without a config file
+only the checklist and the Config tab (for the secrets) open.
+
 Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting
-never stops a run. The TUI needs a terminal of at least 80×24 and honours `--no-color` and
-`NO_COLOR`. More tabs (answers, schedule, jobs), the setup checklist, and starting and
-stopping runs from it are coming (issue #36).
+never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
+`NO_COLOR`, and writes paths under your home as `~/…`. More tabs (answers, schedule, jobs),
+and starting and stopping runs from it, are coming (issue #36).
 
 ## Everyday commands
 

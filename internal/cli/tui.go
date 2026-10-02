@@ -2,7 +2,12 @@ package cli
 
 import (
 	"context"
+	"os"
+	"os/exec"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/luizfreitas27/aja/internal/doctor"
 	"github.com/luizfreitas27/aja/internal/logging"
 	"github.com/luizfreitas27/aja/internal/tui"
 )
@@ -28,6 +33,37 @@ func (a *App) openTUI(ctx context.Context) error {
 	} else {
 		a.cleanups = append(a.cleanups, closer.Close)
 	}
-	d := tui.Deps{Paths: a.paths, Store: st, Env: a.Env, Logger: logger, Now: a.now}
+	self, err := executable()
+	if err != nil {
+		return err
+	}
+	home, _ := os.UserHomeDir()
+	d := tui.Deps{Paths: a.paths, Store: st, Env: a.Env, Logger: logger, Now: a.now,
+		Probe: doctor.RealProbe(), Launcher: terminalLauncher{executable: self, configFlag: a.configFlag, noColor: a.noColor}, Home: home}
 	return showTUI(ctx, d, a.Stdin, a.Stdout, a.colorOff())
+}
+
+// terminalLauncher runs aja's subcommands for the TUI, with the same --config
+// and --no-color.
+type terminalLauncher struct {
+	executable, configFlag string
+	noColor                bool
+}
+
+// afterwards keeps a subcommand's last words on screen until Enter: a shell
+// runs aja ("$0", its arguments "$@"), then waits, and exits with aja's status.
+// Ctrl-C ends aja, not the shell (a trap is reset for aja, so aja still gets it).
+const afterwards = `trap ':' INT; "$0" "$@"; status=$?; printf '\n[aja] Press Enter to go back to the TUI. '; read -r _; exit $status`
+
+// InTerminal runs aja args in the TUI's terminal; Bubble Tea gives the terminal
+// back to the TUI when it ends.
+func (l terminalLauncher) InTerminal(args []string, done func(error) tea.Msg) tea.Cmd {
+	argv := []string{"-c", afterwards, l.executable}
+	if l.configFlag != "" {
+		argv = append(argv, "--config", l.configFlag)
+	}
+	if l.noColor {
+		argv = append(argv, "--no-color")
+	}
+	return tea.ExecProcess(exec.Command("/bin/sh", append(argv, args...)...), done)
 }
