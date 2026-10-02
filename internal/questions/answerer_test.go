@@ -102,7 +102,7 @@ func TestABlankWorkAuthorizationSettingNeverFallsThroughToLocationOrFallbacks(t 
 		dropdown("Citizenship country", "Select an option", "Testland", "Other"),
 		radio("Are you a citizen of this country?", "Yes", "No"),
 	} {
-		if _, err := mem.Remember(q.Label, string(q.Kind), "leaked", "user", ""); err != nil {
+		if _, err := mem.Remember(q.Label, string(q.Kind), "leaked", "user", "", nil); err != nil {
 			t.Fatal(err)
 		}
 		if d := a.Answer(q, job); d.Action != Blocked || d.Value == state || d.Value == "Testland" || d.Value == "Yes" {
@@ -373,7 +373,7 @@ func TestTextareaRouting(t *testing.T) {
 // ------------------------------------------------------------ memory in forms
 func TestAnUnrecognisedTextQuestionIsAnsweredFromMemoryEvenWhilePending(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("Desired start date", "text", "ASAP", "ai", ""); err != nil {
+	if _, err := mem.Remember("Desired start date", "text", "ASAP", "ai", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	d := a.Answer(text("Desired start date"), job)
@@ -388,7 +388,7 @@ func TestAnUnrecognisedTextQuestionIsAnsweredFromMemoryEvenWhilePending(t *testi
 
 func TestARewordedQuestionReusesTheAnswerButADifferentSkillDoesNot(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", ""); err != nil {
+	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(text("How many years experience do you have with Python?"), job); d.Value != "4" {
@@ -401,7 +401,7 @@ func TestARewordedQuestionReusesTheAnswerButADifferentSkillDoesNot(t *testing.T)
 
 func TestTextareaAnswersHaveTheirOwnKind(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("Why do you want to work here?", "textarea", "Because of the mission.", "ai", ""); err != nil {
+	if _, err := mem.Remember("Why do you want to work here?", "textarea", "Because of the mission.", "ai", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(textarea("Why do you want to work here?"), job); d.Value != "Because of the mission." {
@@ -422,7 +422,7 @@ func TestSensitiveQuestionsNeverReachMemory(t *testing.T) {
 		dropdown("Will you require visa sponsorship?", "Select an option", "Yes", "No"),
 		radio("Are you a protected veteran?", "Yes", "No"),
 	} {
-		if _, err := mem.Remember(q.Label, string(q.Kind), "leaked", "user", ""); err != nil {
+		if _, err := mem.Remember(q.Label, string(q.Kind), "leaked", "user", "", nil); err != nil {
 			t.Fatal(err)
 		}
 		if d := a.Answer(q, job); d.Action != Blocked {
@@ -471,7 +471,7 @@ func TestSensitiveTextQuestionsNeverReachTheAIAndStayEmpty(t *testing.T) {
 
 func TestAnUnrelatedQuestionBelowTheThresholdGoesToTheAIAndIsRemembered(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", ""); err != nil {
+	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	ai := &fakeAI{replies: map[string]string{"How many years of experience do you have with Kubernetes?": "2"}}
@@ -494,7 +494,7 @@ func TestAnApproximateMemoryHitIsLoggedThroughTheFormPath(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&log, nil))
 	mem := memory.New(st, logger)
 	a := New(pinned(), mem, nil, logger)
-	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", ""); err != nil {
+	if _, err := mem.Remember("How many years of experience do you have with Python?", "text", "4", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(text("How many years experience do you have with Python?"), job); d.Value != "4" {
@@ -554,7 +554,7 @@ func TestRememberedDropdownAndRadioAnswersAreSnappedToThisFormsOptions(t *testin
 	a, mem := answerer(t, pinned())
 	must := func(label, kind, answer, source string) {
 		t.Helper()
-		if _, err := mem.Remember(label, kind, answer, source, ""); err != nil {
+		if _, err := mem.Remember(label, kind, answer, source, "", nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -590,7 +590,7 @@ func TestMemoryIsNotConsultedForARecognisedDropdownButIsWhenTheSettingIsBlank(t 
 	cfg := pinned()
 	cfg.Personals.Gender = "Nonbinary"
 	a, mem := answerer(t, cfg)
-	if _, err := mem.Remember("Gender", "select", "Male", "user", ""); err != nil {
+	if _, err := mem.Remember("Gender", "select", "Male", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(dropdown("Gender", "Select an option", "Male", "Female"), job); d.Action != Blocked {
@@ -606,13 +606,13 @@ func TestMemoryIsNotConsultedForARecognisedDropdownButIsWhenTheSettingIsBlank(t 
 // ------------------------------------------------------------ checkbox
 func TestCheckboxesTickOnlyFromAnApprovedAnswerAndAreOfferedForReview(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("Subscribe to job alerts", "checkbox", "checked", "user", ""); err != nil {
+	if _, err := mem.Remember("Subscribe to job alerts", "checkbox", "checked", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(checkbox("Subscribe to job alerts", ""), job); d.Action != Tick || d.Source != "memory" {
 		t.Errorf("%+v", d)
 	}
-	if _, err := mem.Remember("Newsletter", "checkbox", "checked", "form", ""); err != nil { // pending
+	if _, err := mem.Remember("Newsletter", "checkbox", "checked", "form", "", nil); err != nil { // pending
 		t.Fatal(err)
 	}
 	if d := a.Answer(checkbox("Newsletter", ""), job); d.Action != Blocked {
@@ -638,7 +638,7 @@ func TestCheckboxesTickOnlyFromAnApprovedAnswerAndAreOfferedForReview(t *testing
 
 func TestCheckboxMatchingIsExactAndSensitiveBoxesAreNeverTickedNorOffered(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("I agree to the terms and conditions of Acme", "checkbox", "checked", "user", ""); err != nil {
+	if _, err := mem.Remember("I agree to the terms and conditions of Acme", "checkbox", "checked", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(checkbox("I agree to the terms and conditions of Acme Inc", ""), job); d.Action != Blocked {
@@ -646,7 +646,7 @@ func TestCheckboxMatchingIsExactAndSensitiveBoxesAreNeverTickedNorOffered(t *tes
 	}
 	before, _ := mem.List("")
 	for _, s := range []string{"I certify that I am a U.S. citizen", "I confirm I do not require visa sponsorship", "I hold an active security clearance"} {
-		if _, err := mem.Remember(s, "checkbox", "checked", "user", ""); err != nil {
+		if _, err := mem.Remember(s, "checkbox", "checked", "user", "", nil); err != nil {
 			t.Fatal(err)
 		}
 		if d := a.Answer(checkbox(s, ""), job); d.Action != Blocked {
@@ -658,7 +658,7 @@ func TestCheckboxMatchingIsExactAndSensitiveBoxesAreNeverTickedNorOffered(t *tes
 		t.Errorf("sensitive boxes were offered for review: %d -> %d", len(before), len(after))
 	}
 	// A box with no text at all is never remembered, even with an approved "Unknown".
-	if _, err := mem.Remember("Unknown", "checkbox", "checked", "user", ""); err != nil {
+	if _, err := mem.Remember("Unknown", "checkbox", "checked", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	n := len(after) + 1
@@ -747,7 +747,7 @@ func TestMemoryIsConsultedBeforeTheAIAndAITextAnswersKeepTheirKind(t *testing.T)
 	a, mem := answerer(t, pinned())
 	ai := &fakeAI{replies: map[string]string{"Are you willing to relocate?": "No", "Why do you want to work here?": "The mission.", "Favourite editor?": "Vim"}}
 	a.AI = ai
-	if _, err := mem.Remember("Are you willing to relocate?", "select", "Yes", "user", ""); err != nil {
+	if _, err := mem.Remember("Are you willing to relocate?", "select", "Yes", "user", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d := a.Answer(dropdown("Are you willing to relocate?", "Select an option", "Yes", "No"), job); d.Value != "Yes" || d.Source != "memory" || len(ai.calls) != 0 {
@@ -773,8 +773,9 @@ func TestTheAIFillsAnUnrecognisedControlOnlyWhenItNamesAnOptionAndIsRemembered(t
 	if d := a.Answer(dropdown("Preferred work style", "Select an option", "Remote", "Hybrid"), job); d.Value != "Hybrid" || d.Source != "ai" {
 		t.Errorf("%+v", d)
 	}
-	if found, _, _ := mem.Lookup("Preferred work style", "select", false); found == nil || found.State != "pending" || found.Uses != 1 {
-		t.Errorf("AI pick not remembered as pending: %+v", found)
+	if found, _, _ := mem.Lookup("Preferred work style", "select", false); found == nil || found.State != "pending" || found.Uses != 1 ||
+		strings.Join(found.Options, "|") != "Remote|Hybrid" {
+		t.Errorf("AI pick not remembered as pending with the real options: %+v", found)
 	}
 	if d := a.Answer(radio("Coffee or tea?", "Coffee", "Tea"), job); d.Action != Blocked {
 		t.Errorf("an answer that is not an option leaves the group alone: %+v", d)
@@ -800,7 +801,7 @@ func TestTheAIFillsAnUnrecognisedControlOnlyWhenItNamesAnOptionAndIsRemembered(t
 // ------------------------------------------------------------ learning from the user
 func TestCaptureRemembersWhatTheUserTypedAsApprovedExceptSensitiveAndBlank(t *testing.T) {
 	a, mem := answerer(t, pinned())
-	if _, err := mem.Remember("Favourite language", "text", "Python", "ai", ""); err != nil {
+	if _, err := mem.Remember("Favourite language", "text", "Python", "ai", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
@@ -833,6 +834,9 @@ func TestCaptureRemembersWhatTheUserTypedAsApprovedExceptSensitiveAndBlank(t *te
 	found, _, _ := mem.Lookup("Favourite language", "text", false)
 	if found.Answer != "Go" || found.State != "approved" || found.Source != "user" {
 		t.Errorf("%+v", found)
+	}
+	if found, _, _ := mem.Lookup("Preferred shift", "select", false); found == nil || strings.Join(found.Options, "|") != "Day|Night" {
+		t.Errorf("a captured select keeps its options, placeholder left out: %+v", found)
 	}
 	if found, _, _ := mem.Lookup("How may we contact you? Email", "checkbox", false); found == nil || found.Answer != "checked" {
 		t.Errorf("checkbox captured under its group title: %+v", found)
@@ -872,6 +876,9 @@ func TestUnansweredQuestionsAreQueuedForTheUserButNeverSensitiveOnesOrConfigProb
 	for _, p := range pending {
 		if p.Answer != "" || p.Source != "form" {
 			t.Errorf("%+v", p)
+		}
+		if want := map[string]string{"select": "Day|Night"}[p.Kind]; strings.Join(p.Options, "|") != want {
+			t.Errorf("%q remembered options %q, want %q", p.Label, p.Options, want)
 		}
 	}
 	// A queued question with no answer yet is a memory miss: the AI is still asked next time.

@@ -1,6 +1,7 @@
 // Package store is the local SQLite database: runs, jobs (applied, external,
 // failed, skipped), remembered answers, schedule windows and the openings
-// handled, and small key/value state. Pure-Go
+// handled, the Telegram messages that show remembered answers, and small
+// key/value state. Pure-Go
 // driver, embedded migrations applied on open, CSV export in the layout the
 // Python bot wrote.
 package store
@@ -11,6 +12,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -276,6 +278,9 @@ type Answer struct {
 	LastJobLink string
 	CreatedAt   string
 	UpdatedAt   string
+	// Options are the texts a select or radio offered when it was remembered
+	// (placeholders left out); empty for other kinds and older entries.
+	Options []string
 }
 
 // NewAnswerID returns a fresh 12-hex-digit id, the Python memory's shape.
@@ -305,10 +310,25 @@ func (s *Store) UpsertAnswer(a Answer) error {
 	if _, err := s.db.Exec(`DELETE FROM answers WHERE (kind = ? AND normalised = ?) OR id = ?`, a.Kind, a.Normalised, a.ID); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`INSERT INTO answers (id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.Label, a.Normalised, a.Kind, a.Answer, a.Source, a.State, a.Uses, a.LastJobLink, a.CreatedAt, a.UpdatedAt)
+	options, _ := json.Marshal(append([]string{}, a.Options...)) // [] rather than null
+	_, err := s.db.Exec(`INSERT INTO answers (`+answerColumns+`)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.Label, a.Normalised, a.Kind, a.Answer, a.Source, a.State, a.Uses, a.LastJobLink, a.CreatedAt, a.UpdatedAt, string(options))
 	return err
+}
+
+const answerColumns = `id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at, options`
+
+// scanAnswer reads one row selected with answerColumns.
+func scanAnswer(row interface{ Scan(...any) error }) (Answer, error) {
+	var a Answer
+	var options string
+	err := row.Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt, &options)
+	// Unreadable options (a hand-edited database) are none: they are only a check.
+	if err == nil && (json.Unmarshal([]byte(options), &a.Options) != nil || len(a.Options) == 0) {
+		a.Options = nil
+	}
+	return a, err
 }
 
 // GetAnswer returns the answer with this id, or nil.
@@ -349,10 +369,7 @@ func (s *Store) CountAnswers(state string) (int, error) {
 }
 
 func (s *Store) oneAnswer(where string, args ...any) (*Answer, error) {
-	var a Answer
-	err := s.db.QueryRow(`SELECT id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at
-		FROM answers WHERE `+where, args...).
-		Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt)
+	a, err := scanAnswer(s.db.QueryRow(`SELECT `+answerColumns+` FROM answers WHERE `+where, args...))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -369,7 +386,7 @@ func (s *Store) FindAnswer(kind, normalised string) (*Answer, error) {
 
 // ListAnswers returns answers, newest updated first; state "" means all.
 func (s *Store) ListAnswers(state string) ([]Answer, error) {
-	q := `SELECT id, label, normalised, kind, answer, source, state, uses, last_job_link, created_at, updated_at FROM answers`
+	q := `SELECT ` + answerColumns + ` FROM answers`
 	var args []any
 	if state != "" {
 		q += ` WHERE state = ?`
@@ -382,13 +399,46 @@ func (s *Store) ListAnswers(state string) ([]Answer, error) {
 	defer func() { _ = rows.Close() }()
 	var out []Answer
 	for rows.Next() {
-		var a Answer
-		if err := rows.Scan(&a.ID, &a.Label, &a.Normalised, &a.Kind, &a.Answer, &a.Source, &a.State, &a.Uses, &a.LastJobLink, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		a, err := scanAnswer(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// TelegramMessage names one message a bot sent: message ids are counted per
+// bot and chat.
+type TelegramMessage struct {
+	Bot, Chat string
+	ID        int64
+}
+
+// LinkTelegramMessage records that m shows the answer answerID, so a reply to
+// it reaches the answer.
+func (s *Store) LinkTelegramMessage(m TelegramMessage, answerID string) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO telegram_messages (bot_id, chat_id, message_id, answer_id, sent_at) VALUES (?,?,?,?,?)`,
+		m.Bot, m.Chat, m.ID, answerID, Timestamp(s.now()))
+	return err
+}
+
+// TelegramMessageAnswer returns the id of the answer m shows, or "" when it
+// shows none.
+func (s *Store) TelegramMessageAnswer(m TelegramMessage) (string, error) {
+	var id string
+	err := s.db.QueryRow(`SELECT answer_id FROM telegram_messages WHERE bot_id = ? AND chat_id = ? AND message_id = ?`, m.Bot, m.Chat, m.ID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
+// ForgetTelegramMessages drops the links recorded before cutoff and those to
+// answers no longer in the memory.
+func (s *Store) ForgetTelegramMessages(cutoff time.Time) error {
+	_, err := s.db.Exec(`DELETE FROM telegram_messages WHERE sent_at < ? OR answer_id NOT IN (SELECT id FROM answers)`, Timestamp(cutoff))
+	return err
 }
 
 // ------------------------------------------------------------------ runs

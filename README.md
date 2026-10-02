@@ -227,7 +227,20 @@ summaries; the chat id is the numeric one), `aja daemon` also takes commands fro
 | `/status` | The run in progress (who started it, market, counts, term) or the last run, pending answers, the next window |
 | `/stop` | Stop the run in progress, wherever it was started; a second message says when it has ended |
 | `/run [brasil\|internacional] [dry]` | Start an unattended run now, or say why not (a run in progress, a config error, the Chrome profile in use) |
+| `/pending` | Review the answer memory's pending answers from your phone (below) |
 | `/help` | The list |
+
+`/pending` sends one message per pending answer, the 10 newest at a time: the question, its
+kind, the options it offered (select and radio), the current answer and who gave it, and the
+job it came from. **Approve** keeps the answer shown (if a run changed it meanwhile, the
+message is updated for you to check again), **Delete** forgets it; a question with no answer
+yet has only Delete. To give or correct an answer, reply to its message with the text: for a
+select or radio it must be one of the options, or the beginning of just one of them (case and
+spacing do not matter; the option's own text is saved), otherwise the reply is refused with
+the options listed. A checkbox takes only the buttons: approving it ticks it from now on. Each
+button or reply edits the message to show what was done; replies keep working for 30 days,
+also after the daemon restarts. Questions remembered before this version have no options
+saved, so any reply is taken for them.
 
 Messages from any other chat are ignored. The daemon asks Telegram for new messages (long
 polling), so nothing on your machine is reachable from the internet, and it remembers what

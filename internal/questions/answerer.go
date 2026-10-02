@@ -76,7 +76,7 @@ type Decision struct {
 type Memory interface {
 	Lookup(label, kind string, approximate bool) (*memory.Remembered, bool, error)
 	Find(label, kind string) (*memory.Remembered, error)
-	Remember(label, kind, answer, source, jobLink string) (*memory.Remembered, error)
+	Remember(label, kind, answer, source, jobLink string, options []string) (*memory.Remembered, error)
 	RecordUse(id, jobLink string) error
 }
 
@@ -241,11 +241,13 @@ func (a *Answerer) recordUse(entry *memory.Remembered, jobLink string) {
 	}
 }
 
-func (a *Answerer) remember(label, kind, answer, source, jobLink string) *memory.Remembered {
+// remember stores an answer with the options the question offered (nil for a
+// text, textarea or checkbox), so a later answer can be checked against them.
+func (a *Answerer) remember(label, kind, answer, source, jobLink string, options []string) *memory.Remembered {
 	if a.Memory == nil {
 		return nil
 	}
-	entry, err := a.Memory.Remember(label, kind, answer, source, jobLink)
+	entry, err := a.Memory.Remember(label, kind, answer, source, jobLink, options)
 	if err != nil {
 		a.Logger.Warn("answer memory could not remember", "question", label, "error", err)
 		return nil
@@ -282,7 +284,7 @@ func (a *Answerer) answerFromMemoryOrAI(ctx context.Context, label string, kind 
 		return "", ""
 	}
 	a.Logger.Info("AI answered", "question", label, "answer", answer)
-	if entry := a.remember(label, string(kind), answer, "ai", job.Link); entry != nil {
+	if entry := a.remember(label, string(kind), answer, "ai", job.Link, nil); entry != nil {
 		a.recordUse(entry, job.Link)
 	}
 	return answer, "ai"
@@ -307,12 +309,7 @@ func (a *Answerer) optionFromMemoryOrAI(ctx context.Context, label string, kind 
 		}
 		a.Logger.Info("memory has an answer but no option here matches it", "question", label, "answer", found.Answer)
 	}
-	var choices []string
-	for _, o := range options {
-		if !IsPlaceholder(o) {
-			choices = append(choices, o)
-		}
-	}
+	choices := Choices(options)
 	if len(choices) == 0 || a.AI == nil {
 		return -1, ""
 	}
@@ -322,7 +319,7 @@ func (a *Answerer) optionFromMemoryOrAI(ctx context.Context, label string, kind 
 		return -1, ""
 	}
 	a.Logger.Info("AI answered", "question", label, "answer", answer)
-	if entry := a.remember(label, string(kind), answer, "ai", job.Link); entry != nil {
+	if entry := a.remember(label, string(kind), answer, "ai", job.Link, choices); entry != nil {
 		a.recordUse(entry, job.Link)
 	}
 	return indexOf(options, answer), "ai"
@@ -576,7 +573,7 @@ func (a *Answerer) answerCheckbox(q Question, job Job) Decision {
 	}
 	a.Logger.Info("not ticking a box; it is not something to guess", "question", key, "why", reason)
 	if remembered == nil && key != "" && !IsSensitive(key) {
-		a.remember(key, string(Checkbox), "checked", "form", job.Link)
+		a.remember(key, string(Checkbox), "checked", "form", job.Link, nil)
 	}
 	return blocked(reason)
 }
@@ -604,7 +601,7 @@ func (a *Answerer) Capture(q Question, d Decision, value string, jobLink string)
 	if !a.mayRemember(label, d) || value == "" || (q.Kind == Select && IsPlaceholder(value)) {
 		return false
 	}
-	if a.remember(label, string(q.Kind), value, "user", jobLink) == nil {
+	if a.remember(label, string(q.Kind), value, "user", jobLink, Choices(q.Options)) == nil {
 		return false
 	}
 	a.Logger.Info("captured your answer; aja will reuse it", "question", label, "kind", q.Kind, "answer", value)
@@ -622,7 +619,7 @@ func (a *Answerer) RememberUnanswered(q Question, d Decision, jobLink string) bo
 	if existing, err := a.Memory.Find(label, string(q.Kind)); err != nil || existing != nil {
 		return false
 	}
-	return a.remember(label, string(q.Kind), "", "form", jobLink) != nil
+	return a.remember(label, string(q.Kind), "", "form", jobLink, Choices(q.Options)) != nil
 }
 
 // mayRemember: there is a memory, the decision says the memory is consulted for

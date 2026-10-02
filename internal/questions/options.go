@@ -60,6 +60,18 @@ func MatchAnswerToOption(answer string, options []string) int {
 	return -1
 }
 
+// Choices are the options a person can pick: placeholders ("Select an option")
+// left out. nil when there are none.
+func Choices(options []string) []string {
+	var out []string
+	for _, o := range options {
+		if !IsPlaceholder(o) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 func alnumOnly(s string) string {
 	var b strings.Builder
 	for _, r := range s {

@@ -88,6 +88,51 @@ func TestAnswersAreUniquePerQuestionAndListedByState(t *testing.T) {
 	}
 }
 
+func TestAnswerOptionsRoundTrip(t *testing.T) {
+	s := open(t)
+	must(t, s.UpsertAnswer(Answer{ID: "r", Label: "Relocate?", Normalised: "relocate", Kind: "radio", Source: "form", State: "pending", Options: []string{"Yes", "No, not now"}}))
+	must(t, s.UpsertAnswer(Answer{ID: "t", Label: "Years", Normalised: "years", Kind: "text", Answer: "3", Source: "ai", State: "pending"}))
+	got, _ := s.GetAnswer("r")
+	found, _ := s.FindAnswer("radio", "relocate")
+	all, _ := s.ListAnswers("")
+	if got == nil || strings.Join(got.Options, "|") != "Yes|No, not now" || found == nil || len(found.Options) != 2 || len(all) != 2 {
+		t.Fatalf("get %+v find %+v list %+v", got, found, all)
+	}
+	if text, _ := s.GetAnswer("t"); text.Options != nil {
+		t.Errorf("a text question has no options: %#v", text.Options)
+	}
+}
+
+func TestTelegramMessagesLeadToTheirAnswerUntilForgotten(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.Local)
+	must(t, s.UpsertAnswer(Answer{ID: "a1", Label: "Years", Normalised: "years", Kind: "text", Source: "form", State: "pending"}))
+	must(t, s.UpsertAnswer(Answer{ID: "a2", Label: "City", Normalised: "city", Kind: "text", Source: "form", State: "pending"}))
+	must(t, s.UpsertAnswer(Answer{ID: "a3", Label: "Shift", Normalised: "shift", Kind: "text", Source: "form", State: "pending"}))
+	s.now = func() time.Time { return t0 }
+	must(t, s.LinkTelegramMessage(TelegramMessage{"1", "42", 7}, "a1"))
+	must(t, s.LinkTelegramMessage(TelegramMessage{"1", "42", 8}, "a2"))
+	s.now = func() time.Time { return t0.Add(40 * 24 * time.Hour) }
+	must(t, s.LinkTelegramMessage(TelegramMessage{"1", "42", 9}, "a3"))
+	if id, err := s.TelegramMessageAnswer(TelegramMessage{"1", "42", 7}); id != "a1" || err != nil {
+		t.Errorf("message 7: %q %v", id, err)
+	}
+	for _, other := range []TelegramMessage{{"1", "43", 7}, {"2", "42", 7}} {
+		if id, _ := s.TelegramMessageAnswer(other); id != "" {
+			t.Errorf("%+v is another chat's or another bot's message: %q", other, id)
+		}
+	}
+	if _, err := s.DeleteAnswer("a1"); err != nil {
+		t.Fatal(err)
+	}
+	must(t, s.ForgetTelegramMessages(t0.Add(10*24*time.Hour)))
+	for msg, want := range map[int64]string{7: "", 8: "", 9: "a3"} {
+		if id, _ := s.TelegramMessageAnswer(TelegramMessage{"1", "42", msg}); id != want {
+			t.Errorf("message %d after forgetting: %q, want %q (a deleted answer's and an old link go)", msg, id, want)
+		}
+	}
+}
+
 func TestTimestampsAreNormalisedAndBlankIdsGenerated(t *testing.T) {
 	s := open(t)
 	must(t, s.UpsertAnswer(Answer{Label: "Q", Normalised: "q", Kind: "text", Answer: "a", Source: "ai", State: "pending", CreatedAt: "2026-10-01T16:45:25", UpdatedAt: "2026-10-01 16:45:25.5"}))

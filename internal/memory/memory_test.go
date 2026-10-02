@@ -28,7 +28,7 @@ func fresh(t *testing.T) (*Memory, *bytes.Buffer) {
 
 func rem(t *testing.T, m *Memory, label, kind, answer, source, jobLink string) *Remembered {
 	t.Helper()
-	entry, err := m.Remember(label, kind, answer, source, jobLink)
+	entry, err := m.Remember(label, kind, answer, source, jobLink, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestRememberingAgainUpdatesInsteadOfDuplicatingAndTheUsersWordStands(t *tes
 func TestALabelThatNormalisesToNothingIsNeverRemembered(t *testing.T) {
 	m, _ := fresh(t)
 	for _, label := range []string{"", "   ?!", "职位"} {
-		if _, err := m.Remember(label, "text", "x", "ai", ""); err == nil {
+		if _, err := m.Remember(label, "text", "x", "ai", "", nil); err == nil {
 			t.Errorf("%q was remembered; two such labels would collide", label)
 		}
 	}
@@ -161,10 +161,10 @@ func TestDeleteAllClearsOneState(t *testing.T) {
 
 func TestInvalidKindOrSourceIsRejected(t *testing.T) {
 	m, _ := fresh(t)
-	if _, err := m.Remember("q", "slider", "1", "ai", ""); err == nil {
+	if _, err := m.Remember("q", "slider", "1", "ai", "", nil); err == nil {
 		t.Error("kind")
 	}
-	if _, err := m.Remember("q", "text", "1", "oracle", ""); err == nil {
+	if _, err := m.Remember("q", "text", "1", "oracle", "", nil); err == nil {
 		t.Error("source")
 	}
 }
@@ -245,5 +245,25 @@ func TestAQueuedQuestionWithNoAnswerIsFoundButNeverAnswersOrShadows(t *testing.T
 	q2 := rem(t, m, "Favourite colour?", "radio", "", "form", "")
 	if e := rem(t, m, "Favourite colour?", "radio", "Blue", "ai", ""); e.ID != q2.ID || e.Answer != "Blue" || e.State != "pending" {
 		t.Errorf("%+v", e)
+	}
+}
+
+func TestOptionsAreRememberedAndKeptWhenAnUpdateHasNone(t *testing.T) {
+	m, _ := fresh(t)
+	if _, err := m.Remember("Relocate?", "radio", "", "form", "", []string{"Yes", "No"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Remember("Relocate?", "radio", "Yes", "ai", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := m.Find("Relocate?", "radio")
+	if got.Answer != "Yes" || strings.Join(got.Options, "|") != "Yes|No" {
+		t.Errorf("an update without options keeps them: %+v", got)
+	}
+	if _, err := m.Remember("Relocate?", "radio", "No", "ai", "", []string{"Yes", "No", "Maybe"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.Find("Relocate?", "radio"); len(got.Options) != 3 {
+		t.Errorf("newer options replace them: %+v", got.Options)
 	}
 }
