@@ -58,7 +58,8 @@ to the tag before tagging and the workflow publishes that section as the release
   AI client, resume, Chrome; no side effects, so the caller can print it first) then
   `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `aja run`
   and the daemon both use it; never wire a runner anywhere else. It decides attended-only
-  hooks (help pause, filter pause) from `run.Options`, so callers always pass them.
+  hooks (help pause, filter pause) from `run.Options`: the terminal always passes them,
+  the daemon has none (its runs are unattended).
 - `internal/config/wired_test.go` fails when a config field is read nowhere outside the
   config package: a setting must do what its comment says. It type-checks the module
   (`golang.org/x/tools/go/packages`), counts reads only (an assignment, e.g. the importer's,
@@ -103,7 +104,24 @@ to the tag before tagging and the workflow publishes that section as the release
   `Current` (decided on the wall clock, as the Python bot did, so DST days behave), `Due`
   (current and not yet handled) and `Next`. The store keeps the windows
   (`schedule_windows`) and each handled opening, keyed by window and local date
-  (`schedule_openings`); `aja schedule` manages them. The scheduler loop is the daemon's.
+  (`schedule_openings`); `aja schedule` manages them.
+- `internal/daemon`: what `aja daemon` runs. `Supervisor` owns the run in progress as a
+  goroutine (one at a time; a second `Start` gets a `*run.HeldError`, and so does a run of
+  another process, checked before the `Starter` reads any config). The CLI's `Starter`
+  goes through `launch` (config read afresh, unattended forced). Panics, in opening or in
+  running, never end the daemon: `Runner.Run` records and reports a crash and re-panics
+  with a `*run.Crash`; anything else the supervisor reports itself and clears the live
+  state. `Stop` cancels its own run with a `*run.StopRequested` cause or sends a stop
+  request to another process's run; `StopIf` stops only the run a caller means, decided
+  under the supervisor's lock. `Ended.Shutdown` marks a run cut short by the daemon
+  stopping. `Scheduler.Tick` holds every decision for one moment (injected clock): stop our
+  run when its window closed / was disabled / removed (`closedReason`), start a due
+  opening, record and notify a skip when another run is in progress, but let the next
+  opening wait while our own run is still ending (back-to-back windows). `RunEnded` records
+  the run id, or forgets an opening the daemon's stop interrupted so the window resumes;
+  `Loop` ticks every 30 s and on `RunEnded`. `OnEnd` runs before `Wait` returns, so
+  shutdown never closes the store under it. The daemon lock (`daemon.AcquireLock`) allows one daemon; its log is
+  `daemon-YYYY-MM-DD.log` via `logging.OpenDaily`, which moves to a new file at midnight.
 - aja is a CLI and targets Linux only for now: no web panel, no Windows or macOS code paths
   in new work (the few OS branches from phase 1 stay), releases for linux/amd64 and arm64.
 

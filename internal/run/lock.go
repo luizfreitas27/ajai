@@ -28,6 +28,7 @@ const (
 type Holder struct {
 	PID     int       `json:"pid"`
 	Origin  Origin    `json:"origin"`
+	Window  int64     `json:"window,omitempty"` // the schedule window, for OriginSchedule
 	Started time.Time `json:"started"`
 }
 
@@ -36,7 +37,15 @@ func (h Holder) String() string {
 	if h.PID == 0 {
 		return "a run that is just starting"
 	}
-	return fmt.Sprintf("a run started from the %s (pid %d) at %s", h.Origin, h.PID, h.Started.Local().Format("15:04"))
+	return fmt.Sprintf("a run started from %s (pid %d) at %s", h.From(), h.PID, h.Started.Local().Format("15:04"))
+}
+
+// From says where the run was started: "the terminal", "schedule window 3".
+func (h Holder) From() string {
+	if h.Window != 0 {
+		return fmt.Sprintf("schedule window %d", h.Window)
+	}
+	return "the " + string(h.Origin)
 }
 
 // HeldError: another run holds the lock.
@@ -71,35 +80,28 @@ func StopPath(dataDir string) string { return filepath.Join(dataDir, stopFileNam
 // starting run, a probe) to settle; both last microseconds.
 const lockSettle = time.Second
 
-// AcquireLock takes the run lock for origin, or returns a *HeldError naming the
-// run that has it.
-func AcquireLock(dataDir string, origin Origin, now time.Time) (*Lock, error) {
-	path := lockPath(dataDir)
-	settle := time.Now().Add(lockSettle)
-	for {
-		f, err := filelock.TryLock(path)
-		if err == nil {
-			since := time.Now()
-			data, _ := json.Marshal(Holder{PID: os.Getpid(), Origin: origin, Started: now})
-			if err := f.Describe(data); err != nil {
-				f.Unlock()
-				return nil, err
-			}
-			return &Lock{f: f, dataDir: dataDir, since: since}, nil
-		}
-		if !errors.Is(err, filelock.ErrLocked) {
-			return nil, err
-		}
-		h, held, _ := ReadLock(dataDir)
-		// Not a real holder yet: a run between taking the lock and describing itself,
-		// or `aja status` probing the lock for an instant; either way the file may
-		// still name nobody or a crashed run's dead process. Look again, briefly.
-		if (!held || h.PID == 0 || !procs.Alive(h.PID)) && time.Now().Before(settle) {
-			time.Sleep(20 * time.Millisecond)
-			continue
-		}
-		return nil, &HeldError{Holder: h}
+// AcquireLock takes the run lock for holder (its PID is this process's), or
+// returns a *HeldError naming the run that has it.
+func AcquireLock(dataDir string, holder Holder) (*Lock, error) {
+	holder.PID = os.Getpid()
+	data, _ := json.Marshal(holder)
+	f, desc, err := filelock.Acquire(lockPath(dataDir), data, lockSettle, func(desc []byte) bool {
+		h := parseHolder(desc)
+		return h.PID != 0 && procs.Alive(h.PID)
+	})
+	if errors.Is(err, filelock.ErrLocked) {
+		return nil, &HeldError{Holder: parseHolder(desc)}
 	}
+	if err != nil {
+		return nil, err
+	}
+	return &Lock{f: f, dataDir: dataDir, since: f.Locked}, nil
+}
+
+func parseHolder(desc []byte) Holder {
+	var h Holder
+	_ = json.Unmarshal(desc, &h)
+	return h
 }
 
 // Release frees the lock.
@@ -107,16 +109,11 @@ func (l *Lock) Release() { l.f.Unlock() }
 
 // ReadLock reports whether a run holds the lock, and who.
 func ReadLock(dataDir string) (Holder, bool, error) {
-	path := lockPath(dataDir)
-	held, err := filelock.Held(path)
+	desc, held, err := filelock.ReadHeld(lockPath(dataDir))
 	if err != nil || !held {
 		return Holder{}, false, err
 	}
-	var h Holder
-	if data, err := filelock.Read(path); err == nil && len(data) > 0 {
-		_ = json.Unmarshal(data, &h)
-	}
-	return h, true, nil
+	return parseHolder(desc), true, nil
 }
 
 // ErrNoRun means there is no run in progress to stop.

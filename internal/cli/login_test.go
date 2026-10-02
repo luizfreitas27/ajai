@@ -122,7 +122,7 @@ func TestLoginRefusesWhileTheProfileOrARunIsBusy(t *testing.T) {
 		t.Errorf("%d %s", code, errText)
 	}
 
-	lock, err := run.AcquireLock(h.home, run.OriginSchedule, time.Now())
+	lock, err := run.AcquireLock(h.home, run.Holder{Origin: run.OriginSchedule, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}

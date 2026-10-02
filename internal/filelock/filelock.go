@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"syscall"
+	"time"
 )
 
 // ErrLocked means another process (or another open of the file) holds the lock.
@@ -17,6 +18,8 @@ var ErrLocked = errors.New("locked by another process")
 // itself; others can read it while the lock is held.
 type File struct {
 	f *os.File
+	// Locked is when the lock was taken.
+	Locked time.Time
 }
 
 // TryLock opens (creating if needed) and locks path without waiting:
@@ -30,7 +33,47 @@ func TryLock(path string) (*File, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	return &File{f: f}, nil
+	return &File{f: f, Locked: time.Now()}, nil
+}
+
+// Acquire takes the lock at path and describes its holder with desc. When the
+// lock is taken, real says whether its description names a holder that exists
+// (a live process): one that does not is a holder between taking the lock and
+// describing itself, a probe (Held), or a crashed holder's leftover words under
+// a probe, all over in microseconds, so Acquire looks again for up to settle.
+// Otherwise it returns ErrLocked with the holder's description.
+func Acquire(path string, desc []byte, settle time.Duration, real func(desc []byte) bool) (*File, []byte, error) {
+	deadline := time.Now().Add(settle)
+	for {
+		l, err := TryLock(path)
+		if err == nil {
+			if err := l.Describe(desc); err != nil {
+				l.Unlock()
+				return nil, nil, err
+			}
+			return l, nil, nil
+		}
+		if !errors.Is(err, ErrLocked) {
+			return nil, nil, err
+		}
+		holder, held, _ := ReadHeld(path)
+		if (!held || !real(holder)) && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		return nil, holder, ErrLocked
+	}
+}
+
+// ReadHeld reports whether someone holds the lock on path, with the holder's
+// description.
+func ReadHeld(path string) ([]byte, bool, error) {
+	held, err := Held(path)
+	if err != nil || !held {
+		return nil, false, err
+	}
+	desc, err := Read(path)
+	return desc, true, err
 }
 
 // Describe replaces the file's content with data.

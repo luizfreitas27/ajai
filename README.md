@@ -116,7 +116,7 @@ it leaves the window open, as before.
 | `aja run --json` | The same, with one JSON object per line for every event and summary, for scripts |
 | `aja stop` | Stop the run in progress cleanly, from any terminal (as Ctrl-C in its own would) |
 | `aja status` | The run in progress (live counters, who started it) and the last runs |
-| `aja logs -f` | Follow today's log |
+| `aja logs -f` | Follow today's log (`--daemon`: the daemon's) |
 | `aja answers review` | Work through the pending answers: approve, edit, delete, skip |
 | `aja answers list --state pending` | The review queue; `approve`, `edit`, `delete`, `clear` per id or state |
 | `aja jobs list --applied --since 2026-10-01` | The job history; `--failed`, `--external`, `--skipped`, `--json` |
@@ -125,6 +125,7 @@ it leaves the window open, as before.
 | `aja doctor` | Everything a run needs, and every path |
 | `aja login` | Sign in to LinkedIn once in the profile aja uses |
 | `aja schedule add/list/rm/enable/disable` | Schedule windows (see below) |
+| `aja daemon` | Start and stop runs on the schedule windows, until Ctrl-C |
 
 Only one run happens on a machine at a time: a second `aja run` refuses and says which run
 is in progress. `aja stop` asks that run to end: the job in progress is finished or
@@ -182,8 +183,26 @@ When a window opens, one unattended run starts (a non-stop session with
 `settings.run_non_stop`); when it closes, the run is stopped. A run that ends early is not
 restarted in the same window, and a window that opens while another run is in progress is
 skipped. Windows never cross midnight: split one in two (`22:00`-`24:00` and `00:00`-`02:00`
-the next day). `aja status` shows the next opening. Nothing starts on a window until
-`aja daemon` runs.
+the next day). `aja status` shows the next opening.
+
+### The daemon
+
+Windows are acted on by `aja daemon`, which runs until Ctrl-C:
+
+```bash
+aja daemon               # in a terminal you leave open; a systemd service comes next
+aja logs --daemon -f     # what it decides, and the runs it starts
+```
+
+Every 30 seconds it looks at the windows: when one opens it starts an unattended run with
+that window's market and dry run (a non-stop session if `settings.run_non_stop` is on) and
+tells you on Telegram; when the window closes, or you disable or remove it, the run ends
+cleanly with that reason. A run that ends early is not restarted in the same window. A
+window that opens while another run is in progress (one you started in a terminal, say) is
+skipped, and Telegram says so; two windows back to back hand over instead. The
+configuration is read afresh for every run, so `aja config set` needs no restart. Only one
+daemon runs at a time, and Ctrl-C lets the run in progress end cleanly first. Its runs use
+the aja profile, so sign in once with `aja login` before the first window.
 
 ## Markets
 

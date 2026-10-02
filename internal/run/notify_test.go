@@ -184,20 +184,28 @@ func TestARunThatCannotBeRecordedOrCrashesStillSaysSo(t *testing.T) {
 	}
 
 	site2 := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
-	r2, _, _ := runner(t, site2, cfg())
+	r2, st2, _ := runner(t, site2, cfg())
 	rec2 := &recorder{}
 	r2.Notifier = rec2
 	r2.Applier = applierFunc(func() (apply.Outcome, error) { panic("index out of range") })
 	func() {
 		defer func() {
-			if recover() == nil {
-				t.Error("the panic must still crash the process after being reported")
+			p := recover()
+			if c, ok := p.(*Crash); !ok || c.Value != "index out of range" {
+				t.Errorf("the panic must go on, as a *Crash, after being reported: %v", p)
 			}
 		}()
 		_, _ = r2.Run(context.Background(), Options{})
 	}()
 	if len(rec2.messages) != 1 || !strings.Contains(rec2.messages[0], "aja crashed: index out of range") {
 		t.Errorf("%q", rec2.messages)
+	}
+	// Recorded before crashing on: no run left "in progress", no live state left.
+	if runs, _ := st2.ListRuns(1); len(runs) != 1 || runs[0].EndedAt == "" || runs[0].Reason != "crashed: index out of range" {
+		t.Errorf("%+v", runs)
+	}
+	if _, err := ReadState(r2.StatePath); !errors.Is(err, ErrNoState) {
+		t.Error("the live state must be removed")
 	}
 }
 

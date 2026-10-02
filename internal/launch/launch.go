@@ -52,6 +52,7 @@ func NewPlan(l *config.Loaded, p paths.Paths, logger *slog.Logger) (*Plan, error
 // Deps are what the caller adds to a plan to open it.
 type Deps struct {
 	Origin   run.Origin       // who starts the run, recorded in the run lock
+	Window   int64            // the schedule window that starts it (OriginSchedule)
 	Paths    paths.Paths      // the data directory (lock, state, stop requests) and screenshots
 	Store    *store.Store     // required
 	Logger   *slog.Logger     // required
@@ -90,7 +91,7 @@ func (o *Opened) Close() { o.close() }
 // it), finds and opens Chrome and wires the runner.
 func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, error) {
 	cfg := p.Config
-	lock, err := run.AcquireLock(d.Paths.DataDir, d.Origin, time.Now())
+	lock, err := run.AcquireLock(d.Paths.DataDir, run.Holder{Origin: d.Origin, Window: d.Window, Started: time.Now()})
 	if err != nil {
 		return nil, err
 	}
