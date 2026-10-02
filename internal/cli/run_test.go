@@ -61,4 +61,10 @@ func TestStatusAndLogsWithoutAnyRun(t *testing.T) {
 	if !strings.Contains(out, "stale") {
 		t.Errorf("a dead pid is reported as stale:\n%s", out)
 	}
+	if err := os.WriteFile(filepath.Join(h.home, "run.pid"), []byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ = h.run("status"); !strings.Contains(out, "unreadable") {
+		t.Errorf("a corrupt state file is reported:\n%s", out)
+	}
 }

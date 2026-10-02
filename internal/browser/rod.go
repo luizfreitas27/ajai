@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+
+	"github.com/luizfreitas27/aja/internal/procs"
 )
 
 // Options for opening Chrome.
@@ -21,9 +24,10 @@ type Options struct {
 	Bin               string // Chrome executable; "" lets rod look it up
 	ProfileDir        string // user-data directory to attach to
 	DisableExtensions bool
-	// Headless is honoured ONLY by tests (the browser build tag); the CLI never sets it.
-	Headless bool
-	Logger   *slog.Logger
+	// HeadlessForTests is honoured ONLY by the browser-tagged tests; the CLI never sets it
+	// and a run is never headless (ADR 0001).
+	HeadlessForTests bool
+	Logger           *slog.Logger
 }
 
 // ErrProfileInUse means the profile directory is locked by a running Chrome.
@@ -35,7 +39,7 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
 	l := launcher.New().
-		Headless(opts.Headless).
+		Headless(opts.HeadlessForTests).
 		Leakless(false). // the user's Chrome must survive aja exiting
 		Set("disable-blink-features", "AutomationControlled").
 		Delete("enable-automation").
@@ -73,24 +77,31 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 	} else if main, err = b.Page(proto.TargetCreateTarget{URL: "about:blank"}); err != nil {
 		return nil, err
 	}
-	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.Headless)
-	return &rodBrowser{b: b, main: &rodPage{p: main}, launcher: l}, nil
+	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.HeadlessForTests)
+	return &rodBrowser{b: b, main: &rodPage{p: main}, launcher: l, logger: opts.Logger}, nil
 }
 
-// profileLocked reports whether another Chrome holds the profile's singleton lock.
+// profileLocked reports whether a LIVE Chrome holds the profile's singleton
+// lock. On Linux and macOS the lock is a symlink named "<host>-<pid>"; a lock
+// left by a crashed Chrome points at a dead pid and does not count.
 func profileLocked(dir string) bool {
-	for _, name := range []string{"SingletonLock", "lockfile"} {
-		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
-			return true
+	target, err := os.Readlink(filepath.Join(dir, "SingletonLock"))
+	if err != nil {
+		return false
+	}
+	if i := strings.LastIndex(target, "-"); i >= 0 {
+		if pid, err := strconv.Atoi(target[i+1:]); err == nil {
+			return procs.Alive(pid)
 		}
 	}
-	return false
+	return true
 }
 
 type rodBrowser struct {
 	b        *rod.Browser
 	main     *rodPage
 	launcher *launcher.Launcher
+	logger   *slog.Logger
 }
 
 func (r *rodBrowser) Main() Page { return r.main }
@@ -109,8 +120,13 @@ func (r *rodBrowser) Pages() ([]Page, error) {
 	return out, nil
 }
 
-// Close disconnects from Chrome. The user's browser stays open: it is theirs.
-func (r *rodBrowser) Close() error { return r.b.Close() }
+// Close detaches from Chrome. The user's browser stays open: it is theirs. rod's
+// own Browser.Close would send CDP Browser.close and shut it, so it is never
+// called; dropping the connection when the process exits is the whole goodbye.
+func (r *rodBrowser) Close() error {
+	r.logger.Info("detached from chrome; the window stays open")
+	return nil
+}
 
 type rodPage struct{ p *rod.Page }
 
@@ -132,6 +148,11 @@ func (p *rodPage) URL() (string, error) {
 
 func (p *rodPage) Element(xpath string) (Element, error) {
 	els, err := p.p.ElementsX(xpath)
+	return first(els, err, xpath)
+}
+
+// first turns an ElementsX result into one element or ErrNotFound.
+func first(els rod.Elements, err error, xpath string) (Element, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -150,21 +171,23 @@ func (p *rodPage) Elements(xpath string) ([]Element, error) {
 }
 
 func (p *rodPage) WaitElement(ctx context.Context, xpath string, timeout time.Duration) (Element, error) {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	page := p.p.Context(ctx)
 	for {
-		els, err := p.p.ElementsX(xpath)
+		els, err := page.ElementsX(xpath)
 		if err == nil {
 			for _, el := range els {
 				if v, _ := el.Visible(); v {
-					return &rodElement{el: el}, nil
+					return &rodElement{el: el.Context(context.Background())}, nil
 				}
 			}
 		}
-		if time.Now().After(deadline) {
-			return nil, &ErrNotFound{XPath: xpath}
-		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, &ErrNotFound{XPath: xpath}
+			}
 			return nil, ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
@@ -257,13 +280,7 @@ func (e *rodElement) Visible() bool {
 
 func (e *rodElement) Element(xpath string) (Element, error) {
 	els, err := e.el.ElementsX(xpath)
-	if err != nil {
-		return nil, err
-	}
-	if len(els) == 0 {
-		return nil, &ErrNotFound{XPath: xpath}
-	}
-	return &rodElement{el: els[0]}, nil
+	return first(els, err, xpath)
 }
 
 func (e *rodElement) Elements(xpath string) ([]Element, error) {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"os"
 	"time"
 
 	"github.com/luizfreitas27/aja/internal/browser"
@@ -30,10 +31,11 @@ type Site interface {
 	Cards() ([]browser.Element, error)
 	ReadCard(card browser.Element) (linkedin.Card, error)
 	OpenCard(ctx context.Context, card browser.Element) error
+	AlreadyAppliedOnPage() bool
 	AboutCompany() string
 	Description(ctx context.Context) (string, bool)
 	DatePosted(now time.Time) (posted time.Time, reposted, ok bool)
-	FindApplyButton() (browser.Element, string, bool)
+	FindApplyButton() (browser.Element, linkedin.ApplyKind, string)
 	DailyLimitReached() bool
 	NextPage(ctx context.Context) (bool, error)
 }
@@ -48,9 +50,31 @@ type Options struct {
 	Location   string   // override the market's search location
 }
 
+// Validate rejects option combinations that make no sense.
+func (o Options) Validate() error {
+	if o.Fast && !o.DryRun {
+		return errors.New("--fast is allowed only together with --dry-run")
+	}
+	return nil
+}
+
+// EventKind classifies an Event.
+type EventKind string
+
+// The event kinds.
+const (
+	EventLogin      EventKind = "login"
+	EventTerm       EventKind = "term"
+	EventSkip       EventKind = "skip"
+	EventWouldApply EventKind = "would-apply"
+	EventExternal   EventKind = "external"
+	EventLimit      EventKind = "limit"
+	EventWarn       EventKind = "warn"
+)
+
 // Event is something the user should see as it happens.
 type Event struct {
-	Kind string // "login", "term", "job", "skip", "would-apply", "limit", "warn", "page"
+	Kind EventKind
 	Text string
 	Card *linkedin.Card
 }
@@ -83,11 +107,33 @@ type Runner struct {
 	Now    func() time.Time
 	// LoginTimeout is how long to wait for a manual login (default 10 minutes).
 	LoginTimeout time.Duration
+	// StatePath, when set, receives the live State after every change.
+	StatePath string
+
+	started time.Time
 }
 
-func (r *Runner) emit(kind, text string, card *linkedin.Card) {
+func (r *Runner) emit(kind EventKind, text string, card *linkedin.Card) {
 	if r.Events != nil {
 		r.Events(Event{Kind: kind, Text: text, Card: card})
+	}
+}
+
+// termState is what one run accumulates while walking the terms.
+type termState struct {
+	applied     map[string]bool // our own history
+	blacklisted map[string]bool // companies blacklisted during this run
+	rejected    map[string]bool // job ids rejected during this run
+}
+
+func (r *Runner) saveState(sum *Summary, term string) {
+	if r.StatePath == "" {
+		return
+	}
+	st := State{PID: os.Getpid(), Started: r.started, RunID: sum.RunID, DryRun: sum.DryRun, Market: sum.Market,
+		Applied: sum.Applied, External: sum.External, Failed: sum.Failed, Skipped: sum.Skipped, WouldApply: sum.WouldApply, Term: term}
+	if err := WriteState(r.StatePath, st); err != nil {
+		r.Logger.Warn("could not write the run state", "error", err)
 	}
 }
 
@@ -103,22 +149,27 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	if r.LoginTimeout == 0 {
 		r.LoginTimeout = 10 * time.Minute
 	}
-	if opts.Fast && !opts.DryRun {
-		return Summary{}, errors.New("--fast is allowed only together with --dry-run")
+	if err := opts.Validate(); err != nil {
+		return Summary{}, err
 	}
+	r.started = r.Now()
 	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
 	id, err := r.Store.StartRun(context.Background(), sum.Market, opts.DryRun) // the record must exist even when ctx is already cancelled
 	if err != nil {
 		return sum, err
 	}
 	sum.RunID = id
+	r.saveState(&sum, "")
 	defer func() {
 		_ = r.Store.FinishRun(context.Background(), store.Run{ID: id, Applied: sum.Applied, External: sum.External,
 			Failed: sum.Failed, Skipped: sum.Skipped, Reason: sum.Reason})
+		if r.StatePath != "" {
+			RemoveState(r.StatePath)
+		}
 	}()
 
 	err = r.Site.EnsureLoggedIn(ctx, r.LoginTimeout, func() {
-		r.emit("login", "Sign in to LinkedIn in the Chrome window; aja continues when the feed appears.", nil)
+		r.emit(EventLogin, "Sign in to LinkedIn in the Chrome window; aja continues when the feed appears.", nil)
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -128,9 +179,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 		return sum, err
 	}
 
-	terms := opts.Terms
+	terms := append([]string(nil), opts.Terms...)
 	if len(terms) == 0 {
-		terms = r.Market.Terms
+		terms = append(terms, r.Market.Terms...)
 	}
 	if r.Cfg.Search.RandomizeOrder {
 		rand.Shuffle(len(terms), func(i, j int) { terms[i], terms[j] = terms[j], terms[i] })
@@ -145,10 +196,11 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 		return sum, err
 	}
 	rules := screening.FromConfig(r.Cfg)
-	blacklisted, rejected := map[string]bool{}, map[string]bool{}
+	state := termState{applied: applied, blacklisted: map[string]bool{}, rejected: map[string]bool{}}
 
 	for _, term := range terms {
-		r.emit("term", term, nil)
+		r.emit(EventTerm, term, nil)
+		r.saveState(&sum, term)
 		if err := r.Site.Search(ctx, term); err != nil {
 			return r.stop(&sum, err)
 		}
@@ -156,16 +208,16 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 			if ctx.Err() != nil {
 				return r.stop(&sum, ctx.Err())
 			}
-			r.emit("warn", "filters: "+err.Error(), nil)
+			r.emit(EventWarn, "filters: "+err.Error(), nil)
 		}
 		if err := r.Site.WaitForCards(ctx); err != nil {
 			if ctx.Err() != nil {
 				return r.stop(&sum, ctx.Err())
 			}
-			r.emit("warn", "no job cards appeared for this term", nil)
+			r.emit(EventWarn, "no job cards appeared for this term", nil)
 			continue
 		}
-		perTerm := 0
+		perTerm := 0 // applications (or would-applies) for this term: switch_number counts those, not cards
 	pages:
 		for {
 			for index := 0; ; index++ {
@@ -182,14 +234,17 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 				if perTerm >= r.Cfg.Search.SwitchNumber || (opts.Max > 0 && r.Pacer.Applied() >= opts.Max) {
 					break pages
 				}
-				done, err := r.handleCard(ctx, &sum, opts, rules, cards[index], applied, blacklisted, rejected)
+				outcome, err := r.handleCard(ctx, &sum, opts, rules, cards[index], &state)
 				if err != nil {
 					return r.stop(&sum, err)
 				}
-				if done {
+				r.saveState(&sum, term)
+				switch outcome {
+				case cardEndsRun:
 					return sum, nil
+				case cardCounted:
+					perTerm++
 				}
-				perTerm++
 			}
 			more, err := r.Site.NextPage(ctx)
 			if err != nil {
@@ -201,7 +256,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 		}
 		if opts.Max > 0 && r.Pacer.Applied() >= opts.Max {
 			sum.Reason = "--max reached"
-			r.emit("limit", sum.Reason, nil)
+			r.emit(EventLimit, sum.Reason, nil)
 			return sum, nil
 		}
 	}
@@ -209,92 +264,124 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	return sum, nil
 }
 
-// handleCard processes one card; done is true when the run must end (a cap or
-// LinkedIn's daily limit).
-func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rules screening.Rules, card browser.Element,
-	applied, blacklisted, rejected map[string]bool) (done bool, err error) {
+// cardOutcome says what handleCard did with a card.
+type cardOutcome int
+
+const (
+	cardPassed  cardOutcome = iota // skipped or unreadable: nothing counted toward switch_number
+	cardCounted                    // applied, collected or would-apply: counts toward switch_number
+	cardEndsRun                    // a cap or LinkedIn's daily limit
+)
+
+// DailyLimitStateKey marks, in the store's state table, when LinkedIn's daily limit was last hit.
+const DailyLimitStateKey = "daily_limit_reached_at"
+
+// handleCard processes one card.
+func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rules screening.Rules, card browser.Element, st *termState) (cardOutcome, error) {
 	c, err := r.Site.ReadCard(card)
 	if err != nil {
 		r.Logger.Warn("unreadable card", "error", err)
-		return false, nil
+		return cardPassed, nil
 	}
 	job := screening.Job{ID: c.ID, Title: c.Title, Company: c.Company, AlreadyApplied: c.AlreadyApplied}
-	if v := rules.Card(job, blacklisted, rejected, applied); v.Skip {
-		r.emit("skip", v.Reason, &c)
-		return false, nil
+	if v := rules.Card(job, st.blacklisted, st.rejected, st.applied); v.Skip {
+		// Counted, not stored: LinkedIn's own badge and our history are not new facts about the job.
+		sum.Skipped++
+		r.emit(EventSkip, v.Reason, &c)
+		return cardPassed, nil
 	}
 	if err := r.Site.OpenCard(ctx, card); err != nil {
 		if ctx.Err() != nil {
-			return false, ctx.Err()
+			return cardPassed, ctx.Err()
 		}
 		r.Logger.Warn("could not open card", "job", c.ID, "error", err)
-		return false, nil
+		return cardPassed, nil
+	}
+	if r.Site.AlreadyAppliedOnPage() {
+		sum.Skipped++
+		r.emit(EventSkip, "already applied", &c)
+		return cardPassed, nil
 	}
 	job.AboutCompany = r.Site.AboutCompany()
 	if v := rules.Company(job); v.Skip {
-		rejected[c.ID] = true
+		st.rejected[c.ID] = true
 		if v.BlacklistCompany {
-			blacklisted[c.Company] = true
+			st.blacklisted[c.Company] = true
 		}
-		return false, r.skip(sum, c, v)
+		return cardPassed, r.skip(sum, c, v)
 	}
 	job.Description, job.DescriptionOK = r.Site.Description(ctx)
 	v := rules.Description(job)
 	if v.Skip {
-		rejected[c.ID] = true
-		return false, r.skip(sum, c, v)
+		st.rejected[c.ID] = true
+		return cardPassed, r.skip(sum, c, v)
 	}
-	if _, how, found := r.Site.FindApplyButton(); !found {
+	_, kind, how := r.Site.FindApplyButton()
+	switch kind {
+	case linkedin.NoApplyButton:
 		if r.Site.DailyLimitReached() {
 			sum.Reason = "LinkedIn's daily Easy Apply limit reached"
-			r.emit("limit", sum.Reason, &c)
-			return true, nil
+			_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
+			r.emit(EventLimit, sum.Reason, &c)
+			return cardEndsRun, nil
 		}
-		return false, r.skip(sum, c, screening.Verdict{Reason: "no apply button on the job page"})
-	} else {
-		r.Logger.Info("apply button found", "job", c.ID, "how", how)
+		return cardPassed, r.skip(sum, c, screening.Verdict{Reason: "no apply button on the job page"})
+	case linkedin.ExternalApply:
+		if r.Cfg.Search.EasyApplyOnly {
+			return cardPassed, r.skip(sum, c, screening.Verdict{Reason: "external application (easy_apply_only)"})
+		}
+		// Collected as an external job; opening the company's site is F1-5 work.
+		sum.External++
+		r.emit(EventExternal, "", &c)
+		return cardCounted, r.Store.UpsertJob(store.Job{JobID: c.ID, Outcome: store.External, Title: c.Title, Company: c.Company,
+			WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, DateApplied: "Pending", RunID: sum.RunID})
 	}
+	r.Logger.Info("easy apply button found", "job", c.ID, "how", how)
 	if err := r.Pacer.Allow(); err != nil {
 		sum.Reason = err.Error()
-		r.emit("limit", sum.Reason, &c)
-		return true, nil
+		r.emit(EventLimit, sum.Reason, &c)
+		return cardEndsRun, nil
 	}
 	if !opts.DryRun {
-		return false, ErrApplyNotImplemented
+		return cardPassed, ErrApplyNotImplemented
 	}
-	// Dry run, this ticket: record what would be applied to.
+	// Dry run: record what would be applied to.
 	posted, reposted, _ := r.Site.DatePosted(r.Now())
-	row := store.Job{JobID: c.ID, Outcome: store.Skipped, Reason: "dry run (would apply)", Title: c.Title, Company: c.Company,
+	row := store.Job{JobID: c.ID, Outcome: store.Skipped, Reason: "dry run", Title: c.Title, Company: c.Company,
 		WorkLocation: c.Location, WorkStyle: c.Style, Description: job.Description, JobLink: c.Link,
 		ExperienceRequired: fmt.Sprint(v.ExperienceRequired), Reposted: fmt.Sprint(reposted), RunID: sum.RunID}
 	if !posted.IsZero() {
 		row.DatePosted = store.Timestamp(posted)
 	}
 	if err := r.Store.UpsertJob(row); err != nil {
-		return false, err
+		return cardPassed, err
 	}
 	sum.WouldApply++
-	sum.Skipped++
 	r.Pacer.RecordApplication()
-	r.emit("would-apply", "", &c)
+	r.emit(EventWouldApply, "", &c)
 	if err := r.Pacer.BetweenJobs(ctx); err != nil {
-		return false, err
+		return cardPassed, err
 	}
-	return false, nil
+	return cardCounted, nil
 }
 
 func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error {
 	sum.Skipped++
-	r.emit("skip", v.Reason, &c)
+	r.emit(EventSkip, v.Reason, &c)
 	r.Logger.Info("skipped", "job", c.ID, "title", c.Title, "company", c.Company, "reason", v.Reason, "detail", v.Detail)
 	return r.Store.UpsertJob(store.Job{JobID: c.ID, Outcome: store.Skipped, Reason: v.Reason, Title: c.Title, Company: c.Company,
 		WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, RunID: sum.RunID})
 }
 
 func (r *Runner) stop(sum *Summary, err error) (Summary, error) {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	switch {
+	case errors.Is(err, context.Canceled):
 		sum.Reason = "stopped by user"
-		r.emit("limit", sum.Reason, nil)
+		r.emit(EventLimit, sum.Reason, nil)
+		return *sum, nil
+	case errors.Is(err, context.DeadlineExceeded):
+		sum.Reason = "timed out"
+		r.emit(EventLimit, sum.Reason, nil)
 		return *sum, nil
 	}
 	sum.Reason = "error: " + err.Error()

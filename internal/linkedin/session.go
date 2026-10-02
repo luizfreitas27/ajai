@@ -104,10 +104,33 @@ func (s *Session) TypeHuman(ctx context.Context, el browser.Element, text string
 	return nil
 }
 
-// spanXPath matches a span whose text contains text, ignoring ASCII case.
-func spanXPath(tag, text string) string {
-	return fmt.Sprintf(`.//%s[contains(translate(normalize-space(.), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), %q)]`,
-		tag, strings.ToLower(strings.TrimSpace(text)))
+// TextXPath matches a tag whose text contains text, ignoring ASCII case (the
+// Python text_xpath). The text is embedded as a proper XPath string literal.
+func TextXPath(tag, text string) string {
+	return fmt.Sprintf(`.//%s[contains(translate(normalize-space(.), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), %s)]`,
+		tag, XPathLiteral(strings.ToLower(strings.TrimSpace(text))))
+}
+
+// XPathLiteral quotes text for XPath 1.0, which has no escapes: a string with
+// both quote kinds becomes a concat() of pieces.
+func XPathLiteral(text string) string {
+	switch {
+	case !strings.Contains(text, `"`):
+		return `"` + text + `"`
+	case !strings.Contains(text, `'`):
+		return `'` + text + `'`
+	}
+	parts := strings.Split(text, `"`)
+	quoted := make([]string, 0, 2*len(parts))
+	for i, part := range parts {
+		if i > 0 {
+			quoted = append(quoted, `'"'`)
+		}
+		if part != "" {
+			quoted = append(quoted, `"`+part+`"`)
+		}
+	}
+	return "concat(" + strings.Join(quoted, ", ") + ")"
 }
 
 // clickText clicks the first visible span carrying text; false when none.
@@ -115,7 +138,7 @@ func (s *Session) clickText(ctx context.Context, text string, wait time.Duration
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
-	el, err := s.Page.WaitElement(ctx, spanXPath("span", text), wait)
+	el, err := s.Page.WaitElement(ctx, TextXPath("span", text), wait)
 	if err != nil {
 		s.Logger.Warn("filter control not found", "text", text)
 		return false
@@ -128,13 +151,33 @@ func (s *Session) clickText(ctx context.Context, text string, wait time.Duration
 	return true
 }
 
+// addCompany is the Python company_search_click: a company that is not in the
+// filter list is typed into "Add a company" and picked from the suggestions.
+func (s *Session) addCompany(ctx context.Context, name string) {
+	s.clickText(ctx, "Add a company", time.Second)
+	box, err := s.Page.Element(AddCompanyInputXPath)
+	if err != nil {
+		s.Logger.Warn("company search box not found", "company", name)
+		return
+	}
+	_ = box.Click()
+	_ = box.Clear()
+	if err := s.TypeHuman(ctx, box, name); err != nil {
+		return
+	}
+	_ = s.Pacer.BetweenActions(ctx)
+	_ = s.Page.Press("ArrowDown")
+	_ = s.Page.Press("Enter")
+	s.Logger.Info("company added to the filter by search", "company", name)
+}
+
 func (s *Session) clickSwitch(ctx context.Context, title string) {
-	container, err := s.Page.Element(spanXPath("h3", title) + "/ancestor::fieldset")
+	container, err := s.Page.Element(TextXPath("h3", title) + "/ancestor::fieldset")
 	if err != nil {
 		s.Logger.Warn("filter switch not found", "title", title)
 		return
 	}
-	sw, err := container.Element(`.//input[@role="switch"]`)
+	sw, err := container.Element(FilterSwitchXPath)
 	if err != nil {
 		s.Logger.Warn("filter switch input not found", "title", title)
 		return
@@ -150,7 +193,7 @@ func (s *Session) clickSwitch(ctx context.Context, title string) {
 // that cannot be found is logged and skipped; the search still runs.
 func (s *Session) ApplyFilters(ctx context.Context, f config.Search, location string) error {
 	if strings.TrimSpace(location) != "" {
-		if el, err := s.Page.Element(`.//input[@aria-label='City, state, or zip code' and not(@disabled)]`); err == nil {
+		if el, err := s.Page.Element(SearchLocationInputXPath); err == nil {
 			_ = el.Click()
 			_ = el.Clear()
 			if err := s.TypeHuman(ctx, el, strings.TrimSpace(location)); err != nil {
@@ -162,7 +205,7 @@ func (s *Session) ApplyFilters(ctx context.Context, f config.Search, location st
 			s.Logger.Warn("search location box not found; continuing with LinkedIn's default")
 		}
 	}
-	all, err := s.Page.WaitElement(ctx, `//button[normalize-space()="All filters"]`, 10*time.Second)
+	all, err := s.Page.WaitElement(ctx, AllFiltersButtonXPath, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("the All filters button did not appear: %w", err)
 	}
@@ -174,7 +217,15 @@ func (s *Session) ApplyFilters(ctx context.Context, f config.Search, location st
 	short := 2 * time.Second
 	s.clickText(ctx, f.SortBy, short)
 	s.clickText(ctx, f.DatePosted, short)
-	for _, group := range [][]string{f.ExperienceLevel, f.Companies, f.JobType, f.OnSite, f.Locations, f.Industry, f.JobFunction, f.JobTitles} {
+	for _, text := range f.ExperienceLevel {
+		s.clickText(ctx, text, short)
+	}
+	for _, company := range f.Companies {
+		if !s.clickText(ctx, company, short) {
+			s.addCompany(ctx, company)
+		}
+	}
+	for _, group := range [][]string{f.JobType, f.OnSite, f.Locations, f.Industry, f.JobFunction, f.JobTitles} {
 		for _, text := range group {
 			s.clickText(ctx, text, short)
 		}
@@ -195,7 +246,7 @@ func (s *Session) ApplyFilters(ctx context.Context, f config.Search, location st
 	for _, text := range append(append([]string{}, f.Benefits...), f.Commitments...) {
 		s.clickText(ctx, text, short)
 	}
-	show, err := s.Page.WaitElement(ctx, `//button[contains(translate(@aria-label, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "apply current filters to show")]`, 10*time.Second)
+	show, err := s.Page.WaitElement(ctx, ShowResultsButtonXPath, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("the Show results button did not appear: %w", err)
 	}
@@ -252,7 +303,7 @@ func (s *Session) ReadCard(card browser.Element) (Card, error) {
 		t, _ := loc.Text()
 		c.Location, c.Style = SplitLocation(strings.TrimSpace(t))
 	}
-	if state, err := card.Element(".//*[contains(@class,'" + JobCardFooterStateClass + "')]"); err == nil {
+	if state, err := card.Element("." + ClassXPath(JobCardFooterStateClass)); err == nil {
 		t, _ := state.Text()
 		c.AlreadyApplied = strings.TrimSpace(t) == "Applied"
 	}
@@ -271,10 +322,15 @@ func SplitLocation(text string) (location, style string) {
 	return text, "Unknown"
 }
 
-// OpenCard clicks the card's title so the details pane shows this job.
+// OpenCard scrolls the card into view like a reader would, pauses, then clicks
+// its title so the details pane shows this job.
 func (s *Session) OpenCard(ctx context.Context, card browser.Element) error {
 	link, err := card.Element(JobCardTitleLinkXPath)
 	if err != nil {
+		return err
+	}
+	_ = card.ScrollIntoView()
+	if err := s.Pacer.BetweenActions(ctx); err != nil {
 		return err
 	}
 	if err := link.Click(); err != nil {
@@ -283,9 +339,16 @@ func (s *Session) OpenCard(ctx context.Context, card browser.Element) error {
 	return s.Pacer.BetweenActions(ctx)
 }
 
+// AlreadyAppliedOnPage is the job page's own "application submitted" link, the
+// Python backup check after the card's badge.
+func (s *Session) AlreadyAppliedOnPage() bool {
+	_, err := s.Page.Element(AppliedOnPageXPath)
+	return err == nil
+}
+
 // Description returns the job description text, ok false when it cannot be read.
 func (s *Session) Description(ctx context.Context) (string, bool) {
-	el, err := s.Page.WaitElement(ctx, "//*[contains(@class,'"+JobDescriptionClass+"')]", 5*time.Second)
+	el, err := s.Page.WaitElement(ctx, ClassXPath(JobDescriptionClass), 5*time.Second)
 	if err != nil {
 		return "", false
 	}
@@ -295,7 +358,7 @@ func (s *Session) Description(ctx context.Context) (string, bool) {
 
 // AboutCompany returns the "About the company" text, "" when absent.
 func (s *Session) AboutCompany() string {
-	el, err := s.Page.Element("//*[contains(@class,'" + AboutCompanyClass + "')]")
+	el, err := s.Page.Element(ClassXPath(AboutCompanyClass))
 	if err != nil {
 		return ""
 	}
@@ -308,7 +371,7 @@ var postedRe = regexp.MustCompile(`(?i)(\d+)\s+(second|minute|hour|day|week|mont
 // DatePosted parses the top card's "Reposted 3 days ago" into an approximate
 // time and whether the job was reposted. ok false when nothing was found.
 func (s *Session) DatePosted(now time.Time) (posted time.Time, reposted, ok bool) {
-	el, err := s.Page.Element(`//*[contains(@class,'jobs-unified-top-card') or contains(@class,'job-details-jobs-unified-top-card')]//span[contains(normalize-space(), " ago")]`)
+	el, err := s.Page.Element(PostedAgoXPath)
 	if err != nil {
 		return time.Time{}, false, false
 	}
@@ -329,32 +392,51 @@ func ParsePosted(text string, now time.Time) (posted time.Time, reposted, ok boo
 	return now.Add(-time.Duration(n) * unit), reposted, true
 }
 
-// FindApplyButton reports whether an apply button is on the page and which
-// locator found it, without clicking.
-func (s *Session) FindApplyButton() (browser.Element, string, bool) {
+// ApplyKind says what the job page's apply button is.
+type ApplyKind string
+
+// Apply kinds.
+const (
+	NoApplyButton ApplyKind = "none"
+	EasyApply     ApplyKind = "easy"
+	ExternalApply ApplyKind = "external"
+)
+
+// FindApplyButton reports the apply button on the page and its kind without
+// clicking. The kind is read from the button itself: LinkedIn labels an in-app
+// application "Easy Apply" and an off-site one "Apply". (The Python bot clicked
+// to find out; a dry run must not.)
+func (s *Session) FindApplyButton() (browser.Element, ApplyKind, string) {
 	for _, loc := range EasyApplyLocators {
-		if el, err := s.Page.Element(strings.TrimPrefix(loc.XPath, ".")); err == nil {
-			return el, loc.How, true
+		el, err := s.Page.Element(strings.TrimPrefix(loc.XPath, "."))
+		if err != nil {
+			continue
 		}
+		label, _ := el.Attr("aria-label")
+		text, _ := el.Text()
+		if strings.Contains(label, EasyApplyAriaLabelPrefix) || strings.Contains(text, EasyApplyAriaLabelPrefix) || strings.Contains(loc.XPath, "openSDUIApplyFlow") {
+			return el, EasyApply, loc.How
+		}
+		return el, ExternalApply, loc.How
 	}
-	return nil, "", false
+	return nil, NoApplyButton, ""
 }
 
 // DailyLimitReached reads LinkedIn's inline notice about the Easy Apply cap.
 func (s *Session) DailyLimitReached() bool {
-	el, err := s.Page.Element("//*[contains(@class,'artdeco-inline-feedback__message')]")
+	el, err := s.Page.Element(InlineFeedbackXPath)
 	if err != nil {
 		return false
 	}
 	t, _ := el.Text()
-	return strings.Contains(t, "exceeded the daily application limit")
+	return strings.Contains(t, DailyLimitPhrase)
 }
 
 // NextPage moves to the following results page; false at the last page.
 func (s *Session) NextPage(ctx context.Context) (bool, error) {
 	var pagination browser.Element
-	for _, cls := range []string{"jobs-search-pagination__pages", "artdeco-pagination__pages", "artdeco-pagination"} {
-		if el, err := s.Page.Element("//*[contains(@class,'" + cls + "')]"); err == nil {
+	for _, cls := range PaginationClasses {
+		if el, err := s.Page.Element(ClassXPath(cls)); err == nil {
 			pagination = el
 			break
 		}
@@ -362,7 +444,7 @@ func (s *Session) NextPage(ctx context.Context) (bool, error) {
 	if pagination == nil {
 		return false, nil
 	}
-	active, err := pagination.Element(".//button[contains(@class, 'active')]")
+	active, err := pagination.Element(PaginationActiveXPath)
 	if err != nil {
 		return false, nil
 	}
@@ -371,7 +453,7 @@ func (s *Session) NextPage(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	next, err := pagination.Element(fmt.Sprintf(".//button[@aria-label='Page %d']", current+1))
+	next, err := pagination.Element(PageButtonXPath(current + 1))
 	if err != nil {
 		return false, nil
 	}

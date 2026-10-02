@@ -2,11 +2,9 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,17 +20,6 @@ import (
 	"github.com/luizfreitas27/aja/internal/pacing"
 	"github.com/luizfreitas27/aja/internal/run"
 )
-
-// pidFile records the run in progress, for `aja status`.
-type pidFile struct {
-	PID     int       `json:"pid"`
-	Started time.Time `json:"started"`
-	RunID   int64     `json:"run_id"`
-	DryRun  bool      `json:"dry_run"`
-	Market  string    `json:"market"`
-}
-
-func (a *App) pidPath() string { return filepath.Join(a.paths.DataDir, "run.pid") }
 
 // OpenBrowser is the seam the run command uses to get a browser; tests replace it.
 var OpenBrowser = browser.Open
@@ -65,8 +52,8 @@ loop lands (F1-5), --dry-run is required.`,
 			if err != nil {
 				return fmt.Errorf("fix the configuration first (`aja config validate`): %w", err)
 			}
-			if opts.Fast && !opts.DryRun {
-				return errors.New("--fast is allowed only together with --dry-run")
+			if err := opts.Validate(); err != nil {
+				return err
 			}
 			if terms != "" {
 				for _, t := range strings.Split(terms, ",") {
@@ -106,13 +93,8 @@ loop lands (F1-5), --dry-run is required.`,
 
 			pacer := pacing.New(cfg.Pacing, opts.Fast)
 			session := linkedin.NewSession(br.Main(), pacer, a.logger)
-			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Store: st, Pacer: pacer, Logger: a.logger, Events: a.printEvent}
-
-			pf := pidFile{PID: os.Getpid(), Started: time.Now(), DryRun: opts.DryRun, Market: string(resolved.Name)}
-			if data, err := json.Marshal(pf); err == nil {
-				_ = os.WriteFile(a.pidPath(), data, 0o600)
-			}
-			defer func() { _ = os.Remove(a.pidPath()) }()
+			runner := &run.Runner{Cfg: cfg, Market: resolved, Site: session, Store: st, Pacer: pacer, Logger: a.logger,
+				Events: a.printEvent, StatePath: run.StatePath(a.paths.DataDir)}
 
 			sum, runErr := runner.Run(ctx, opts)
 			a.printSummary(sum)
@@ -163,18 +145,20 @@ func (a *App) printEvent(e run.Event) {
 		title = strings.TrimSpace(e.Card.Title + " | " + e.Card.Company)
 	}
 	switch e.Kind {
-	case "login":
+	case run.EventLogin:
 		a.ui.Warn("login", e.Text)
-	case "term":
+	case run.EventTerm:
 		a.ui.Println()
 		a.ui.Title("Searching: " + e.Text)
-	case "would-apply":
+	case run.EventWouldApply:
 		a.ui.OK("would apply", title)
-	case "skip":
+	case run.EventExternal:
+		a.ui.OK("external", title)
+	case run.EventSkip:
 		a.ui.Hint("skip  " + title + "  (" + e.Text + ")")
-	case "limit":
+	case run.EventLimit:
 		a.ui.Warn("stop", e.Text)
-	case "warn":
+	case run.EventWarn:
 		a.ui.Warn("warn", e.Text)
 	default:
 		a.ui.Println(e.Text)
@@ -204,17 +188,23 @@ func (a *App) statusCmd() *cobra.Command {
 		Short: "Show whether a run is in progress and the last runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if data, err := os.ReadFile(a.pidPath()); err == nil {
-				var pf pidFile
-				if json.Unmarshal(data, &pf) == nil {
-					if processAlive(pf.PID) {
-						a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s)", pf.PID, pf.Started.Local().Format("15:04:05"), map[bool]string{true: "dry run", false: "live"}[pf.DryRun]))
-					} else {
-						a.ui.Warn("stale", fmt.Sprintf("pid %d is gone; the last run did not exit cleanly", pf.PID))
-					}
-				}
-			} else {
+			state, err := run.ReadState(run.StatePath(a.paths.DataDir))
+			switch {
+			case errors.Is(err, run.ErrNoState):
 				a.ui.Println("No run in progress.")
+			case err != nil:
+				a.ui.Warn("state", err.Error())
+			case state.Alive():
+				mode := "live"
+				if state.DryRun {
+					mode = "dry run"
+				}
+				a.ui.OK("running", fmt.Sprintf("pid %d since %s (%s, %s)", state.PID, state.Started.Local().Format("15:04:05"), mode, state.Market))
+				a.ui.KV("term", state.Term)
+				a.ui.KV("applied", fmt.Sprintf("%d (external %d, failed %d, would apply %d)", state.Applied, state.External, state.Failed, state.WouldApply))
+				a.ui.KV("skipped", fmt.Sprint(state.Skipped))
+			default:
+				a.ui.Warn("stale", fmt.Sprintf("pid %d is gone; the last run did not exit cleanly", state.PID))
 			}
 			st, err := a.openStore()
 			if err != nil {
@@ -287,6 +277,8 @@ func (a *App) logsCmd() *cobra.Command {
 	return cmd
 }
 
+// follow prints what is appended to the day's log, surviving truncation (the
+// offset resets) and midnight (the file name changes with the day).
 func (a *App) follow(ctx context.Context, path string, offset int64) error {
 	for {
 		select {
@@ -294,9 +286,15 @@ func (a *App) follow(ctx context.Context, path string, offset int64) error {
 			return nil
 		case <-time.After(500 * time.Millisecond):
 		}
+		if today := logging.FileName(a.paths.LogDir, time.Now()); today != path {
+			path, offset = today, 0
+		}
 		f, err := os.Open(path)
 		if err != nil {
 			continue
+		}
+		if info, err := f.Stat(); err == nil && info.Size() < offset {
+			offset = 0
 		}
 		if _, err := f.Seek(offset, 0); err == nil {
 			buf := make([]byte, 64*1024)
