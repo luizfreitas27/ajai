@@ -18,9 +18,10 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
+          install-mode: goinstall
       - name: Browser tests (headless Chrome)
         run: go test -tags browser ./...
         env:
