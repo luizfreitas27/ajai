@@ -133,7 +133,7 @@ func readConfigRows(d Deps) configLoadedMsg {
 	if !dotenvOK {
 		msg.problem = config.DotenvError(d.Paths.EnvFile, err).Error()
 	}
-	msg.rows = append(msg.rows, configRow{kind: titleRow, title: "secrets, kept in " + d.short(d.Paths.EnvFile)})
+	msg.rows = append(msg.rows, configRow{kind: titleRow, title: "secrets, kept in " + d.tilde(d.Paths.EnvFile)})
 	for _, secret := range env.Secrets().Values() {
 		_, inEnvironment := env.Lookup(secret[0])
 		msg.rows = append(msg.rows, configRow{kind: secretRow, secret: secret[0], set: secret[1] != "", fromEnvironment: inEnvironment})
@@ -437,7 +437,7 @@ func saveSetting(d Deps, key, value string) tea.Cmd {
 		case file == nil:
 			return configSavedMsg{refusal: "the config file cannot be read: " + err.Error()}
 		case !file.FileExisted:
-			return configSavedMsg{refusal: "there is no config file yet at " + d.Paths.ConfigFile + "; run `aja init` first"}
+			return configSavedMsg{refusal: "there is no config file yet at " + d.tilde(d.Paths.ConfigFile) + "; run `aja init` first"}
 		}
 		others, err := file.Config.SetChecked(key, value)
 		if err != nil {
@@ -516,7 +516,7 @@ func (c configTab) view(s styles, d Deps, width int) string {
 	if !c.loaded {
 		return "Reading…"
 	}
-	lines := []string{s.section.Render("Config") + "  " + s.dim.Render(d.short(d.Paths.ConfigFile))}
+	lines := []string{s.section.Render("Config") + "  " + s.dim.Render(d.tilde(d.Paths.ConfigFile))}
 	for _, n := range c.heading() {
 		for _, l := range wrap(n.text, width) {
 			lines = append(lines, s.byLevel(n.level).Render(l))

@@ -74,12 +74,16 @@ to the tag before tagging and the workflow publishes that section as the release
   (single-quoted values, refusing quotes, backslashes and line breaks; 0600, atomic) and
   their values are never rendered or logged, nor is godotenv's error text (it quotes the
   file). What the daemon reads only at start is `readAtDaemonStart`.
-  The setup checklist runs `doctor.Run` (with `Deps.Probe`) as a command when the TUI
-  opens and after every fix, opens by itself once when a check fails, and blocks every
-  tab but Config while there is no config file. Fixes run aja subcommands through
+  The setup checklist runs `doctor.Run` (with `Deps.Probe`) when the TUI opens, after
+  every fix or Config save, and every `doctorEvery` refreshes, always through
+  `Model.checkAgain` (one run at a time, so an older report never wins). It opens by
+  itself once when `blocking` (a failed check, or no LinkedIn session), never over a value
+  being typed, and blocks every tab but Config while there is no config file. It matches
+  checks by `doctor.Check*` names. Fixes run aja subcommands through
   `Deps.Launcher.InTerminal`: in production `/bin/sh` runs aja then waits for Enter
-  (`cli.afterwards`, so the subcommand's last words can be read) under
-  `tea.ExecProcess`; tests record the arguments. `Deps.Home` shows paths as `~/…` (tests
+  (`cli.afterwards`: a `trap ':' INT` keeps the shell alive through Ctrl-C, and a trap,
+  unlike an ignored signal, is reset for aja) under `tea.ExecProcess`; tests record the
+  arguments. `Deps.Home` shows paths as `~/…` (tests
   set it to the temporary AJA_HOME, which keeps the golden screens stable).
 - Editing the config file: always `config.LoadFile`, then `SetChecked`, then `Write`
   (`aja config set`, `aja import`, the TUI). `config.Load(p, config.MapEnv(nil), nil)`

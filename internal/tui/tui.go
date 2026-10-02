@@ -37,9 +37,9 @@ type Deps struct {
 	Home     string // the user's home directory, shown as ~
 }
 
-// short writes the home directory in text as ~: in ~/… and on its own, never
+// tilde writes the home directory in text as ~: in ~/… and on its own, never
 // inside a longer name (/home/ana2 stays as it is for /home/ana).
-func (d Deps) short(text string) string {
+func (d Deps) tilde(text string) string {
 	if d.Home == "" {
 		return text
 	}
@@ -104,9 +104,12 @@ type Model struct {
 	help          bool
 	setupShown    bool // the setup checklist covers the tabs
 	setupOpened   bool // it has opened by itself once
+	doctorBusy    bool // the checks are running
+	doctorAgain   bool // and must run again once they end
+	refreshes     int
 	dash          dashboard
 	conf          configTab
-	setup         setupView
+	checks        checklist
 }
 
 // New builds the TUI; r renders its colours (see Run).
@@ -130,8 +133,20 @@ func Run(ctx context.Context, d Deps, in io.Reader, out io.Writer, noColor bool)
 
 type tickMsg struct{}
 
-// Init reads what the Dashboard shows and runs the setup checks.
-func (m Model) Init() tea.Cmd { return tea.Batch(m.dash.refresh(m.deps), runDoctor(m.deps)) }
+// Init reads what the Dashboard shows and runs the setup checks (Update sees
+// doctorBusy false then, so a request made meanwhile only asks for one more run).
+func (m Model) Init() tea.Cmd { return tea.Batch(m.dash.refresh(m.deps), checkAgain) }
+
+// checkAgain runs the setup checks, or, while they run, asks for one more run
+// once they end: two never overlap, so an older report never wins.
+func (m Model) checkAgain() (Model, tea.Cmd) {
+	if m.doctorBusy {
+		m.doctorAgain = true
+		return m, nil
+	}
+	m.doctorBusy = true
+	return m, runDoctor(m.deps)
+}
 
 // Update handles keys, the terminal's size and the refresh cycle: a refresh
 // reads, and the next one is scheduled only once its result is in, so two never
@@ -147,23 +162,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.dash.refresh(m.deps)
 	case refreshedMsg:
 		m.dash = m.dash.apply(msg)
-		return m, m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
-	case configLoadedMsg, configSavedMsg:
+		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+		if m.refreshes++; m.refreshes%doctorEvery == 0 {
+			var check tea.Cmd
+			m, check = m.checkAgain()
+			return m, tea.Batch(next, check)
+		}
+		return m, next
+	case configSavedMsg:
+		var cmd, check tea.Cmd
+		m.conf, cmd = m.conf.update(msg, m.deps)
+		if msg.refusal == "" { // a setting or a secret changed: so may the checks
+			m, check = m.checkAgain()
+		}
+		return m, tea.Batch(cmd, check)
+	case configLoadedMsg:
 		var cmd tea.Cmd
 		m.conf, cmd = m.conf.update(msg, m.deps)
 		return m, cmd
+	case checkAgainMsg:
+		return m.checkAgain()
 	case doctorMsg:
-		m.setup, _ = m.setup.update(msg, m.deps)
-		if !m.setupOpened && msg.report.Failed() { // a run cannot start: open on the checklist, once
+		m.checks, _ = m.checks.update(msg, m.deps)
+		m.doctorBusy = false
+		// Something a run needs is missing: open on the checklist, once, never
+		// over a value being typed.
+		if !m.setupOpened && blocking(msg.report) && !m.conf.editing() {
 			m.setupOpened, m.setupShown, m.help = true, true, false
+		}
+		if m.doctorAgain {
+			m.doctorAgain = false
+			return m.checkAgain()
 		}
 		return m, nil
 	case subcommandDoneMsg:
 		var cmd tea.Cmd
-		m.setup, cmd = m.setup.update(msg, m.deps)
+		m.checks, cmd = m.checks.update(msg, m.deps)
 		return m, tea.Batch(cmd, loadConfig(m.deps)) // the subcommand may have written the config
-	case openTabMsg:
-		m.setupShown, m.tab = false, msg.tab
+	case openConfigMsg:
+		m.setupShown, m.tab = false, tabConfig
 		return m, loadConfig(m.deps)
 	}
 	return m, nil
@@ -175,9 +212,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch {
-	case m.setupShown && m.setup.editing():
+	case m.setupShown && m.checks.editing():
 		var cmd tea.Cmd
-		m.setup, cmd = m.setup.update(msg, m.deps)
+		m.checks, cmd = m.checks.update(msg, m.deps)
 		return m, cmd
 	case !m.setupShown && m.tab == tabConfig && m.conf.editing():
 		var cmd tea.Cmd
@@ -194,19 +231,19 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.help:
 			m.help = false
-		case m.setupShown && !m.setup.noConfig:
+		case m.setupShown && !m.checks.noConfig:
 			m.setupShown = false
 		}
 		return m, nil
 	case "s":
 		if !m.setupShown && m.tab == tabDashboard {
 			m.setupShown, m.help = true, false
-			return m, runDoctor(m.deps)
+			return m.checkAgain()
 		}
 	}
 	if len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < len(tabNames) {
 		t := tab(key[0] - '1')
-		if m.setup.noConfig && t != tabConfig { // nothing else works without a config
+		if m.checks.noConfig && t != tabConfig { // nothing else works without a config
 			m.tab, m.setupShown, m.help = t, true, false // shown once the checklist is left
 			return m, nil
 		}
@@ -220,7 +257,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.help:
 	case m.setupShown:
 		var cmd tea.Cmd
-		m.setup, cmd = m.setup.update(msg, m.deps)
+		m.checks, cmd = m.checks.update(msg, m.deps)
 		return m, cmd
 	case m.tab == tabConfig:
 		var cmd tea.Cmd
@@ -249,12 +286,11 @@ func (m Model) View() string {
 	case m.help:
 		body = m.helpView()
 	case m.setupShown:
-		body = m.setup.view(m.styles, m.deps, m.width)
+		body = m.checks.view(m.styles, m.deps, m.width)
 	case m.tab == tabConfig:
 		body = m.conf.view(m.styles, m.deps, m.width)
 	default:
-		text, lvl := m.setup.summary()
-		body = m.dash.view(m.styles, m.width, height, m.deps.Now(), notice{text, lvl})
+		body = m.dash.view(m.styles, m.width, height, m.deps.Now(), m.checks.summary())
 	}
 	return strings.Join([]string{m.tabBar(), rule, fit(body, m.width, height), rule, m.hints()}, "\n")
 }
@@ -280,9 +316,9 @@ func (m Model) hints() string {
 	switch {
 	case m.help:
 		hint = "esc closes the list · q quit"
-	case m.setupShown && m.setup.editing():
+	case m.setupShown && m.checks.editing():
 		hint = "enter imports · esc cancels"
-	case m.setupShown && m.setup.noConfig:
+	case m.setupShown && m.checks.noConfig:
 		hint = "↑↓ move · enter fix · i import · r check again · 2 config · q quit"
 	case m.setupShown:
 		hint = "↑↓ move · enter fix · i import · r check again · esc back · q quit"

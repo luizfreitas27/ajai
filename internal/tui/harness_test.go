@@ -121,13 +121,18 @@ func (h *harness) open(width, height int) {
 	h.t.Helper()
 	r := lipgloss.NewRenderer(io.Discard)
 	r.SetColorProfile(termenv.Ascii)
-	d := Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
-		Now: func() time.Time { return h.now }, Probe: h.probe(), Launcher: h, Home: h.p.DataDir}
-	m := New(d, r)
+	m := New(h.deps(), r)
 	m.tickAfter = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
 	h.m = m
 	h.do(m.Init())
 	h.send(tea.WindowSizeMsg{Width: width, Height: height})
+}
+
+// deps are the TUI's Deps over the harness; Home is the temporary AJA_HOME, so
+// paths show as ~/… and the golden screens stay the same from run to run.
+func (h *harness) deps() Deps {
+	return Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
+		Now: func() time.Time { return h.now }, Probe: h.probe(), Launcher: h, Home: h.p.DataDir}
 }
 
 func (h *harness) send(msg tea.Msg) {

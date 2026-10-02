@@ -27,6 +27,22 @@ const (
 	Fail
 )
 
+// Check names, for code that acts on a check (the TUI's setup checklist).
+const (
+	CheckConfig        = "config"
+	CheckChrome        = "chrome"
+	CheckChromeProfile = "chrome profile"
+	CheckAI            = "ai"
+	CheckTelegram      = "telegram"
+	CheckResume        = "resume" // and "resume brasil", "resume intl": IsResume
+	CheckDataDir       = "data dir"
+)
+
+// IsResume reports whether name is one of the resume checks.
+func IsResume(name string) bool {
+	return name == CheckResume || strings.HasPrefix(name, CheckResume+" ")
+}
+
 // Check is one line of the report.
 type Check struct {
 	Name   string
@@ -76,17 +92,17 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	// Config
 	switch {
 	case loaded == nil:
-		add("config", Fail, loadErr.Error())
+		add(CheckConfig, Fail, loadErr.Error())
 	case !loaded.FileExisted:
-		add("config", Fail, "no config file at "+p.ConfigFile+"; run `aja init`")
+		add(CheckConfig, Fail, "no config file at "+p.ConfigFile+"; run `aja init`")
 	case loadErr != nil:
-		add("config", Fail, strings.ReplaceAll(loadErr.Error(), "\n", "\n                      "))
+		add(CheckConfig, Fail, strings.ReplaceAll(loadErr.Error(), "\n", "\n                      "))
 	default:
-		add("config", OK, p.ConfigFile)
+		add(CheckConfig, OK, p.ConfigFile)
 	}
 	if loaded != nil {
 		for _, w := range loaded.Warnings {
-			add("config", Warn, w)
+			add(CheckConfig, Warn, w)
 		}
 	}
 
@@ -100,11 +116,11 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	// Chrome
 	binary, err := probe.FindChrome(cfg.Settings.ChromeBinary)
 	if err != nil {
-		add("chrome", Fail, err.Error())
+		add(CheckChrome, Fail, err.Error())
 	} else if v := probe.ChromeVersion(binary); v != "" {
-		add("chrome", OK, v+" ("+binary+")")
+		add(CheckChrome, OK, v+" ("+binary+")")
 	} else {
-		add("chrome", Warn, binary+" found but `--version` failed; it may still run")
+		add(CheckChrome, Warn, binary+" found but `--version` failed; it may still run")
 	}
 
 	// Profile, and whether LinkedIn is signed in there
@@ -115,13 +131,13 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 		hint += "; or set settings.chrome_profile_dir to your everyday Chrome profile (" + probe.EverydayProfileDir(binary) + ") to use that"
 	}
 	if st, err := os.Stat(profile.Dir); err != nil || !st.IsDir() {
-		add("chrome profile", Warn, label+" does not exist yet; "+hint)
+		add(CheckChromeProfile, Warn, label+" does not exist yet; "+hint)
 	} else if signedIn, err := probe.HasLinkedInSession(profile.Dir); err != nil {
-		add("chrome profile", Warn, label+": could not check for a LinkedIn session ("+err.Error()+")")
+		add(CheckChromeProfile, Warn, label+": could not check for a LinkedIn session ("+err.Error()+")")
 	} else if !signedIn {
-		add("chrome profile", Warn, label+" has no LinkedIn session; "+hint)
+		add(CheckChromeProfile, Warn, label+" has no LinkedIn session; "+hint)
 	} else {
-		add("chrome profile", OK, label+", signed in to LinkedIn")
+		add(CheckChromeProfile, OK, label+", signed in to LinkedIn")
 	}
 
 	if loaded != nil && loaded.FileExisted {
@@ -129,23 +145,23 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 		sec := loaded.Secrets
 		switch _, err := ai.FromConfig(cfg, sec, markets.Resolve(cfg), nil); {
 		case !cfg.AI.Enabled:
-			add("ai", OK, "off (ai.enabled: false)")
+			add(CheckAI, OK, "off (ai.enabled: false)")
 		case errors.Is(err, ai.ErrNoKey):
-			add("ai", Fail, "ai.enabled is true but "+config.EnvAIAPIKey+" is not set in the environment or "+p.EnvFile)
+			add(CheckAI, Fail, "ai.enabled is true but "+config.EnvAIAPIKey+" is not set in the environment or "+p.EnvFile)
 		case err != nil:
-			add("ai", Fail, err.Error())
+			add(CheckAI, Fail, err.Error())
 		case sec.AIAPIKey == "":
-			add("ai", OK, fmt.Sprintf("%s %s at %s, no key sent", cfg.AI.Provider, cfg.AI.Model, cfg.AIBaseURL()))
+			add(CheckAI, OK, fmt.Sprintf("%s %s at %s, no key sent", cfg.AI.Provider, cfg.AI.Model, cfg.AIBaseURL()))
 		default:
-			add("ai", OK, fmt.Sprintf("%s %s, key present", cfg.AI.Provider, cfg.AI.Model))
+			add(CheckAI, OK, fmt.Sprintf("%s %s, key present", cfg.AI.Provider, cfg.AI.Model))
 		}
 		switch {
 		case sec.TelegramBotToken == "" && sec.TelegramChatID == "":
-			add("telegram", OK, "off (set "+config.EnvTelegramBotToken+" and "+config.EnvTelegramChatID+" to turn on)")
+			add(CheckTelegram, OK, "off (set "+config.EnvTelegramBotToken+" and "+config.EnvTelegramChatID+" to turn on)")
 		case sec.TelegramBotToken == "" || sec.TelegramChatID == "":
-			add("telegram", Warn, "only one of "+config.EnvTelegramBotToken+" / "+config.EnvTelegramChatID+" is set; notifications stay off")
+			add(CheckTelegram, Warn, "only one of "+config.EnvTelegramBotToken+" / "+config.EnvTelegramChatID+" is set; notifications stay off")
 		default:
-			add("telegram", OK, "on (token and chat id set)")
+			add(CheckTelegram, OK, "on (token and chat id set)")
 		}
 
 		// Resumes
@@ -160,20 +176,20 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 				add(label, OK, full)
 			}
 		}
-		checkResume("resume", cfg.Questions.Resume)
-		checkResume("resume brasil", cfg.Markets.Brasil.Resume)
-		checkResume("resume intl", cfg.Markets.Internacional.Resume)
+		checkResume(CheckResume, cfg.Questions.Resume)
+		checkResume(CheckResume+" brasil", cfg.Markets.Brasil.Resume)
+		checkResume(CheckResume+" intl", cfg.Markets.Internacional.Resume)
 	}
 
 	// Data directory
 	if err := p.EnsureDataDirs(); err != nil {
-		add("data dir", Fail, err.Error())
+		add(CheckDataDir, Fail, err.Error())
 	} else if f, err := os.CreateTemp(p.DataDir, ".doctor-*"); err != nil {
-		add("data dir", Fail, p.DataDir+" is not writable: "+err.Error())
+		add(CheckDataDir, Fail, p.DataDir+" is not writable: "+err.Error())
 	} else {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
-		add("data dir", OK, p.DataDir)
+		add(CheckDataDir, OK, p.DataDir)
 	}
 	return r
 }

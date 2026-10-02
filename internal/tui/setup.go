@@ -14,15 +14,21 @@ import (
 	"github.com/luizfreitas27/aja/internal/doctor"
 )
 
-// setupView is the setup checklist: `aja doctor`'s checks, each with what fixes
-// it. Opened by itself when a check fails, and with s from the Dashboard.
-type setupView struct {
-	loaded    bool
-	report    doctor.Report
-	noConfig  bool // no config file: only the checklist and the Config tab make sense
-	cursor    int
-	importing *textinput.Model // the Python checkout's path being typed
-	notice    notice
+// doctorEvery: the checks run again this often while the TUI is open, so a
+// change made elsewhere (`aja login` in another terminal) shows.
+const doctorEvery = 30 // refreshes, one a second
+
+// checklist is the setup checklist: `aja doctor`'s checks, each with what
+// fixes it. It opens by itself when something a run needs is missing, and
+// with s from the Dashboard.
+type checklist struct {
+	loaded       bool
+	report       doctor.Report
+	noConfig     bool // no config file: only the checklist and the Config tab make sense
+	dotenvBroken bool // aja's .env cannot be read
+	cursor       int
+	importing    *textinput.Model // the Python checkout's path being typed
+	notice       notice
 }
 
 // fix is what resolves a check.
@@ -36,9 +42,15 @@ const (
 )
 
 type doctorMsg struct {
-	report   doctor.Report
-	noConfig bool
+	report       doctor.Report
+	noConfig     bool
+	dotenvBroken bool
 }
+
+// checkAgainMsg asks for the checks to run again.
+type checkAgainMsg struct{}
+
+func checkAgain() tea.Msg { return checkAgainMsg{} }
 
 // subcommandDoneMsg: an aja subcommand run in the terminal has ended.
 type subcommandDoneMsg struct {
@@ -46,56 +58,77 @@ type subcommandDoneMsg struct {
 	err  error
 }
 
-// openTabMsg asks for a tab to be shown.
-type openTabMsg struct{ tab tab }
+// openConfigMsg asks for the Config tab.
+type openConfigMsg struct{}
 
 // runDoctor runs `aja doctor`'s checks, which take a moment (Chrome's version,
-// the profile's cookies), away from the screen.
+// the profile's cookies), away from the screen. Model.checkAgain keeps them
+// from overlapping.
 func runDoctor(d Deps) tea.Cmd {
 	return func() tea.Msg {
+		env := d.Env
+		msg := doctorMsg{dotenvBroken: env.LoadDotenv(d.Paths.EnvFile) != nil}
 		l, err := config.Load(d.Paths, d.Env, nil)
-		_, statErr := os.Stat(d.Paths.ConfigFile)
-		return doctorMsg{report: doctor.Run(l, err, d.Paths, d.Probe), noConfig: os.IsNotExist(statErr)}
+		msg.report = doctor.Run(l, err, d.Paths, d.Probe)
+		if l != nil {
+			msg.noConfig = !l.FileExisted
+		} else { // the config or .env could not be read: is there a config at all?
+			_, statErr := os.Stat(d.Paths.ConfigFile)
+			msg.noConfig = os.IsNotExist(statErr)
+		}
+		return msg
 	}
 }
 
-// runInTerminal runs the aja subcommand args in the terminal; the doctor runs
-// again when it ends.
+// runInTerminal runs the aja subcommand args in the terminal.
 func runInTerminal(d Deps, args ...string) tea.Cmd {
 	return d.Launcher.InTerminal(args, func(err error) tea.Msg { return subcommandDoneMsg{args: args, err: err} })
 }
 
+// blocking reports whether the report says a run cannot work: a check failed,
+// or LinkedIn is not signed in.
+func blocking(r doctor.Report) bool {
+	for _, c := range r.Checks {
+		if c.Status == doctor.Fail || (c.Name == doctor.CheckChromeProfile && c.Status != doctor.OK) {
+			return true
+		}
+	}
+	return false
+}
+
 // fixFor is what resolves c, and how the checklist says so.
-func fixFor(c doctor.Check, noConfig bool) (fix, string) {
+func (v checklist) fixFor(c doctor.Check, d Deps) (fix, string) {
 	if c.Status == doctor.OK {
 		return noFix, ""
 	}
 	switch {
-	case c.Name == "config" && noConfig:
+	case c.Name == doctor.CheckConfig && v.dotenvBroken:
+		return noFix, "fix " + d.tilde(d.Paths.EnvFile) + " in an editor (aja never shows its content)"
+	case c.Name == doctor.CheckConfig && v.noConfig:
 		return fixInit, "create the config with the init wizard (`aja init`)"
-	case c.Name == "config":
+	case c.Name == doctor.CheckConfig:
 		return fixConfigTab, "fix it in the Config tab"
-	case c.Name == "chrome profile":
+	case c.Name == doctor.CheckChromeProfile:
 		return fixLogin, "sign in to LinkedIn once (`aja login` opens Chrome)"
-	case c.Name == "ai" || c.Name == "telegram":
+	case c.Name == doctor.CheckAI || c.Name == doctor.CheckTelegram:
 		return fixConfigTab, "set the secrets (or the AI settings) in the Config tab"
-	case strings.HasPrefix(c.Name, "resume"):
+	case doctor.IsResume(c.Name):
 		return fixConfigTab, "set the resume in the Config tab"
 	}
 	return noFix, ""
 }
 
-func (v setupView) update(msg tea.Msg, d Deps) (setupView, tea.Cmd) {
+func (v checklist) update(msg tea.Msg, d Deps) (checklist, tea.Cmd) {
 	switch msg := msg.(type) {
 	case doctorMsg:
-		v.loaded, v.report, v.noConfig = true, msg.report, msg.noConfig
-		v.cursor = min(v.cursor, max(0, len(v.report.Checks)-1))
+		v.loaded, v.report, v.noConfig, v.dotenvBroken = true, msg.report, msg.noConfig, msg.dotenvBroken
+		v.cursor = max(0, min(v.cursor, len(v.report.Checks)-1))
 	case subcommandDoneMsg:
 		v.notice = notice{text: "`aja " + msg.args[0] + "` ended; checked again."}
 		if msg.err != nil {
 			v.notice = notice{text: fmt.Sprintf("`aja %s` ended with an error (%v); checked again.", msg.args[0], msg.err), level: levelWarn}
 		}
-		return v, runDoctor(d)
+		return v, checkAgain
 	case tea.KeyMsg:
 		if v.importing != nil {
 			return v.importKey(msg, d)
@@ -105,19 +138,20 @@ func (v setupView) update(msg tea.Msg, d Deps) (setupView, tea.Cmd) {
 	return v, nil
 }
 
-func (v setupView) key(msg tea.KeyMsg, d Deps) (setupView, tea.Cmd) {
+func (v checklist) key(msg tea.KeyMsg, d Deps) (checklist, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		v.cursor = max(0, v.cursor-1)
 	case "down", "j":
-		v.cursor = min(len(v.report.Checks)-1, v.cursor+1)
+		v.cursor = max(0, min(len(v.report.Checks)-1, v.cursor+1))
 	case "r":
 		v.notice = notice{text: "Checked again."}
-		return v, runDoctor(d)
+		return v, checkAgain
 	case "i":
 		in := textinput.New()
 		in.Prompt = "> "
 		in.Placeholder = "the Python bot's folder, e.g. ~/Projects/Auto_job_applier_linkedIn"
+		in.Width = inputWidth(80)
 		in.Cursor.SetMode(cursor.CursorStatic)
 		in.Focus()
 		v.importing = &in
@@ -125,30 +159,30 @@ func (v setupView) key(msg tea.KeyMsg, d Deps) (setupView, tea.Cmd) {
 		if v.cursor >= len(v.report.Checks) {
 			return v, nil
 		}
-		switch f, _ := fixFor(v.report.Checks[v.cursor], v.noConfig); f {
+		switch f, _ := v.fixFor(v.report.Checks[v.cursor], d); f {
 		case fixInit:
 			return v, runInTerminal(d, "init")
 		case fixLogin:
 			return v, runInTerminal(d, "login")
 		case fixConfigTab:
-			return v, func() tea.Msg { return openTabMsg{tabConfig} }
+			return v, func() tea.Msg { return openConfigMsg{} }
 		}
 	}
 	return v, nil
 }
 
-func (v setupView) importKey(msg tea.KeyMsg, d Deps) (setupView, tea.Cmd) {
+func (v checklist) importKey(msg tea.KeyMsg, d Deps) (checklist, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		v.importing = nil
 		return v, nil
 	case "enter":
-		path := expandHome(strings.TrimSpace(v.importing.Value()))
+		path := d.expandHome(strings.TrimSpace(v.importing.Value()))
 		if path == "" {
 			return v, nil
 		}
 		v.importing = nil
-		return v, runInTerminal(d, "import", path)
+		return v, runInTerminal(d, "import", "--", path) // a folder named -x is not a flag
 	}
 	in, cmd := v.importing.Update(msg)
 	v.importing = &in
@@ -156,22 +190,20 @@ func (v setupView) importKey(msg tea.KeyMsg, d Deps) (setupView, tea.Cmd) {
 }
 
 // expandHome turns a leading ~/ into the home directory, as a shell would.
-func expandHome(path string) string {
-	if rest, ok := strings.CutPrefix(path, "~/"); ok {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, rest)
-		}
+func (d Deps) expandHome(path string) string {
+	if rest, ok := strings.CutPrefix(path, "~/"); ok && d.Home != "" {
+		return filepath.Join(d.Home, rest)
 	}
 	return path
 }
 
 // editing reports whether keys go to the import prompt.
-func (v setupView) editing() bool { return v.importing != nil }
+func (v checklist) editing() bool { return v.importing != nil }
 
-// summary is the Dashboard's line about the checks: "" until they ran.
-func (v setupView) summary() (string, level) {
+// summary is the Dashboard's line about the checks; empty until they ran.
+func (v checklist) summary() notice {
 	if !v.loaded {
-		return "", levelOK
+		return notice{}
 	}
 	var warn, fail int
 	for _, c := range v.report.Checks {
@@ -184,14 +216,14 @@ func (v setupView) summary() (string, level) {
 	}
 	switch {
 	case fail > 0:
-		return fmt.Sprintf("%d problem(s), %d warning(s): press s for the setup checklist", fail, warn), levelFail
+		return notice{fmt.Sprintf("%d problem(s), %d warning(s): press s for the setup checklist", fail, warn), levelFail}
 	case warn > 0:
-		return fmt.Sprintf("%d warning(s): press s for the setup checklist", warn), levelWarn
+		return notice{fmt.Sprintf("%d warning(s): press s for the setup checklist", warn), levelWarn}
 	}
-	return "every check passes", levelOK
+	return notice{"every check passes", levelOK}
 }
 
-func (v setupView) view(s styles, d Deps, width int) string {
+func (v checklist) view(s styles, d Deps, width int) string {
 	lines := []string{s.section.Render("Setup checklist") + "  " + s.dim.Render("what a run needs, as `aja doctor` checks it")}
 	if v.notice.text != "" {
 		lines = append(lines, s.byLevel(v.notice.level).Render(v.notice.text))
@@ -212,14 +244,14 @@ func (v setupView) view(s styles, d Deps, width int) string {
 		case doctor.Fail:
 			status = s.fail.Render("✗")
 		}
-		detail, _, _ := strings.Cut(d.short(c.Detail), "\n")
+		detail, _, _ := strings.Cut(d.tilde(c.Detail), "\n")
 		lines = append(lines, mark+status+" "+fmt.Sprintf("%-15s", c.Name)+" "+detail)
 	}
 	lines = append(lines, "")
 	if v.cursor < len(v.report.Checks) {
 		c := v.report.Checks[v.cursor]
-		lines = append(lines, wrap(c.Name+": "+d.short(c.Detail), width)...)
-		if _, how := fixFor(c, v.noConfig); how != "" {
+		lines = append(lines, wrap(c.Name+": "+d.tilde(c.Detail), width)...)
+		if _, how := v.fixFor(c, d); how != "" {
 			lines = append(lines, s.key.Render("Enter")+": "+how)
 		}
 	}

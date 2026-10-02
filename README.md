@@ -141,15 +141,18 @@ the daemon runs, the TUI tells you when it needs a restart: it reads the Telegra
 when it starts, while settings take effect on its next run.
 
 The **setup checklist** lists every check `aja doctor` makes, with what fixes it. The TUI
-opens on it when a run could not start (no config file, for one); `s` on the Dashboard
-opens it at any time. Enter fixes the selected check:
+opens on it when something a run needs is missing (a check failed, or LinkedIn is not
+signed in in the aja profile); `s` on the Dashboard opens it at any time, and the Dashboard
+says whether every check passes (they run again every half minute and after every
+change). Enter fixes the selected check:
 - no config file: the init wizard (`aja init`);
 - no LinkedIn session in the aja profile: `aja login`, which opens Chrome to sign in;
 - the AI key, Telegram or the resume: the Config tab.
 
 `i` imports from the Python bot after asking for its folder (`aja import`), and `r` checks
 again. The wizard, the sign-in and the import run in the same terminal while the TUI steps
-aside; press Enter at the end to come back, and the checks run again. Without a config file
+aside (with the same `--config` and `--no-color`); press Enter at the end to come back,
+and the checks run again. Without a config file
 only the checklist and the Config tab (for the secrets) open.
 
 Keys: the number keys switch tabs, `?` lists every key, and `q` or Ctrl-C quits. Quitting

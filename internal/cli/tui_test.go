@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/luizfreitas27/aja/internal/tui"
@@ -78,6 +79,7 @@ func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.
 	run := func(self string, args ...string) (string, int) {
 		t.Helper()
 		cmd := exec.Command("/bin/sh", append([]string{"-c", afterwards, self}, args...)...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // its own group, as a terminal's job: Ctrl-C reaches only it
 		cmd.Stdin = strings.NewReader("\n")
 		out, err := cmd.Output()
 		var exit *exec.ExitError
@@ -95,5 +97,10 @@ func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.
 	}
 	if _, code := run("/bin/false"); code != 1 {
 		t.Errorf("aja's exit status is kept: %d", code)
+	}
+	// Ctrl-C ends aja (SIGINT to the whole group); the shell still waits for Enter.
+	out, code = run("/bin/sh", "-c", `kill -INT 0; echo never`)
+	if !strings.Contains(out, "[aja] Press Enter") || strings.Contains(out, "never") || code == 0 {
+		t.Errorf("after Ctrl-C: %d %q", code, out)
 	}
 }
