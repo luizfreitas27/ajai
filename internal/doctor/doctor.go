@@ -8,8 +8,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/luizfreitas27/aja/internal/ai"
 	"github.com/luizfreitas27/aja/internal/chrome"
 	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/aja/internal/markets"
 	"github.com/luizfreitas27/aja/internal/paths"
 )
 
@@ -109,13 +111,13 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	if loaded != nil && loaded.FileExisted {
 		// Secrets the config relies on
 		sec := loaded.Secrets
-		switch {
+		switch _, err := ai.FromConfig(cfg, sec, markets.Resolve(cfg), nil); {
 		case !cfg.AI.Enabled:
 			add("ai", OK, "off (ai.enabled: false)")
-		case config.ProvidersWithoutKey[cfg.AI.Provider]:
-			add("ai", OK, fmt.Sprintf("%s %s at %s, no key needed", cfg.AI.Provider, cfg.AI.Model, cfg.AIBaseURL()))
+		case err != nil:
+			add("ai", Fail, err.Error())
 		case sec.AIAPIKey == "":
-			add("ai", Fail, "ai.enabled is true but "+config.EnvAIAPIKey+" is not set in the environment or "+p.EnvFile)
+			add("ai", OK, fmt.Sprintf("%s %s at %s, no key sent", cfg.AI.Provider, cfg.AI.Model, cfg.AIBaseURL()))
 		default:
 			add("ai", OK, fmt.Sprintf("%s %s, key present", cfg.AI.Provider, cfg.AI.Model))
 		}

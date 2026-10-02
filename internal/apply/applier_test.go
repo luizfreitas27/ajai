@@ -261,7 +261,7 @@ func TestAMissingModalAndAFailureAreReportedWithAScreenshot(t *testing.T) {
 	pg, button := pageWith(modal)
 	a.Page = pg
 	out, err = a.Apply(context.Background(), job, button, Options{})
-	if err == nil || !strings.Contains(err.Error(), "Next, Review or Submit") || out.Kind != Failed || out.Stage != "finding Next, Review or Submit" || len(pg.shots) != 1 || !strings.HasPrefix(out.Screenshot, "1-") {
+	if err == nil || !strings.Contains(err.Error(), "Next, Review or Submit") || out.Kind != Failed || out.Stage != "finding Next, Review or Submit" || len(pg.shots) != 1 || !strings.HasPrefix(out.Screenshot, "1-failed-") {
 		t.Errorf("%+v %v shots=%v", out, err, pg.shots)
 	}
 }
@@ -276,5 +276,99 @@ func TestACancelledContextDiscardsAndReturns(t *testing.T) {
 	out, err := a.Apply(ctx, job, button, Options{})
 	if err == nil || out.Kind != Stopped {
 		t.Errorf("%+v %v", out, err)
+	}
+}
+
+// fakeHelper plays the person at the keyboard: it runs fill, then returns err.
+type fakeHelper struct {
+	calls []HelpRequest
+	fill  func()
+	err   error
+}
+
+func (h *fakeHelper) Help(_ context.Context, req HelpRequest) error {
+	h.calls = append(h.calls, req)
+	if h.fill != nil {
+		h.fill()
+	}
+	return h.err
+}
+
+func TestTheHelpPauseCapturesWhatTheUserFilledAndTheFormGoesThrough(t *testing.T) {
+	quiz, inputs := radioBlock("Favourite colour?", "Red", "Blue")
+	lang, langInput := textBlock("Favourite language", "")
+	modal := modalWith(quiz, lang)
+	next := el("Next")
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	helper := &fakeHelper{fill: func() {
+		inputs[1].prop("checked", "true") // the user picks Blue...
+		langInput.prop("value", "Go")     // ...types Go...
+		// ...and once both are filled LinkedIn's Next leads to the Review page.
+		next.onClick = func() {
+			delete(modal.children, linkedin.NextButtonXPath)
+			modal.with(linkedin.SubmitButtonXPath, el("Submit application"))
+		}
+	}}
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), Helper: helper, ScreenshotDir: t.TempDir()}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != DryRun || out.Captured != 2 || len(helper.calls) != 1 {
+		t.Fatalf("%+v %v calls=%d", out, err, len(helper.calls))
+	}
+	req := helper.calls[0]
+	if req.Job.ID != "1" || len(req.Questions) != 2 || !strings.Contains(req.Questions[0], "Favourite") || !strings.Contains(req.Screenshot, "1-help-") {
+		t.Errorf("%+v", req)
+	}
+	mem := a.Answerer.Memory
+	for label, kind := range map[string]string{"Favourite colour?": "radio", "Favourite language": "text"} {
+		found, _, _ := mem.Lookup(label, kind, false)
+		if found == nil || found.State != "approved" || found.Source != "user" {
+			t.Errorf("%s: %+v", label, found)
+		}
+	}
+}
+
+func TestNoHelpMeansTheJobIsSkippedAndTheQuestionsQueuedForReview(t *testing.T) {
+	quiz, _ := radioBlock("Favourite colour?", "Red", "Blue")
+	modal := modalWith(quiz).with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	helper := &fakeHelper{err: errors.New("nobody answered in time")}
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), Helper: helper}
+	out, err := a.Apply(context.Background(), job, button, Options{})
+	if err != nil || out.Kind != Unanswered || out.Queued != 1 || len(helper.calls) != 1 {
+		t.Fatalf("%+v %v", out, err)
+	}
+	pending, _ := a.Answerer.Memory.(*memory.Memory).List("pending")
+	if len(pending) != 1 || pending[0].Label != "Favourite colour?" || pending[0].Answer != "" || pending[0].Source != "form" {
+		t.Errorf("%+v", pending)
+	}
+	// Unattended (no helper): skipped at once, queued just the same, never twice.
+	a.Helper = nil
+	modal2 := modalWith(func() *node { n, _ := radioBlock("Favourite colour?", "Red", "Blue"); return n }()).with(linkedin.NextButtonXPath, el("Next"))
+	pg2, button2 := pageWith(modal2)
+	a.Page = pg2
+	out, _ = a.Apply(context.Background(), job, button2, Options{})
+	if out.Kind != Unanswered || out.Queued != 0 {
+		t.Errorf("already queued: %+v", out)
+	}
+}
+
+func TestAFieldTheBotFilledOrThatAppearedAfterThePauseIsNotCaptured(t *testing.T) {
+	quiz, _ := radioBlock("Favourite colour?", "Red", "Blue")
+	first, _ := textBlock("First name", "") // the bot fills this one itself
+	modal := modalWith(quiz, first).with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	helper := &fakeHelper{fill: func() {
+		// The user clicked Next anyway: a new page with LinkedIn's prefill replaces the form.
+		prefilled, _ := textBlock("Mobile phone number", "5550001234")
+		modal.children[linkedin.FormQuestionXPath] = []*node{prefilled}
+	}}
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), Helper: helper}
+	out, _ := a.Apply(context.Background(), job, button, Options{})
+	if out.Captured != 0 {
+		t.Errorf("%+v", out)
+	}
+	if all, _ := a.Answerer.Memory.(*memory.Memory).List("approved"); len(all) != 0 {
+		t.Errorf("%+v", all)
 	}
 }

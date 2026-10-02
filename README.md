@@ -45,6 +45,19 @@ go build ./cmd/aja && ./aja version
 ./aja status && ./aja logs -f   # the run in progress and the live log
 ```
 
+When no configured or remembered answer fits a question, `aja` can ask a language model
+(`ai.enabled: true`; OpenAI, DeepSeek, Gemini, or a local Ollama / LM Studio / vLLM). The
+model sees a short candidate profile built from your config, never your phone, email,
+address, citizenship status or current salary, and it is never asked about visas, work
+authorization, salary, disability, veteran status or clearances. A hosted provider needs
+`AJA_AI_API_KEY` in `.env`; a key is only ever sent over HTTPS or to localhost.
+
+In a run with you at the terminal, a question nothing can answer pauses the job: aja
+shows it (and sends a Telegram message if `AJA_TELEGRAM_BOT_TOKEN` and
+`AJA_TELEGRAM_CHAT_ID` are set), you fill it in Chrome and press Enter, and what you
+typed is remembered as approved. With `--unattended`, or when the output is piped, the
+job is skipped instead and the question waits for you in `aja answers review`.
+
 `aja run` needs your Chrome closed (it attaches to your profile), or
 `settings.chrome_profile_dir` pointing at a profile aja can own; you sign in to
 LinkedIn once in that window and the session persists.

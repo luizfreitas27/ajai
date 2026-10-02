@@ -47,6 +47,22 @@ type Outcome struct {
 	Blocked    []string // Unanswered: the questions left empty
 	Answered   []string // "label: value" for every control the applier set, each once
 	Resume     string   // the uploaded file's name, or "Previous resume"
+	Captured   int      // answers the user typed during a help pause and aja remembered
+	Queued     int      // unanswered questions put in the review queue for the user
+}
+
+// HelpRequest is what the person at the keyboard is asked to fill in.
+type HelpRequest struct {
+	Job        linkedin.Card
+	Questions  []string // the stuck questions, with their options
+	Screenshot string   // full path, "" when none was taken
+}
+
+// Helper is the person at the keyboard during an attended run (the help pause).
+// Help returns nil when the user says the form is filled in; an error (the run
+// was cancelled, nobody answered in time) means no help came.
+type Helper interface {
+	Help(ctx context.Context, req HelpRequest) error
 }
 
 // PreviousResume is Outcome.Resume when nothing was uploaded.
@@ -60,6 +76,9 @@ type Applier struct {
 	Logger        *slog.Logger
 	ScreenshotDir string // "" disables screenshots
 	Now           func() time.Time
+	// Helper, when set (an attended run), is asked to fill in what stays unanswered
+	// before the job is given up. nil (unattended) skips the job at once.
+	Helper Helper
 }
 
 // ErrModalMissing: the apply button was clicked but no Easy Apply modal appeared.
@@ -86,7 +105,9 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 	}
 	qjob := questions.Job{Link: job.Link, WorkLocation: job.Location, Description: opts.Description}
 	answered := map[string]bool{}
+	helped := map[string]bool{} // one help pause per distinct set of stuck questions
 	var previousBlocked []string
+	var stuck []stuckControl
 	for page := 1; page <= MaxPages; page++ {
 		if ctx.Err() != nil {
 			return a.stopped(&out), ctx.Err()
@@ -96,13 +117,15 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 			return a.fail(job, &out, "reading the form", err)
 		}
 		var blocked []string
+		stuck = stuck[:0]
 		for _, c := range controls {
 			if c.FollowCompany {
 				continue
 			}
-			d := a.Answerer.Answer(c.Question, qjob)
+			d := a.Answerer.AnswerContext(ctx, c.Question, qjob)
 			if d.Action == questions.Blocked {
 				blocked = append(blocked, describe(c.Question))
+				stuck = append(stuck, stuckControl{c.Question, d})
 			}
 			if err := a.applyDecision(ctx, c, d); err != nil {
 				if ctx.Err() != nil {
@@ -124,7 +147,28 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		sort.Strings(blocked)
 		if len(blocked) > 0 && equal(blocked, previousBlocked) {
 			// Nothing new was answered and required questions are still empty: LinkedIn will
-			// never enable Next. Not guessing is right, but it needs an exit.
+			// never enable Next. In an attended run, ask the person at the keyboard once.
+			signature := strings.Join(blocked, "\n")
+			if a.Helper != nil && !helped[signature] {
+				helped[signature] = true
+				captured, err := a.askForHelp(ctx, job, modal, blocked)
+				out.Captured += captured
+				if ctx.Err() != nil {
+					return a.stopped(&out), ctx.Err()
+				}
+				if err == nil {
+					previousBlocked = nil
+					continue // a fresh pass over what the user filled in
+				}
+				a.Logger.Info("no help came; giving the job up", "job", job.ID, "why", err)
+			}
+			// Not guessing is right, but it needs an exit. What nothing could answer goes to the
+			// review queue, so the user answers it once and the next form like it goes through.
+			for _, sc := range stuck {
+				if a.Answerer.RememberUnanswered(sc.question, sc.decision, job.Link) {
+					out.Queued++
+				}
+			}
 			out.Blocked, out.Kind = blocked, Unanswered
 			a.discard()
 			return out, nil
@@ -302,16 +346,80 @@ func (a *Applier) modalOpen() bool {
 	return false
 }
 
+// stuckControl is a question the last pass could not answer, with the decision that said so.
+type stuckControl struct {
+	question questions.Question
+	decision questions.Decision
+}
+
+// askForHelp is the help pause: snapshot the form, show the user what is stuck,
+// wait for them, snapshot again, and remember as approved answers what they
+// filled into controls that were empty. Only controls present and empty before
+// the pause count: a control that appeared afterwards belongs to another page
+// (the user clicked Next anyway) and carries LinkedIn's prefills, not answers.
+func (a *Applier) askForHelp(ctx context.Context, job linkedin.Card, modal browser.Element, blocked []string) (int, error) {
+	before, err := ReadForm(modal)
+	if err != nil {
+		return 0, err
+	}
+	shot := a.screenshot(job, "help")
+	if err := a.Helper.Help(ctx, HelpRequest{Job: job, Questions: blocked, Screenshot: shot}); err != nil {
+		return 0, err
+	}
+	after, err := ReadForm(modal)
+	if err != nil {
+		a.Logger.Warn("could not re-read the form after the help pause; nothing captured", "error", err)
+		return 0, nil
+	}
+	empty := map[string]bool{}
+	for _, c := range before {
+		if !c.FollowCompany && filled(c.Question) == "" {
+			empty[snapshotKey(c.Question)] = true
+		}
+	}
+	captured := 0
+	for _, c := range after {
+		if c.FollowCompany || !empty[snapshotKey(c.Question)] {
+			continue
+		}
+		if value := filled(c.Question); value != "" && a.Answerer.Capture(c.Question, value, job.Link) {
+			captured++
+		}
+	}
+	return captured, nil
+}
+
+// snapshotKey identifies a control across two reads of the same page.
+func snapshotKey(q questions.Question) string {
+	return string(q.Kind) + "\x00" + q.GroupTitle + "\x00" + q.Label
+}
+
+// filled is a control's current answer, "" when it is empty or on a placeholder.
+func filled(q questions.Question) string {
+	if q.Kind == questions.Select && questions.IsPlaceholder(q.Current) {
+		return ""
+	}
+	return strings.TrimSpace(q.Current)
+}
+
+// screenshot saves the page as <job>-<tag>-<time>.png and returns the full path, "" on failure.
+func (a *Applier) screenshot(job linkedin.Card, tag string) string {
+	if a.ScreenshotDir == "" {
+		return ""
+	}
+	path := filepath.Join(a.ScreenshotDir, fmt.Sprintf("%s-%s-%s.png", job.ID, tag, a.Now().Format("20060102-150405")))
+	if err := a.Page.Screenshot(path); err != nil {
+		a.Logger.Warn("screenshot failed", "error", err)
+		return ""
+	}
+	return path
+}
+
 // fail screenshots, discards and returns the error with the stage named.
 func (a *Applier) fail(job linkedin.Card, out *Outcome, stage string, err error) (Outcome, error) {
 	out.Kind, out.Stage = Failed, stage
-	if a.ScreenshotDir != "" {
-		path := filepath.Join(a.ScreenshotDir, fmt.Sprintf("%s-%s.png", job.ID, a.Now().Format("20060102-150405")))
-		if serr := a.Page.Screenshot(path); serr == nil {
-			out.Screenshot = filepath.Base(path)
-		} else {
-			a.Logger.Warn("screenshot failed", "error", serr)
-		}
+	if shot := a.screenshot(job, "failed"); shot != "" {
+		out.Screenshot = filepath.Base(shot)
 	}
 	a.discard()
 	return *out, fmt.Errorf("%s: %w", stage, err)

@@ -59,6 +59,13 @@ type Options struct {
 	Location   string   // override the market's search location
 }
 
+// ResolveUnattended decides whether a run may pause for help: only with a person
+// at a terminal on both ends. --unattended, a piped stdout or a non-terminal
+// stdin (the scheduler, the panel, a script) all mean nobody can answer.
+func ResolveUnattended(flag, stdinIsTerminal, stdoutIsTerminal bool) bool {
+	return flag || !stdinIsTerminal || !stdoutIsTerminal
+}
+
 // Validate rejects option combinations that make no sense.
 func (o Options) Validate() error {
 	if o.Fast && !o.DryRun {
@@ -100,7 +107,11 @@ type Summary struct {
 	Failed     int
 	Skipped    int
 	WouldApply int
-	Reason     string
+	// Captured counts answers the user typed during help pauses and aja remembered.
+	Captured int
+	// PendingAnswers is the review queue's size when the run ended.
+	PendingAnswers int
+	Reason         string
 }
 
 // Runner holds the wiring for one run.
@@ -149,8 +160,25 @@ func (r *Runner) saveState(sum *Summary, term string) {
 }
 
 // Run executes one run and returns its summary. A cancelled context ends the
-// run cleanly with reason "stopped by user".
+// run cleanly with reason "stopped by user". The run is recorded in the store,
+// with the review queue's size, however it ends.
 func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
+	sum, err := r.run(ctx, opts)
+	if sum.RunID == 0 {
+		return sum, err
+	}
+	if n, cerr := r.Store.CountAnswers("pending"); cerr == nil {
+		sum.PendingAnswers = n
+	}
+	_ = r.Store.FinishRun(context.Background(), store.Run{ID: sum.RunID, Applied: sum.Applied, External: sum.External,
+		Failed: sum.Failed, Skipped: sum.Skipped, PendingAnswers: sum.PendingAnswers, Reason: sum.Reason})
+	if r.StatePath != "" {
+		RemoveState(r.StatePath)
+	}
+	return sum, err
+}
+
+func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	if r.Logger == nil {
 		r.Logger = slog.New(slog.DiscardHandler)
 	}
@@ -171,13 +199,6 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	}
 	sum.RunID = id
 	r.saveState(&sum, "")
-	defer func() {
-		_ = r.Store.FinishRun(context.Background(), store.Run{ID: id, Applied: sum.Applied, External: sum.External,
-			Failed: sum.Failed, Skipped: sum.Skipped, Reason: sum.Reason})
-		if r.StatePath != "" {
-			RemoveState(r.StatePath)
-		}
-	}()
 
 	err = r.Site.EnsureLoggedIn(ctx, r.LoginTimeout, func() {
 		r.emit(EventLogin, "Sign in to LinkedIn in the Chrome window; aja continues when the feed appears.", nil)
@@ -374,6 +395,10 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	outcome, err := r.Applier.Apply(ctx, c, button, apply.Options{DryRun: opts.DryRun, ResumePath: r.ResumePath,
 		FollowCompanies: r.Cfg.Settings.FollowCompanies, Description: job.Description})
 	row.Resume, row.Screenshot = outcome.Resume, outcome.Screenshot
+	sum.Captured += outcome.Captured
+	if outcome.Captured > 0 || outcome.Queued > 0 {
+		r.Logger.Info("answer memory grew", "job", c.ID, "captured", outcome.Captured, "queued_for_review", outcome.Queued)
+	}
 	counted := false
 	switch outcome.Kind {
 	case apply.Applied:
@@ -394,7 +419,11 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		sum.Skipped++
 		st.rejected[c.ID] = true
 		row.Outcome, row.Reason = store.Skipped, "unanswered questions: "+strings.Join(outcome.Blocked, " | ")
-		r.emit(EventSkip, row.Reason, &c)
+		text := row.Reason
+		if outcome.Queued > 0 {
+			text += fmt.Sprintf(" (%d added to the review queue: aja answers review)", outcome.Queued)
+		}
+		r.emit(EventSkip, text, &c)
 	case apply.Stopped:
 		return cardPassed, ctx.Err()
 	default: // Failed

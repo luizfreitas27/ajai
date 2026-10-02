@@ -13,9 +13,10 @@ import (
 
 // harness runs aja with AJA_HOME pointing at a temp dir and a fake environment.
 type harness struct {
-	home string
-	env  map[string]string
-	t    *testing.T
+	home  string
+	env   map[string]string
+	stdin string // typed into the next command
+	t     *testing.T
 }
 
 func newHarness(t *testing.T) *harness {
@@ -31,7 +32,8 @@ func (h *harness) run(args ...string) (int, string, string) {
 		env[k] = v
 	}
 	var out, errb bytes.Buffer
-	app := &App{Version: "test", Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(""), Env: config.MapEnv(env)}
+	app := &App{Version: "test", Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(h.stdin), Env: config.MapEnv(env)}
+	h.stdin = ""
 	code := app.Execute(context.Background(), args)
 	return code, out.String(), errb.String()
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -29,7 +30,7 @@ with a review state. Pending answers (from the AI, or a checkbox the bot saw and
 alone) are still used; approving confirms them, editing corrects them, deleting forgets
 them. Only an approved answer may tick a checkbox.`,
 	}
-	cmd.AddCommand(a.answersListCmd(), a.answersApproveCmd(), a.answersEditCmd(), a.answersDeleteCmd(), a.answersClearCmd())
+	cmd.AddCommand(a.answersListCmd(), a.answersReviewCmd(), a.answersApproveCmd(), a.answersEditCmd(), a.answersDeleteCmd(), a.answersClearCmd())
 	return cmd
 }
 
@@ -179,4 +180,108 @@ func (a *App) answersClearCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&state, "state", "", "which review state to clear")
 	return cmd
+}
+
+func (a *App) answersReviewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "review",
+		Short: "Walk through the pending answers one by one: approve, edit, delete or skip",
+		Long: `Shows each pending answer with where it came from, and asks what to do:
+  a  approve it as it is
+  e  type a corrected answer (it becomes yours, approved)
+  d  delete it
+  s  skip it for now (also Enter)
+  q  stop reviewing
+Questions aja could not answer at all are here too, with no answer yet: type one with e.
+For a checkbox, the answer "checked" lets aja tick that box from now on.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mem, err := a.openMemory()
+			if err != nil {
+				return err
+			}
+			pending, err := mem.List("pending")
+			if err != nil {
+				return err
+			}
+			if len(pending) == 0 {
+				a.ui.Println("Nothing to review.")
+				return nil
+			}
+			ctx := cmd.Context()
+			a.ui.Title(fmt.Sprintf("%d pending answer(s)", len(pending)))
+			var approved, edited, deleted, skipped int
+		entries:
+			for i, e := range pending {
+				a.ui.Println()
+				a.ui.Printf("[%d/%d] %s\n", i+1, len(pending), e.Label)
+				where := fmt.Sprintf("%s, from %s, used %d time(s)", e.Kind, e.Source, e.Uses)
+				if e.LastJobLink != "" {
+					where += ", last on " + e.LastJobLink
+				}
+				a.ui.Hint(where)
+				if e.Answer == "" {
+					a.ui.Hint("answer: (none yet)")
+				} else {
+					a.ui.Hint(fmt.Sprintf("answer: %q", e.Answer))
+				}
+				for {
+					a.ui.Printf("  [a]pprove [e]dit [d]elete [s]kip [q]uit > ")
+					choice, err := a.readLine(ctx, 0)
+					if errors.Is(err, io.EOF) {
+						break entries
+					}
+					if err != nil {
+						return err
+					}
+					switch strings.ToLower(strings.TrimSpace(choice)) {
+					case "a", "approve":
+						if e.Answer == "" {
+							a.ui.Warn("approve", "there is no answer to approve yet; use e to write one")
+							continue
+						}
+						if _, err := mem.Approve(e.ID, ""); err != nil {
+							return err
+						}
+						approved++
+					case "e", "edit":
+						a.ui.Printf("  new answer > ")
+						text, err := a.readLine(ctx, 0)
+						if err != nil && !errors.Is(err, io.EOF) {
+							return err
+						}
+						if strings.TrimSpace(text) == "" {
+							a.ui.Hint("nothing typed; unchanged")
+							continue
+						}
+						if _, err := mem.Approve(e.ID, strings.TrimSpace(text)); err != nil {
+							return err
+						}
+						edited++
+					case "d", "delete":
+						if err := mem.Delete(e.ID); err != nil {
+							return err
+						}
+						deleted++
+					case "", "s", "skip":
+						skipped++
+					case "q", "quit":
+						break entries
+					default:
+						a.ui.Hint("type a, e, d, s or q")
+						continue
+					}
+					break
+				}
+			}
+			left, err := mem.PendingCount()
+			if err != nil {
+				return err
+			}
+			a.logger.Info("answers reviewed", "approved", approved, "edited", edited, "deleted", deleted, "skipped", skipped)
+			a.ui.Println()
+			a.ui.OK("reviewed", fmt.Sprintf("%d approved, %d edited, %d deleted, %d skipped; %d still pending", approved, edited, deleted, skipped, left))
+			return nil
+		},
+	}
 }

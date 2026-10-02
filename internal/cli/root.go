@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -34,6 +35,9 @@ type App struct {
 	paths    paths.Paths
 	logger   *slog.Logger
 	cleanups []func() error // closed in reverse order when the command ends
+
+	linesOnce sync.Once       // starts the stdin reader (readLine)
+	lines     chan lineResult // lines typed on stdin
 }
 
 // NewApp wires the process environment.
