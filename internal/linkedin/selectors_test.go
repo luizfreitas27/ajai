@@ -132,6 +132,25 @@ func TestApplyButtonStillSaysEasyApply(t *testing.T) {
 	}
 }
 
+func TestEverySelectorIsValidXPath(t *testing.T) {
+	all := []string{SignInButtonXPath, JobCardsXPath, JobCardTitleLinkXPath, JobCardCompanyXPath, JobCardLocationXPath,
+		JobCardEasyApplyXPath, ApplyButtonXPath, ModalXPath, ModalCloseXPath, FormQuestionXPath, SelectXPath, SelectTitleXPath,
+		RadioFieldsetXPath, RadioTitleXPath, RadioInputsXPath, TextInputXPath, TextareaXPath, CheckboxXPath, LabelForXPath,
+		HiddenTitleXPath, ResumeUploadInputXPath, TodayButtonXPath, NextButtonXPath, ReviewButtonXPath, SubmitButtonXPath,
+		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
+		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, AppliedOnPageXPath, PaginationActiveXPath,
+		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a")}
+	for _, loc := range EasyApplyLocators {
+		all = append(all, loc.XPath)
+	}
+	doc := fixture(t, "04_apply_button.html")
+	for _, xp := range all {
+		if _, err := htmlquery.QueryAll(doc, strings.TrimPrefix(xp, ".")); err != nil {
+			t.Errorf("%s: %v", xp, err)
+		}
+	}
+}
+
 func TestEasyApplyLocatorOrder(t *testing.T) {
 	if !strings.Contains(EasyApplyLocators[0].XPath, ApplyButtonID) {
 		t.Error("the stable id must be tried first")

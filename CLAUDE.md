@@ -25,9 +25,15 @@ go vet ./... && gofmt -l .  # CI runs both plus golangci-lint
 - `cmd/aja`: cobra command tree only. No business logic.
 - `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
   Secrets never live in the YAML.
-- `internal/browser`: go-rod attached to the user's Chrome profile (ADR 0001). The only
-  package that imports rod.
-- `internal/linkedin`: login check, search, filters, job cards, centralised selectors.
+- `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
+  attached to the user's Chrome profile (ADR 0001). The only package that imports rod.
+  Never headless outside tests.
+- `internal/linkedin`: `Session` over `browser.Page`: login detection (feed URL only),
+  search, filters, job cards, job details, pagination; plus the centralised selectors.
+- `internal/screening`: the pure skip rules (card, company, description).
+- `internal/pacing`: caps and jittered pauses; `--fast` only with `--dry-run`.
+- `internal/run`: the run loop over a `Site` interface (the session), tested with a fake
+  site; records runs and jobs in the store.
 - `internal/questions`: the question heuristics (`Answerer.Answer(Question, Job) Decision`),
   pure: configured answers, then the answer memory, then the AI, never a guess. Sensitive
   questions are gated here. `internal/textmatch` is the whole-word matcher every label

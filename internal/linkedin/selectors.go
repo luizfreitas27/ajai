@@ -11,6 +11,8 @@
 //   - Next/Review/Submit are looked up inside the dialog, never document-wide.
 package linkedin
 
+import "strconv"
+
 // Login page.
 const (
 	LoginEmailCSS      = "input[type='email']"
@@ -73,6 +75,29 @@ const (
 	SubmitButtonXPath      = `.//button[@aria-label="Submit application" or normalize-space(.)="Submit application"]`
 	DiscardButtonXPath     = ".//button[@data-control-name='discard_application_confirm_btn' or contains(normalize-space(.), 'Discard')]"
 )
+
+// Search page controls and job page notices.
+const (
+	SearchLocationInputXPath = `.//input[@aria-label='City, state, or zip code' and not(@disabled)]`
+	AllFiltersButtonXPath    = `//button[normalize-space()="All filters"]`
+	ShowResultsButtonXPath   = `//button[contains(translate(@aria-label, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "apply current filters to show")]`
+	AddCompanyInputXPath     = `(.//input[@placeholder='Add a company'])[1]`
+	FilterSwitchXPath        = `.//input[@role="switch"]`
+	PostedAgoXPath           = `//*[contains(@class,'jobs-unified-top-card') or contains(@class,'job-details-jobs-unified-top-card')]//span[contains(normalize-space(), " ago")]`
+	InlineFeedbackXPath      = `//*[contains(@class,'artdeco-inline-feedback__message')]`
+	AppliedOnPageXPath       = `//*[contains(@class,'jobs-s-apply__application-link')]`
+	PaginationActiveXPath    = `.//button[contains(@class, 'active')]`
+	DailyLimitPhrase         = "exceeded the daily application limit"
+)
+
+// PaginationClasses are tried in order to find the results pager.
+var PaginationClasses = []string{"jobs-search-pagination__pages", "artdeco-pagination__pages", "artdeco-pagination"}
+
+// ClassXPath matches any element carrying this class token (as a substring, like the Python contains()).
+func ClassXPath(class string) string { return "//*[contains(@class,'" + class + "')]" }
+
+// PageButtonXPath is the pager button for page n.
+func PageButtonXPath(n int) string { return ".//button[@aria-label='Page " + strconv.Itoa(n) + "']" }
 
 // OptionLabelXPath is the label of a radio option with this input id.
 func OptionLabelXPath(inputID string) string { return `.//label[@for="` + inputID + `"]` }
