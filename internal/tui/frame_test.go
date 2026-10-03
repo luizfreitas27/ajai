@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
@@ -166,5 +168,150 @@ func TestBesideTheListALongLineWrapsAndTooManyLinesSayHowManyMore(t *testing.T) 
 	h.shows("Question 00? yes", "more lines")
 	if strings.Contains(h.screen(), "Question 19? yes") {
 		t.Errorf("more lines than the screen holds:\n%s", h.screen())
+	}
+}
+
+// cutEditors are the panel's editor lines (they start with the "> " prompt)
+// that the panel had to cut, or to wrap: then typedEnd, the end of the text
+// in the editor, is on a line of its own.
+func (h *harness) cutEditors(typedEnd string) []string {
+	var cut []string
+	for _, l := range strings.Split(h.screen(), "\n") {
+		_, right, _ := strings.Cut(l, panelRule)
+		editor := strings.HasPrefix(right, "> ")
+		if (editor && strings.Contains(right, "…")) || (typedEnd != "" && strings.Contains(right, typedEnd) && !editor) {
+			cut = append(cut, right)
+		}
+	}
+	return cut
+}
+
+func TestConfigAndTheChecklistOnTheFrame(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(80, 24)
+	h.press(tabKey(tabConfig))
+	h.golden("config-smallest")
+	h.send(tea.WindowSizeMsg{Width: 140, Height: 30})
+	h.moveTo("first_name")
+	h.shows("│ Your first name")
+	h.golden("config-beside")
+	for _, l := range strings.Split(h.screen(), "\n") { // section titles keep no mark, beside the details too
+		if strings.HasPrefix(l, selected+"personals") || strings.HasPrefix(l, "  personals") {
+			t.Errorf("a section title is drawn as a row: %q", l)
+		}
+	}
+	h.press("1", "s")
+	h.shows("Setup checklist", "│ config:")
+	h.golden("setup-beside")
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
+	h.golden("setup-smallest")
+}
+
+func TestTheEditorsInThePanelFitIt(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	file, err := config.LoadFile(h.p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Config.SetChecked("search.terms", "Dev Python, QA, Software Engineer, Backend Developer, Golang Engineer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Write(h.p.ConfigFile, file.Config); err != nil {
+		t.Fatal(err)
+	}
+	h.open(120, 30) // the narrowest panel
+	h.press(tabKey(tabConfig))
+	h.moveTo("terms")
+	h.press("enter")
+	h.shows("│ Edit search.terms")
+	if cut := h.cutEditors("Golang Engineer"); len(cut) > 0 {
+		t.Errorf("the setting's editor is wider than the panel: %q", cut)
+	}
+	h.send(tea.WindowSizeMsg{Width: 120, Height: 30})
+	h.press("right") // typing on: the input lays its text out again
+	if cut := h.cutEditors("Golang Engineer"); len(cut) > 0 {
+		t.Errorf("resized, the setting's editor is wider than the panel: %q", cut)
+	}
+	h.press("esc", "1", "s", "i")
+	h.shows("│ Import from the Python bot")
+	if cut := h.cutEditors(""); len(cut) > 0 {
+		t.Errorf("the import's folder box is wider than the panel: %q", cut)
+	}
+}
+
+func TestAPathShowsUnderHomeAsTildeButIsEditedAsItIs(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(100, 30)
+	h.press(tabKey(tabConfig))
+	h.moveTo("resume")
+	h.shows(selected + "resume                             ~/resumes/cv.pdf")
+	h.press("enter")
+	if !strings.Contains(h.screen(), "> "+filepath.Join(h.p.DataDir, "resumes", "cv.pdf")) {
+		t.Errorf("the editor does not hold the path as it is:\n%s", h.screen())
+	}
+}
+
+func TestMovingPastTheTopOfAListKeepsTheFirstRow(t *testing.T) {
+	h := newHarness(t)
+	h.someJobs()
+	h.remembered()
+	h.writeConfig()
+	h.open(100, 30)
+	for _, tab := range []string{tabKey(tabJobs), tabKey(tabAnswers), tabKey(tabConfig)} {
+		h.press(tab, "g", "up", "k", "pgup")
+		if h.selectedRow() == "" {
+			t.Errorf("tab %s: no row selected after moving past the top:\n%s", tab, h.screen())
+		}
+	}
+	h.press("1", "s", "up", "k", "pgup")
+	if row := h.selectedRow(); !strings.Contains(row, "config") {
+		t.Errorf("the checklist's first check is not selected: %q", row)
+	}
+}
+
+func TestUnderTheListWrappedDetailsTakeTheirRoomFromTheList(t *testing.T) {
+	long := strings.Repeat("word ", 50) + "END"
+	f := listFrame{title: "T", rows: 30, heading: func(int) string { return "h" },
+		row:     func(i, _ int) string { return fmt.Sprint("row ", i) },
+		details: func(styles, int, bool) []string { return []string{long} }}
+	screen := strings.Split(f.view(measure, 80, 16, 0, 0), "\n")
+	if len(screen) > 16 || !strings.Contains(strings.Join(screen, "\n"), "END") {
+		t.Errorf("%d lines for 16, or the details' end is missing:\n%s", len(screen), strings.Join(screen, "\n"))
+	}
+}
+
+func TestARefusalNeverPushesTheEditedRowOutOfView(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(80, 24)
+	h.press(tabKey(tabConfig))
+	h.moveTo("ethnicity") // eight options: the editor takes room from the list
+	h.press("enter")
+	edited := h.selectedRow()
+	h.removeConfig()
+	h.press("enter") // refused: there is no config file any more
+	h.shows("Refused:")
+	if row := h.selectedRow(); row == "" || row != edited {
+		t.Errorf("the edited row %q is out of view:\n%s", edited, h.screen())
+	}
+}
+
+func TestASecretTypedInThePanelIsNeverShownOrLogged(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(140, 30)
+	h.press(tabKey(tabConfig))
+	h.moveTo("AJAI_TELEGRAM_BOT_TOKEN")
+	h.press("enter")
+	h.shows("│ Edit AJAI_TELEGRAM_BOT_TOKEN (hidden as you type)")
+	h.press("123:SECRET")
+	h.shows("│ > ••••••••••")
+	h.press("enter")
+	h.shows("Saved AJAI_TELEGRAM_BOT_TOKEN in .env.", "set (.env)")
+	if strings.Contains(h.screen(), "123:SECRET") || strings.Contains(h.logs.String(), "SECRET") {
+		t.Errorf("the secret reached the screen or the log:\n%s\n%s", h.screen(), h.logs)
 	}
 }

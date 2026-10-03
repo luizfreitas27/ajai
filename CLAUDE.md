@@ -83,14 +83,18 @@ to the tag before tagging and the workflow publishes that section as the release
   temporary AJAI_HOME is written as `$AJAI_HOME`). With `h.color` the harness draws in
   24-bit colour and the golden keeps the escape sequences, written `\e[…m` (the
   `colour-*` goldens pin the flame accent and the state colours; the rest stay plain).
-  List tabs describe themselves as a `listFrame` (`frame.go`: title, filters, summary,
-  notes, column heading and rows for a given width, details for a width and whether they
-  stand beside the list) and the frame lays them out: details in a panel from
-  `detailsBesideMinWidth` columns (wrapped to it, the last line saying how many more when
-  they outgrow the screen), else directly under the list with `minDetails` kept so the
+  List tabs (Answers, Jobs, Config, the setup checklist) describe themselves as a
+  `listFrame` (`frame.go`: title, filters, summary, notes, a waiting text, optional column
+  names, rows for a given width, `isTitle` rows that are section titles — never selected,
+  brought into view going up — and details for a width and whether they stand beside the
+  list) and the frame lays them out: details in a panel from
+  `detailsBesideMinWidth` columns (the last line saying how many more when they outgrow
+  the screen), else directly under the list with `minDetails` kept so the
   list keeps its height; the summary drops under the filters when they leave no room.
+  The details are wrapped to their width in both places (`detailLines`), never cut.
   `listFrame.keep` keeps the selection in view, and an editor inside the details takes
-  `detailWidth`. Shared pieces: `listNotes` (a problem, else the notice), `columns` and
+  `detailWidth`; a tab's selected item tolerates a cursor past the top, which is settled
+  only after the details are measured. Shared pieces: `listNotes` (a problem, else the notice), `columns` and
   `shares` for rows that split the width, `labelled` for a fact in the panel.
   The Dashboard's logo is fixed art in `logo.go`, coloured row by row from `flame` (in
   `styles.go`). `summaryLines` sets it beside the summary when the width holds the logo and
@@ -100,7 +104,7 @@ to the tag before tagging and the workflow publishes that section as the release
   Colours live in `styles.go`: `accent` (flame orange, the state colours' mid tone so it
   reads on light and dark backgrounds) for the active tab, titles, the filter shown and
   key names (`styles.hints` draws the footer); `label` is a value's name, bold only.
-  `styles.mark` starts every list row (the `▌` bar on the selection), and
+  `styles.mark` starts every selectable list row (the `▌` bar on the selection), and
   `Model.divider` draws the `━` stroke under the active tab's label, which marks it
   without colour too. While a tab edits a value or asks a
   question, every key but Ctrl-C goes to it (`Model.typing`). The Config tab reads and

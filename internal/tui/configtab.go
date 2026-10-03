@@ -20,9 +20,10 @@ import (
 const (
 	// configKeyWidth is the settings list's first column.
 	configKeyWidth = 34
-	// configDetailLines is the least room kept under the list for the selected
+	// configDetailLines is the least room kept under the list (on a terminal
+	// too narrow for the details beside it) for the selected
 	// row's explanation or the editor; they take more when they need it.
-	configDetailLines = 7
+	configDetailLines = 6
 )
 
 // readAtDaemonStart are what the daemon reads once, when it starts: changing
@@ -43,9 +44,11 @@ type configTab struct {
 	missing bool     // there is no config file yet
 	invalid []string // what the file's validation finds wrong
 	rows    []configRow
-	cursor  int // the selected row (never a section title)
-	top     int // the first row shown
-	width   int // the tab's room on screen
+	path    string // the config file, as the header shows it
+	home    string // the home directory, shown as ~ in the values
+	cursor  int    // the selected row (never a section title)
+	top     int    // the first row shown
+	width   int    // the tab's room on screen
 	height  int
 	edit    *configEdit
 	notice  notice
@@ -74,6 +77,9 @@ type configRow struct {
 }
 
 // name is what the row edits: a secret's variable or a setting's key.
+// isTitle says whether the row is a section's title, which is never selected.
+func (r configRow) isTitle() bool { return r.kind == titleRow }
+
 func (r configRow) name() string {
 	if r.kind == secretRow {
 		return r.secret
@@ -191,6 +197,7 @@ func (c configTab) update(msg tea.Msg, d Deps) (configTab, tea.Cmd) {
 	switch msg := msg.(type) {
 	case configLoadedMsg:
 		c.loaded, c.problem, c.missing, c.invalid, c.rows = true, msg.problem, msg.missing, msg.invalid, msg.rows
+		c.path, c.home = d.tilde(d.Paths.ConfigFile), d.Home
 		c.cursor = c.nearestSelectable(c.cursor)
 		if c.edit != nil { // the rows moved under the editor: follow its row
 			c.cursor = c.find(c.edit.target.name())
@@ -205,7 +212,7 @@ func (c configTab) update(msg tea.Msg, d Deps) (configTab, tea.Cmd) {
 		if msg.refusal != "" {
 			e.refusal = msg.refusal
 			c.edit = &e
-			return c, nil
+			return c.scrolled(), nil // the details grew: the edited row stays in view
 		}
 		c.edit, c.notice = nil, msg.notice
 		return c, loadConfig(d)
@@ -233,8 +240,8 @@ func (c configTab) browseKey(msg tea.KeyMsg) configTab {
 	case "end", "G":
 		c.cursor = c.step(len(c.rows))
 	case "enter":
-		if c.cursor < len(c.rows) && c.rows[c.cursor].kind != titleRow {
-			c.edit = newConfigEdit(c.rows[c.cursor], c.width)
+		if c.cursor < len(c.rows) && !c.rows[c.cursor].isTitle() {
+			c.edit = newConfigEdit(c.rows[c.cursor], detailWidth(c.width))
 			c.notice = notice{}
 		}
 	}
@@ -249,7 +256,7 @@ func (c configTab) step(n int) int {
 		if n < 0 {
 			dir = -1
 		}
-		for next += dir; next >= 0 && next < len(c.rows) && c.rows[next].kind == titleRow; next += dir {
+		for next += dir; next >= 0 && next < len(c.rows) && c.rows[next].isTitle(); next += dir {
 		}
 		if next < 0 || next >= len(c.rows) {
 			break
@@ -261,7 +268,7 @@ func (c configTab) step(n int) int {
 
 func (c configTab) nearestSelectable(i int) int {
 	for ; i < len(c.rows); i++ {
-		if c.rows[i].kind != titleRow {
+		if !c.rows[i].isTitle() {
 			return i
 		}
 	}
@@ -271,7 +278,7 @@ func (c configTab) nearestSelectable(i int) int {
 // find is the row that edits name, or the first selectable one.
 func (c configTab) find(name string) int {
 	for i, r := range c.rows {
-		if r.kind != titleRow && r.name() == name {
+		if !r.isTitle() && r.name() == name {
 			return i
 		}
 	}
@@ -283,7 +290,7 @@ func (c configTab) resized(width, height int) configTab {
 	c.width, c.height = width, height
 	if c.edit != nil {
 		e := *c.edit
-		e.input.Width = inputWidth(width)
+		e.input.Width = inputWidth(detailWidth(width))
 		c.edit = &e
 	}
 	return c.scrolled()
@@ -294,21 +301,7 @@ func inputWidth(width int) int { return max(10, width-4) }
 // scrolled keeps the selected row in view, moving the list as little as it
 // can; going up, its section's title comes into view too when it fits.
 func (c configTab) scrolled() configTab {
-	n := c.listHeight()
-	if c.cursor < c.top {
-		c.top = c.cursor
-		title := c.cursor
-		for title > 0 && c.rows[title].kind != titleRow {
-			title--
-		}
-		if c.cursor-title < n {
-			c.top = title
-		}
-	}
-	if c.cursor >= c.top+n {
-		c.top = c.cursor - n + 1
-	}
-	c.top = max(0, c.top)
+	c.cursor, c.top = c.frame(measure).keep(c.cursor, c.top, c.width, c.height)
 	return c
 }
 
@@ -318,17 +311,6 @@ var measure = func() styles {
 	r.SetColorProfile(termenv.Ascii)
 	return newStyles(r)
 }()
-
-// listHeight is the room for rows: the tab's, less its title line, its
-// heading and the detail.
-func (c configTab) listHeight() int {
-	lines := 0
-	for _, n := range c.heading() {
-		lines += len(wrap(n.text, c.width))
-	}
-	detail := max(configDetailLines, len(c.detail(measure, c.width)))
-	return max(1, c.height-1-lines-detail)
-}
 
 func newConfigEdit(r configRow, width int) *configEdit {
 	e := &configEdit{target: r, input: textinput.New()}
@@ -512,33 +494,30 @@ func (c configTab) heading() []notice {
 	return head
 }
 
-func (c configTab) view(s styles, d Deps, width int) string {
-	if !c.loaded {
-		return "Reading…"
-	}
-	lines := []string{s.section.Render("Config") + "  " + s.dim.Render(d.tilde(d.Paths.ConfigFile))}
+// frame is the tab for the frame to lay out: the file's path, then the
+// sections, their titles and their rows.
+func (c configTab) frame(s styles) listFrame {
+	var notes []string
 	for _, n := range c.heading() {
-		for _, l := range wrap(n.text, width) {
-			lines = append(lines, s.byLevel(n.level).Render(l))
-		}
+		notes = append(notes, wrapStyled(s.byLevel(n.level), n.text, c.width)...)
 	}
-	n := c.listHeight()
-	for i := c.top; i < c.top+n; i++ {
-		if i < len(c.rows) {
-			lines = append(lines, c.rowLine(s, i))
-		} else {
-			lines = append(lines, "")
-		}
+	return listFrame{title: "Config", summary: c.path, notes: notes, waiting: waitText(c.loaded, "Reading…"), rows: len(c.rows), minDetails: configDetailLines,
+		row:     func(i, _ int) string { return c.rowLine(s, i) },
+		isTitle: func(i int) bool { return c.rows[i].isTitle() },
+		details: func(s styles, width int, _ bool) []string { return c.detail(s, width) },
 	}
-	return strings.Join(append(lines, c.detail(s, width)...), "\n")
 }
 
+func (c configTab) view(s styles, width int) string {
+	return c.frame(s).view(s, width, c.height, c.cursor, c.top)
+}
+
+// rowLine is row i: a section's title, or a secret or a setting and its value.
 func (c configTab) rowLine(s styles, i int) string {
 	r := c.rows[i]
-	if r.kind == titleRow {
+	if r.isTitle() {
 		return s.section.Render(r.title)
 	}
-	mark := s.mark(i == c.cursor)
 	name, value := r.secret, ""
 	switch r.kind {
 	case secretRow:
@@ -551,18 +530,18 @@ func (c configTab) rowLine(s styles, i int) string {
 		}
 	default:
 		_, name, _ = strings.Cut(r.field.Key, ".")
-		value = r.value
+		value = tildeUnder(c.home, r.value) // shown only: the editor keeps the value as it is
 		if r.override != "" {
 			value += s.warn.Render("  ← " + r.override + " overrides it")
 		}
 	}
-	return mark + fmt.Sprintf("%-*s", configKeyWidth, name) + " " + value
+	return fmt.Sprintf("%-*s", configKeyWidth, name) + " " + value
 }
 
 // detail explains the selected row, or shows the editor.
 func (c configTab) detail(s styles, width int) []string {
-	lines := []string{s.dim.Render(strings.Repeat("─", width))}
-	if len(c.rows) == 0 || c.cursor >= len(c.rows) {
+	var lines []string
+	if c.cursor < 0 || c.cursor >= len(c.rows) {
 		return lines
 	}
 	if e := c.edit; e != nil {

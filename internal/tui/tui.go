@@ -41,22 +41,26 @@ type Deps struct {
 
 // tilde writes the home directory in text as ~: in ~/… and on its own, never
 // inside a longer name (/home/ana2 stays as it is for /home/ana).
-func (d Deps) tilde(text string) string {
-	if d.Home == "" {
+func (d Deps) tilde(text string) string { return tildeUnder(d.Home, text) }
+
+// tildeUnder writes home in text as ~ (see Deps.tilde); text as it is when
+// home is "".
+func tildeUnder(home, text string) string {
+	if home == "" {
 		return text
 	}
 	var b strings.Builder
 	for {
-		i := strings.Index(text, d.Home)
+		i := strings.Index(text, home)
 		if i < 0 {
 			return b.String() + text
 		}
-		rest := text[i+len(d.Home):]
+		rest := text[i+len(home):]
 		b.WriteString(text[:i])
 		if rest == "" || strings.ContainsRune("/ ,;:)", rune(rest[0])) {
 			b.WriteString("~")
 		} else {
-			b.WriteString(d.Home)
+			b.WriteString(home)
 		}
 		text = rest
 	}
@@ -174,6 +178,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ans = m.ans.resized(m.width, m.bodyHeight())
 		m.sched = m.sched.resized(m.width, m.bodyHeight())
 		m.jobs = m.jobs.resized(m.width, m.bodyHeight())
+		m.checks = m.checks.resized(m.width, m.bodyHeight(), m.deps)
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tickMsg:
@@ -400,9 +405,9 @@ func (m Model) View() string {
 	case m.help:
 		body = m.helpView()
 	case m.setupShown:
-		body = m.checks.view(m.styles, m.deps, m.width)
+		body = m.checks.view(m.styles, m.deps)
 	case m.tab == tabConfig:
-		body = m.conf.view(m.styles, m.deps, m.width)
+		body = m.conf.view(m.styles, m.width)
 	case m.tab == tabAnswers:
 		body = m.ans.view(m.styles, m.width)
 	case m.tab == tabSchedule:
