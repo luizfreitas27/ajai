@@ -1,19 +1,19 @@
 \e[1;38;2;234;88;12majai\e[0m   \e[1;38;2;234;88;12m1 Dashboard\e[0m   \e[2m2 Answers (3)\e[0m   \e[2m3 Schedule\e[0m   \e[2m4 Jobs\e[0m   \e[2m5 Config\e[0m
 \e[2m───────\e[0m\e[38;2;234;88;12m━━━━━━━━━━━\e[0m\e[2m──────────────────────────────────────────────────────────────────────────────────\e[0m
-\e[1mRun         \e[0m  No run in progress.
-\e[1mPending     \e[0m  \e[38;2;217;119;6m3 to review\e[0m
-\e[1mSchedule    \e[0m  \e[2mno schedule windows\e[0m
-\e[1mDaemon      \e[0m  not running
-\e[1mSetup       \e[0m  \e[38;2;22;163;73mevery check passes\e[0m
+\e[38;2;184;16;30m  ▄███████         ▄█    ▄███████   ▄█\e[0m   \e[1mRun         \e[0m  No run in progress.
+\e[38;2;216;40;20m ███   ███        ███   ███   ███  ███\e[0m   \e[1mPending     \e[0m  \e[38;2;217;119;6m3 to review\e[0m
+\e[38;2;242;65;10m ███   ███        ███   ███   ███  ███\e[0m   \e[1mSchedule    \e[0m  \e[2mno schedule windows\e[0m
+\e[38;2;251;100;3m▄███▄▄▄███        ███  ▄███▄▄▄███  ███\e[0m   \e[1mDaemon      \e[0m  not running
+\e[38;2;255;135;9m▀███▀▀▀███        ███  ▀███▀▀▀███  ███\e[0m   \e[1mSetup       \e[0m  \e[38;2;22;163;73mevery check passes\e[0m
+\e[38;2;255;170;27m ███   ███  ▄██   ███   ███   ███  ███\e[0m
+\e[38;2;255;202;56m ███   ███  ███   ███   ███   ███  ███\e[0m
+\e[38;2;255;232;92m ███   █▀    ▀█████▀    ███   █▀   █▀ \e[0m
 
 \e[1;38;2;234;88;12mLast runs\e[0m
 \e[2m  none yet\e[0m
 
 \e[1;38;2;234;88;12mToday's log\e[0m
 \e[2m  nothing yet\e[0m
-
-
-
 
 
 

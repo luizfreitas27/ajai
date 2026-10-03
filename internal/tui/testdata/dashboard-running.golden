@@ -1,13 +1,13 @@
 ajai   1 Dashboard   2 Answers (1)   3 Schedule   4 Jobs   5 Config
-───────━━━━━━━━━━━──────────────────────────────────────────────────────────────────────────────────
-Run           running since 09:10, started from the terminal
-              market brasil, dry run
-              searching Go developer
-              applied 2 · external 0 · failed 0 · skipped 5 · would apply 2
-Pending       1 to review
-Next opening  Mon 05 Oct 14:00, window 1 (Mon, Wed 14:00-16:00, market brasil)
-Daemon        not running: schedule windows start runs only while it runs
-Setup         every check passes
+───────━━━━━━━━━━━──────────────────────────────────────────────────────────────────────────────────────────────────────
+  ▄███████         ▄█    ▄███████   ▄█   Run           running since 09:10, started from the terminal
+ ███   ███        ███   ███   ███  ███                 market brasil, dry run
+ ███   ███        ███   ███   ███  ███                 searching Go developer
+▄███▄▄▄███        ███  ▄███▄▄▄███  ███                 applied 2 · external 0 · failed 0 · skipped 5 · would apply 2
+▀███▀▀▀███        ███  ▀███▀▀▀███  ███   Pending       1 to review
+ ███   ███  ▄██   ███   ███   ███  ███   Next opening  Mon 05 Oct 14:00, window 1 (Mon, Wed 14:00-16:00, market brasil)
+ ███   ███  ███   ███   ███   ███  ███   Daemon        not running: schedule windows start runs only while it runs
+ ███   █▀    ▀█████▀    ███   █▀   █▀    Setup         every check passes
 
 Last runs
   started       market         mode    appl  ext fail skip  ended
@@ -26,5 +26,5 @@ Today's log
 
 
 
-────────────────────────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 r run · x stop · s setup · ? keys · q quit

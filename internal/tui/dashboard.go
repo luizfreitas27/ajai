@@ -120,10 +120,8 @@ func (dash dashboard) view(s styles, width, height int, now time.Time, setup not
 	if !dash.loaded {
 		return "Reading…"
 	}
-	var top []string
-	add := func(label, text string) {
-		top = append(top, s.label.Render(fmt.Sprintf("%-12s", label))+"  "+text)
-	}
+	var facts []fact
+	add := func(label, text string) { facts = append(facts, fact{label, text}) }
 	snap := dash.snap
 	for _, p := range snap.problems {
 		add("Problem", s.warn.Render(p))
@@ -161,6 +159,7 @@ func (dash dashboard) view(s styles, width, height int, now time.Time, setup not
 	if setup.text != "" {
 		add("Setup", s.byLevel(setup.level).Render(setup.text))
 	}
+	top := summaryLines(s, facts, width, height, len(snap.runs))
 
 	// The runs table takes what the log can spare.
 	rows := min(len(snap.runs), height-len(top)-3-2-minLogLines)

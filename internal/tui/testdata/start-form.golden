@@ -5,20 +5,20 @@ Start a run  unattended, in a process of its own: closing the TUI never ends it
   Mode      ‹ dry run: fills every form, sends none ›
   Maximum   0        applications; 0 or blank: the pacing cap
 
-Run           No run in progress.
-Pending       none
-Schedule      no schedule windows
-Daemon        not running
-Setup         every check passes
+  ▄███████         ▄█    ▄███████   ▄█   Run           No run in progress.
+ ███   ███        ███   ███   ███  ███   Pending       none
+ ███   ███        ███   ███   ███  ███   Schedule      no schedule windows
+▄███▄▄▄███        ███  ▄███▄▄▄███  ███   Daemon        not running
+▀███▀▀▀███        ███  ▀███▀▀▀███  ███   Setup         every check passes
+ ███   ███  ▄██   ███   ███   ███  ███
+ ███   ███  ███   ███   ███   ███  ███
+ ███   █▀    ▀█████▀    ███   █▀   █▀ 
 
 Last runs
   none yet
 
 Today's log
   nothing yet
-
-
-
 
 
 

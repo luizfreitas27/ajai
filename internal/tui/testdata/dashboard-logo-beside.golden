@@ -1,0 +1,30 @@
+ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
+───────━━━━━━━━━━━──────────────────────────────────────────────────────────────────────────────────
+  ▄███████         ▄█    ▄███████   ▄█   Run           No run in progress.
+ ███   ███        ███   ███   ███  ███   Pending       none
+ ███   ███        ███   ███   ███  ███   Schedule      no schedule windows
+▄███▄▄▄███        ███  ▄███▄▄▄███  ███   Daemon        not running
+▀███▀▀▀███        ███  ▀███▀▀▀███  ███   Setup         every check passes
+ ███   ███  ▄██   ███   ███   ███  ███
+ ███   ███  ███   ███   ███   ███  ███
+ ███   █▀    ▀█████▀    ███   █▀   █▀ 
+
+Last runs
+  none yet
+
+Today's log
+  nothing yet
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+r run · x stop · s setup · ? keys · q quit

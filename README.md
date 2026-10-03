@@ -1,5 +1,16 @@
 # ajai
 
+```text
+  ▄███████         ▄█    ▄███████   ▄█
+ ███   ███        ███   ███   ███  ███
+ ███   ███        ███   ███   ███  ███
+▄███▄▄▄███        ███  ▄███▄▄▄███  ███
+▀███▀▀▀███        ███  ▀███▀▀▀███  ███
+ ███   ███  ▄██   ███   ███   ███  ███
+ ███   ███  ███   ███   ███   ███  ███
+ ███   █▀    ▀█████▀    ███   █▀   █▀
+```
+
 A single-binary command-line tool that searches LinkedIn for jobs matching your
 criteria and submits Easy Apply applications from your own machine, in your own
 Chrome, with your own account. It remembers the answers it gives, lets you review
@@ -122,7 +133,10 @@ Flame orange marks what is active: the tab you are on (with a thick stroke under
 which shows even with `--no-color`), the selected row (a `▌` bar), titles and keys. Green,
 amber and red keep meaning ok, warning and failure.
 
-The **Dashboard** refreshes every second. It shows:
+The **Dashboard** greets you with the ajai logo above, in a flame gradient (yellow at the
+base, red at the tips), beside the summary when the terminal is wide enough, above it when
+it is narrow and tall, and not at all when the room is better spent on the runs and the log.
+It refreshes every second. It shows:
 - the run in progress: who started it (the terminal, a schedule window, Telegram), the
   market, dry run or live, the term being searched and the counts so far;
 - the last runs and why each ended;
