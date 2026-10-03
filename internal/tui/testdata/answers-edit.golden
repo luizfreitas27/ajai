@@ -1,14 +1,8 @@
 ajai   1 Dashboard   2 Answers (1)   3 Schedule   4 Jobs   5 Config
 ─────────────────────━━━━━━━━━━━━━──────────────────────────────────────────────
-Answers  pending   tab shows the approved ones
-  kind      question                                       answer              …
-▌ select    How long have you used Kubernetes?             (none yet)          …
-
-
-
-
-
-
+Answers  [pending]  approved   1 pending
+  kind      question                            answer                  from
+▌ select    How long have you used Kubernetes?  (none yet)              the form
 ────────────────────────────────────────────────────────────────────────────────
 Answer: How long have you used Kubernetes?
 > type an option or its beginning, or pick one with ↑↓                         
@@ -20,5 +14,11 @@ Answer: How long have you used Kubernetes?
   5 years
   6 to 10 years
   More than 10 years
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 enter saves · esc cancels

@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/cursor"
@@ -14,8 +15,9 @@ import (
 )
 
 // answersDetailLines is the least room kept under the list for the selected
-// answer; the editor takes more when its options need it.
-const answersDetailLines = 8
+// answer (on a terminal too narrow for the details beside it); the editor
+// takes more when its options need it.
+const answersDetailLines = 7
 
 // The two review states the tab shows.
 const (
@@ -96,31 +98,16 @@ func (a answersTab) resized(width, height int) answersTab {
 	a.width, a.height = width, height
 	if a.edit != nil {
 		e := *a.edit
-		e.input.Width = inputWidth(width)
+		e.input.Width = inputWidth(detailWidth(width))
 		a.edit = &e
 	}
-	return a.scrolled()
+	return a.settled()
 }
 
-func (a answersTab) listHeight() int {
-	head := 2 // title, column names
-	if a.notice.text != "" || a.problem != "" {
-		head++
-	}
-	return max(1, a.height-head-max(answersDetailLines, len(a.detail(measure, a.width))))
-}
-
-// scrolled keeps the selection in the list and in view, and remembers whose
+// settled keeps the selection in the list and in view, and remembers whose
 // it is.
-func (a answersTab) scrolled() answersTab {
-	n := a.listHeight()
-	a.cursor = max(0, min(a.cursor, len(a.answers)-1))
-	if a.cursor < a.top {
-		a.top = a.cursor
-	}
-	if a.cursor >= a.top+n {
-		a.top = a.cursor - n + 1
-	}
+func (a answersTab) settled() answersTab {
+	a.cursor, a.top = a.frame(measure).keep(a.cursor, a.top, a.width, a.height)
 	a.selected = ""
 	if r, ok := a.current(); ok {
 		a.selected = r.ID
@@ -140,7 +127,7 @@ func (a answersTab) update(msg tea.Msg, d Deps) (answersTab, tea.Cmd) {
 				a.cursor = i
 			}
 		}
-		return a.scrolled(), nil
+		return a.settled(), nil
 	case answerChangedMsg:
 		if msg.fromEdit && a.edit != nil && msg.refusal != "" {
 			e := *a.edit
@@ -176,7 +163,7 @@ func (a answersTab) current() (memory.Remembered, bool) {
 func (a answersTab) browseKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 	if cursor, ok := moved(msg.String(), a.cursor, len(a.answers)); ok {
 		a.cursor = cursor
-		return a.scrolled(), nil
+		return a.settled(), nil
 	}
 	switch msg.String() {
 	case "tab":
@@ -191,16 +178,16 @@ func (a answersTab) browseKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 		if r, ok := a.current(); ok {
 			if isCheckbox(r) {
 				a.notice = notice{"A checkbox takes only Approve (a) or Delete (d).", levelWarn}
-				return a.scrolled(), nil
+				return a.settled(), nil
 			}
-			a.edit, a.notice = newAnswerEdit(r, a.width), notice{}
+			a.edit, a.notice = newAnswerEdit(r, detailWidth(a.width)), notice{}
 		}
 	case "d":
 		if r, ok := a.current(); ok {
 			a.deleting = &r
 		}
 	}
-	return a.scrolled(), nil
+	return a.settled(), nil
 }
 
 func isCheckbox(r memory.Remembered) bool    { return r.Kind == string(questions.Checkbox) }
@@ -232,7 +219,7 @@ func (a answersTab) editKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 	switch key := msg.String(); {
 	case key == "esc":
 		a.edit = nil
-		return a.scrolled(), nil
+		return a.settled(), nil
 	case key == "enter":
 		text := strings.TrimSpace(e.input.Value())
 		if len(options) > 0 {
@@ -262,7 +249,7 @@ func (a answersTab) editKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 		e.choice = i
 	}
 	a.edit = &e
-	return a.scrolled(), cmd
+	return a.settled(), cmd
 }
 
 func (a answersTab) deleteKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
@@ -274,7 +261,7 @@ func (a answersTab) deleteKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 	case "n", "esc":
 		a.deleting = nil
 	}
-	return a.scrolled(), nil
+	return a.settled(), nil
 }
 
 // approveAnswer approves r as shown: if the answer memory has another answer
@@ -341,56 +328,56 @@ func deleteAnswer(d Deps, r memory.Remembered) tea.Cmd {
 	}
 }
 
-// answerColumns lays out the list: kind, question, answer, who gave it.
-const answerColumns = "  %-9s %-46s %-22s %s"
+// answerRow is a row of the list width wide: the kind, then the question and
+// the answer sharing what is left, then who gave it.
+func answerRow(width int, kind, question, answer, from string) string {
+	const kinds, froms = 8, 8 // "checkbox", "the form"
+	w := shares(max(2, width-kinds-froms-3*2), 62)
+	return columns([]int{kinds, w[0], w[1], froms}, kind, question, answer, from)
+}
+
+// frame is the tab for the frame to lay out.
+func (a answersTab) frame(s styles) listFrame {
+	filters := []string{statePending, stateApproved}
+	empty := "No pending answers: the review queue is empty."
+	if a.shownState() == stateApproved {
+		empty = "No approved answers yet."
+	}
+	summary := ""
+	if a.loaded {
+		summary = fmt.Sprintf("%d %s", len(a.answers), a.shownState())
+	}
+	return listFrame{title: "Answers", filters: filters, filter: slices.Index(filters, a.shownState()), summary: summary, notes: listNotes(s, a.problem, a.notice, a.width),
+		loading: !a.loaded, empty: empty, rows: len(a.answers), minDetails: answersDetailLines,
+		heading: func(width int) string { return answerRow(width, "kind", "question", "answer", "from") },
+		row: func(i, width int) string {
+			r := a.answers[i]
+			answer := r.Answer
+			if unansweredYet(r) {
+				answer = "(none yet)"
+			}
+			return answerRow(width, r.Kind, r.Label, answer, sourceName(r.Source))
+		},
+		details: a.detail,
+	}
+}
 
 func (a answersTab) view(s styles, width int) string {
-	lines := []string{s.section.Render("Answers") + "  " + s.filter.Render(a.shownState()) + s.dim.Render("   tab shows the "+otherState(a.shownState())+" ones")}
-	switch {
-	case a.problem != "":
-		lines = append(lines, s.fail.Render(a.problem))
-	case a.notice.text != "":
-		lines = append(lines, s.byLevel(a.notice.level).Render(a.notice.text))
-	}
-	if !a.loaded {
-		return strings.Join(append(lines, "Reading…"), "\n")
-	}
-	if len(a.answers) == 0 {
-		empty := "No pending answers: the review queue is empty."
-		if a.shownState() == stateApproved {
-			empty = "No approved answers yet."
-		}
-		return strings.Join(append(lines, "", s.dim.Render(empty)), "\n")
-	}
-	lines = append(lines, s.dim.Render(fmt.Sprintf(answerColumns, "kind", "question", "answer", "from")))
-	n := a.listHeight()
-	for i := a.top; i < a.top+n; i++ {
-		if i >= len(a.answers) {
-			lines = append(lines, "")
-			continue
-		}
-		r := a.answers[i]
-		mark := s.mark(i == a.cursor)
-		answer := r.Answer
-		if unansweredYet(r) {
-			answer = "(none yet)"
-		}
-		lines = append(lines, mark+strings.TrimPrefix(fmt.Sprintf(answerColumns, r.Kind, clip(r.Label, 46), clip(answer, 22), sourceName(r.Source)), "  "))
-	}
-	return strings.Join(append(lines, a.detail(s, width)...), "\n")
+	return a.frame(s).view(s, width, a.height, a.cursor, a.top)
 }
 
 // detail shows the selected answer in full, or the editor, or the delete
-// confirmation.
-func (a answersTab) detail(s styles, width int) []string {
-	lines := []string{s.dim.Render(strings.Repeat("─", width))}
+// confirmation. Beside the list it has the room of its height: a line for
+// each fact, an option per line.
+func (a answersTab) detail(s styles, width int, beside bool) []string {
+	var lines []string
 	r, ok := a.current()
 	if !ok {
 		return lines
 	}
 	switch {
 	case a.deleting != nil:
-		return append(lines, s.warn.Render(fmt.Sprintf("Delete the answer to %q? ajai asks the question again next time.", a.deleting.Label)),
+		return append(wrapStyled(s.warn, fmt.Sprintf("Delete the answer to %q? ajai asks the question again next time.", a.deleting.Label), width),
 			s.key.Render("y")+" deletes it · "+s.key.Render("n")+" keeps it")
 	case a.edit != nil:
 		e := a.edit
@@ -408,6 +395,20 @@ func (a answersTab) detail(s styles, width int) []string {
 	answer := r.Answer
 	if unansweredYet(r) {
 		answer = "none yet: e gives it one"
+	}
+	if beside {
+		lines = append(lines, "", labelled(s, "kind", r.Kind), labelled(s, "answer", answer), labelled(s, "from", sourceName(r.Source)),
+			labelled(s, "used", fmt.Sprintf("%d time(s)", r.Uses)))
+		if len(r.Options) > 0 {
+			lines = append(lines, "", s.dim.Render("options"))
+			for _, o := range r.Options {
+				lines = append(lines, "  "+optionLabel(o))
+			}
+		}
+		if r.LastJobLink != "" {
+			lines = append(lines, "", labelled(s, "last job", r.LastJobLink))
+		}
+		return lines
 	}
 	lines = append(lines, fmt.Sprintf("%s · answer: %s (%s) · used %d time(s)", r.Kind, answer, sourceName(r.Source), r.Uses))
 	if len(r.Options) > 0 {
@@ -438,6 +439,9 @@ func sourceName(source string) string {
 
 // clip cuts text to n characters, marking the cut.
 func clip(text string, n int) string {
+	if n < 1 {
+		return ""
+	}
 	if r := []rune(text); len(r) > n {
 		return string(r[:n-1]) + "…"
 	}

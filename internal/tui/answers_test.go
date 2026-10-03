@@ -41,7 +41,7 @@ func TestTheAnswersTabListsTheReviewQueueAndTheApprovedOnes(t *testing.T) {
 	h.open(100, 30)
 	h.shows("2 Answers (3)")
 	h.answersTab()
-	h.shows("Answers  pending", "Years of experience with Go?", "(none yet)", "Send me updates", "the AI", "the form")
+	h.shows("Answers  [pending]", "Years of experience with Go?", "(none yet)", "Send me updates", "the AI", "the form")
 	if strings.Contains(h.screen(), "Recife") {
 		t.Errorf("an approved answer among the pending ones:\n%s", h.screen())
 	}
@@ -49,7 +49,7 @@ func TestTheAnswersTabListsTheReviewQueueAndTheApprovedOnes(t *testing.T) {
 	h.shows("radio · answer: none yet: e gives it one (the form)", "options: Yes | No, not now", "last job: https://www.linkedin.com/jobs/view/2/")
 	h.golden("answers")
 	h.press("tab")
-	h.shows("Answers  approved", "City", "Recife", "you")
+	h.shows("Answers   pending  [approved]", "City", "Recife", "you")
 }
 
 func TestApproveCorrectAndDelete(t *testing.T) {
@@ -208,5 +208,5 @@ func TestAfterTheChecklistTheAnswersTabIsRead(t *testing.T) {
 	h.press(tabKey(tabAnswers)) // no config: the checklist stays, Answers comes after
 	h.shows("Setup checklist")
 	h.press("enter", "esc")
-	h.shows("Answers  pending", "Years of experience with Go?")
+	h.shows("Answers  [pending]", "Years of experience with Go?")
 }

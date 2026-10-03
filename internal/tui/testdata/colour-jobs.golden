@@ -1,27 +1,27 @@
 \e[1;38;2;234;88;12majai\e[0m   \e[2m1 Dashboard\e[0m   \e[2m2 Answers (3)\e[0m   \e[2m3 Schedule\e[0m   \e[1;38;2;234;88;12m4 Jobs\e[0m   \e[2m5 Config\e[0m
 \e[2m──────────────────────────────────────────────────\e[0m\e[38;2;234;88;12m━━━━━━\e[0m\e[2m────────────────────────────────────────────\e[0m
-\e[1;38;2;234;88;12mJobs\e[0m  \e[1;4;38;2;234;88;12;4ma\e[0m\e[1;4;38;2;234;88;12;4ml\e[0m\e[1;4;38;2;234;88;12;4ml\e[0m   \e[2mapplied 1 · external 1 · failed 0 · skipped 1\e[0m
-\e[2m  recorded      outcome   title                     company         location\e[0m
-\e[38;2;234;88;12m▌\e[0m 05 Oct 08:03  skipped   Senior Java               Umbrella        Remote
-  05 Oct 08:02  external  Backend Engineer          Initech         Lisboa
-  05 Oct 08:01  applied   Go Developer              Acme            Recife
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+\e[1;38;2;234;88;12mJobs\e[0m  [\e[1;4;38;2;234;88;12;4ma\e[0m\e[1;4;38;2;234;88;12;4ml\e[0m\e[1;4;38;2;234;88;12;4ml\e[0m] \e[2m applied \e[0m \e[2m external \e[0m \e[2m failed \e[0m \e[2m skipped\e[0m   \e[2mapplied 1 · external 1 · failed 0 · skipped 1\e[0m
+\e[2m  recorded      outcome   title                            company                location\e[0m
+\e[38;2;234;88;12m▌\e[0m 05 Oct 08:03  skipped   Senior Java                      Umbrella               Remote
+  05 Oct 08:02  external  Backend Engineer                 Initech                Lisboa
+  05 Oct 08:01  applied   Go Developer                     Acme                   Recife
 \e[2m────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m
 Senior Java · Umbrella · Remote
 skipped Mon 05 Oct 08:03 · the description asks for 10 years
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

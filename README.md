@@ -129,6 +129,11 @@ Type `ajai` with no command, in a terminal, and it opens a full-screen interface
 terminal (a pipe, a script, systemd) it prints the help instead, and every command below
 works exactly as without the TUI.
 
+The list tabs share one layout: a header with the tab's title, every filter it has (the one
+shown in brackets) and a summary; the list, the selected row marked; and the selected item's
+details, in a panel to the right of the list on a terminal 120 columns wide or more, or
+directly under the list on a narrower one.
+
 Flame orange marks what is active: the tab you are on (with a thick stroke under its name,
 which shows even with `--no-color`), the selected row (a `▌` bar), titles and keys. Green,
 amber and red keep meaning ok, warning and failure.
