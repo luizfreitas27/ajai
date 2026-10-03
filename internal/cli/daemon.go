@@ -18,6 +18,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/launch"
 	"github.com/luizfreitas27/ajai/internal/logging"
 	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/remote"
 	"github.com/luizfreitas27/ajai/internal/run"
 	"github.com/luizfreitas27/ajai/internal/service"
@@ -161,7 +162,7 @@ func (a *App) serviceManager() (service.Manager, error) {
 // same config and data as this shell: what is set here, made absolute.
 func (a *App) pinnedEnv() (map[string]string, error) {
 	env := map[string]string{}
-	for _, k := range []string{"AJAI_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
+	for _, k := range []string{paths.HomeEnv, "XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
 		if v := a.Env.Getenv(k); v != "" {
 			abs, err := filepath.Abs(v)
 			if err != nil {

@@ -12,13 +12,14 @@ no such section the notes are the commit list.
   - The command is `ajai`; the module and the repository are `luizfreitas27/ajai`.
   - Every environment variable starts with `AJAI_`: `AJAI_HOME`, `AJAI_AI_API_KEY`,
     `AJAI_TELEGRAM_BOT_TOKEN`, `AJAI_TELEGRAM_CHAT_ID`, `AJAI_CFG_*`.
-  - The config lives in `~/.config/ajai`, the data in `~/.local/share/ajai` (the database is
-    `ajai.db`), and the daemon's unit is `ajai.service`.
+  - The config lives in `~/.config/ajai` and the data in `~/.local/share/ajai` (the
+    database is `ajai.db`). The daemon's unit is `ajai.service`.
 - **The old names are not read.** If you had aja installed, move your setup by hand once:
   1. Run `aja daemon uninstall` if you installed the unit.
   2. Move `~/.config/aja` to `~/.config/ajai` and `~/.local/share/aja` to
      `~/.local/share/ajai`. The Chrome profile moves with it and stays signed in.
-  3. Rename `aja.db` there to `ajai.db`, with its `-wal` and `-shm` files if present.
+  3. Rename `aja.db` there to `ajai.db`, with its `-wal` and `-shm` files if present, and
+     the logs' `aja-` prefix to `ajai-` so that `ajai logs` still finds them.
   4. Rename the `AJA_` variables in `.env` to `AJAI_`.
   5. Install `ajai`, and run `ajai daemon install` again if you used the unit.
 
@@ -27,9 +28,9 @@ no such section the notes are the commit list.
 - **ajai now uses a Chrome profile of its own.** With `settings.chrome_profile_dir` blank
   (the default) runs use the ajai profile in the data directory, so your everyday Chrome
   stays open and free. Run `ajai login` once to sign in to LinkedIn there, or set
-  `settings.chrome_profile_dir` to your everyday profile (`ajai doctor` prints its path) to
-  keep the old behaviour. On the ajai profile a run closes its Chrome when it ends; on yours
-  it leaves the window open, as before.
+  `settings.chrome_profile_dir` to your everyday profile (`ajai doctor` prints its path)
+  to keep the old behaviour. On the ajai profile a run closes its Chrome when it ends; on
+  yours it leaves the window open, as before.
 - **Linux only for now.** Releases are built for linux/amd64 and linux/arm64.
 
 ### New

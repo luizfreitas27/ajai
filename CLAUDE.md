@@ -14,7 +14,7 @@ describe the behaviour being ported.
 ## Commands
 
 ```bash
-go build ./cmd/ajai          # the binary (a pseudo-version from git; releases get the tag via -ldflags)
+go build ./cmd/ajai         # the binary (a pseudo-version from git; releases get the tag via -ldflags)
 go test ./...               # unit tests: heuristics, config, memory, selector checks on fixtures
 go test -tags browser ./... # also the end-to-end tests that launch a headless Chrome
 go vet ./... && gofmt -l .  # CI runs both plus golangci-lint

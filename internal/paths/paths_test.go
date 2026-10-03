@@ -46,7 +46,7 @@ func TestDefaultsFollowTheOSConventions(t *testing.T) {
 	}
 }
 
-func TestTheChromeProfileIsAjaisOwnUnlessTheSettingNamesAnother(t *testing.T) {
+func TestTheChromeProfileIsTheAjaiProfileUnlessTheSettingNamesAnother(t *testing.T) {
 	p := Resolve("", func(k string) string {
 		if k == "AJAI_HOME" {
 			return "/data/ajai"

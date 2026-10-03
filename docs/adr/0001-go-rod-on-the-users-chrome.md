@@ -4,7 +4,8 @@ status: accepted
 
 # go-rod attached to the user's own Chrome, with no stealth library
 
-> The tool was renamed from aja to ajai before its first release (spec #53); this record keeps the name it was written under.
+> The tool was renamed from aja to ajai before its first release (spec #53); this record
+> keeps the name it was written under.
 
 `aja` must be a single Go binary, and it must drive a visible Chrome with the user's own
 profile. In Go the realistic options are go-rod and chromedp, both plain CDP clients.

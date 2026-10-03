@@ -13,10 +13,10 @@ import (
 	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
-// TestCloseQuitsChromeOnAjaisOwnProfileAndKeepsTheProfile drives a real headless
+// TestCloseQuitsChromeOnTheAjaiProfileAndKeepsTheProfile drives a real headless
 // Chrome: with QuitOnClose, Close ends the Chrome process, the profile survives
 // (with what the page stored) and is free for the next run at once.
-func TestCloseQuitsChromeOnAjaisOwnProfileAndKeepsTheProfile(t *testing.T) {
+func TestCloseQuitsChromeOnTheAjaiProfileAndKeepsTheProfile(t *testing.T) {
 	bin, err := chrome.Find("")
 	if err != nil {
 		t.Skip("no Chrome on this machine:", err)

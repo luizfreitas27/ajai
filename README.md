@@ -106,7 +106,7 @@ By hand:
    ajai run
    ```
 
-**Coming from phase 1?** ajai used to drive your everyday Chrome profile. A blank
+**Coming from phase 1?** Phase 1 drove your everyday Chrome profile. A blank
 `settings.chrome_profile_dir` now means the ajai profile, one of ajai's own: run `ajai login` once, or set
 `settings.chrome_profile_dir` to your everyday profile (`ajai doctor` prints its path) to
 keep the old behaviour. On the ajai profile a run closes its Chrome when it ends; on yours

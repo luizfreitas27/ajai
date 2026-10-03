@@ -29,6 +29,12 @@ type Paths struct {
 	ChromeProfileDir string
 }
 
+// HomeEnv is the variable that puts every file under one directory.
+const HomeEnv = "AJAI_HOME"
+
+// name is the tool's name as its folders and its database carry it.
+const name = "ajai"
+
 // Getenv is the environment lookup Resolve uses; os.Getenv in production.
 type Getenv func(string) string
 
@@ -36,19 +42,19 @@ type Getenv func(string) string
 // --config ("" when absent).
 func Resolve(configFlag string, getenv Getenv) Paths {
 	var p Paths
-	if home := getenv("AJAI_HOME"); home != "" {
+	if home := getenv(HomeEnv); home != "" {
 		p.Home = home
 		p.ConfigFile = filepath.Join(home, "config.yaml")
 		p.DataDir = home
 	} else {
-		p.ConfigFile = filepath.Join(xdg.ConfigHome, "ajai", "config.yaml")
-		p.DataDir = filepath.Join(xdg.DataHome, "ajai")
+		p.ConfigFile = filepath.Join(xdg.ConfigHome, name, "config.yaml")
+		p.DataDir = filepath.Join(xdg.DataHome, name)
 	}
 	if configFlag != "" {
 		p.ConfigFile = configFlag
 	}
 	p.EnvFile = filepath.Join(filepath.Dir(p.ConfigFile), ".env")
-	p.DBFile = filepath.Join(p.DataDir, "ajai.db")
+	p.DBFile = filepath.Join(p.DataDir, name+".db")
 	p.LogDir = filepath.Join(p.DataDir, "logs")
 	p.ScreenshotDir = filepath.Join(p.DataDir, "screenshots")
 	p.ResumeDir = filepath.Join(p.DataDir, "resumes")
