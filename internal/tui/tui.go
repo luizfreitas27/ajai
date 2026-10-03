@@ -393,7 +393,7 @@ func (m Model) View() string {
 		return fmt.Sprintf("ajai needs a terminal of at least %d×%d; this one is %d×%d.\nMake it larger, or press q to quit.",
 			minWidth, minHeight, m.width, m.height)
 	}
-	rule := m.styles.dim.Render(strings.Repeat("─", m.width))
+	rule := m.divider(0, 0)
 	height := m.bodyHeight()
 	var body string
 	switch {
@@ -414,7 +414,7 @@ func (m Model) View() string {
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
 	}
 	bar, start, width := m.tabBar()
-	return strings.Join([]string{bar, m.tabRule(start, width), fit(body, m.width, height), rule, m.hints()}, "\n")
+	return strings.Join([]string{bar, m.divider(start, width), fit(body, m.width, height), rule, m.hints()}, "\n")
 }
 
 // tabGap separates the tab bar's labels.
@@ -445,11 +445,11 @@ func (m Model) tabBar() (bar string, start, width int) {
 	return strings.Join(parts, tabGap), start, width
 }
 
-// tabRule is the divider under the tab bar, with a flame stroke under the
-// active tab's label: it marks the tab without colour too.
-func (m Model) tabRule(start, width int) string {
+// divider is a full-width rule with a flame stroke over the width columns from
+// start: under the tab bar it marks the active tab's label, without colour too.
+func (m Model) divider(start, width int) string {
 	start, width = min(start, m.width), min(width, max(0, m.width-start))
-	return m.styles.dim.Render(strings.Repeat("─", start)) + m.styles.bar.Render(strings.Repeat("━", width)) +
+	return m.styles.dim.Render(strings.Repeat("─", start)) + m.styles.stroke.Render(strings.Repeat("━", width)) +
 		m.styles.dim.Render(strings.Repeat("─", m.width-start-width))
 }
 
@@ -493,7 +493,7 @@ func (m Model) hints() string {
 	default:
 		hint = "r run · x stop · s setup · ? keys · q quit"
 	}
-	return m.styles.dim.Render(hint)
+	return m.styles.hints(hint)
 }
 
 // helpView lists every key that works now: the TUI's own, then the shown

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -31,16 +32,7 @@ func (h *harness) answersTab() { h.t.Helper(); h.press(tabKey(tabAnswers)) }
 // selectAnswer moves the selection to the answer whose question starts with label.
 func (h *harness) selectAnswer(label string) {
 	h.t.Helper()
-	h.press("g")
-	for range 50 {
-		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "▌ ") && strings.Contains(l, label) {
-				return
-			}
-		}
-		h.press("down")
-	}
-	h.t.Fatalf("no answer %q:\n%s", label, h.screen())
+	h.selectRow(fmt.Sprintf("answer %q", label), []string{"g"}, 50, func(row string) bool { return strings.Contains(row, label) })
 }
 
 func TestTheAnswersTabListsTheReviewQueueAndTheApprovedOnes(t *testing.T) {
@@ -72,7 +64,7 @@ func TestApproveCorrectAndDelete(t *testing.T) {
 	if r, _ := mem.Get(years.ID); r.State != "approved" || r.Source != "ai" {
 		t.Errorf("approved as shown, still the AI's: %+v", r)
 	}
-	if strings.Contains(h.screen(), "▌ Years") || strings.Contains(h.screen(), "  text      Years") {
+	if strings.Contains(h.screen(), selected+"Years") || strings.Contains(h.screen(), "  text      Years") {
 		t.Errorf("an approved answer left the review queue:\n%s", h.screen())
 	}
 
@@ -146,7 +138,7 @@ func TestThePickListIsUsedWithArrowsAndShowsEveryOption(t *testing.T) {
 
 	// Typing moves the pick; an arrow afterwards wins over what was typed.
 	h.press("tab", "e", "mor")
-	if !strings.Contains(h.screen(), "▌ More than 10 years") {
+	if !strings.Contains(h.screen(), selected+"More than 10 years") {
 		t.Errorf("the pick follows the typing:\n%s", h.screen())
 	}
 	h.press("up", "enter")

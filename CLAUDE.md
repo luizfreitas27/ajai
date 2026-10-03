@@ -83,9 +83,11 @@ to the tag before tagging and the workflow publishes that section as the release
   temporary AJAI_HOME is written as `$AJAI_HOME`). With `h.color` the harness draws in
   24-bit colour and the golden keeps the escape sequences, written `\e[…m` (the
   `colour-*` goldens pin the flame accent and the state colours; the rest stay plain).
-  Colours live in `styles.go`: `accent` (flame orange) for the active tab, titles and key
-  names; `styles.mark` starts every list row (the `▌` bar on the selection), and
-  `Model.tabRule` draws the `━` stroke under the active tab's label, which marks it
+  Colours live in `styles.go`: `accent` (flame orange, the state colours' mid tone so it
+  reads on light and dark backgrounds) for the active tab, titles, the filter shown and
+  key names (`styles.hints` draws the footer); `label` is a value's name, bold only.
+  `styles.mark` starts every list row (the `▌` bar on the selection), and
+  `Model.divider` draws the `━` stroke under the active tab's label, which marks it
   without colour too. While a tab edits a value or asks a
   question, every key but Ctrl-C goes to it (`Model.typing`). The Config tab reads and
   saves through `config.LoadFile` (the YAML alone: no environment, no `.env`), and loads with the real

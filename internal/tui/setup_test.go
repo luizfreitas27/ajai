@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,18 +16,11 @@ import (
 // selectCheck moves the checklist's selection to the check named name.
 func (h *harness) selectCheck(name string) {
 	h.t.Helper()
-	for range 20 {
-		h.press("up")
+	up := make([]string, 20)
+	for i := range up {
+		up[i] = "up"
 	}
-	for range 20 {
-		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "▌ ") && strings.Contains(l, " "+name+" ") {
-				return
-			}
-		}
-		h.press("down")
-	}
-	h.t.Fatalf("no check %q:\n%s", name, h.screen())
+	h.selectRow(fmt.Sprintf("check %q", name), up, 20, func(row string) bool { return strings.Contains(row, " "+name+" ") })
 }
 
 func TestWithoutAConfigTheTUIOpensOnTheChecklistAndTheInitWizardFixesIt(t *testing.T) {
@@ -38,7 +32,7 @@ func TestWithoutAConfigTheTUIOpensOnTheChecklistAndTheInitWizardFixesIt(t *testi
 		}
 	}
 	h.open(100, 30)
-	h.shows("ajai   Setup", "Setup checklist", "▌ ✗ config", "no config file at", "Enter: create the config with the init wizard (`ajai init`)",
+	h.shows("ajai   Setup", "Setup checklist", selected+"✗ config", "no config file at", "Enter: create the config with the init wizard (`ajai init`)",
 		"✓ chrome ", "i  import settings, answers and history from the Python bot", "r  check again",
 		"The other tabs open once there is a config file")
 	h.golden("setup-no-config")

@@ -1,9 +1,20 @@
 package tui
 
 import (
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
+
+// inColour are the styles as the harness draws them with h.color.
+func inColour() styles {
+	r := lipgloss.NewRenderer(io.Discard)
+	r.SetColorProfile(termenv.TrueColor)
+	return newStyles(r)
+}
 
 // stroked is the tab bar's text above the flame stroke in the divider under
 // it, or "" when the divider has no stroke.
@@ -63,14 +74,17 @@ func TestTheFlameThemeInColour(t *testing.T) {
 	h.remembered()
 	h.open(100, 30)
 	h.golden("colour-dashboard") // the brand, the stroke, titles; pending answers in amber, the passing checks in green
-	if dash := h.screen(); !strings.Contains(dash, "\x1b[38;2;217;119;6m3 to review") || !strings.Contains(dash, "\x1b[38;2;22;163;73mevery check passes") {
+	st := inColour()
+	if dash := h.screen(); !strings.Contains(dash, st.warn.Render("3 to review")) || !strings.Contains(dash, st.ok.Render("every check passes")) {
 		t.Errorf("the states lost their colours:\n%q", dash)
 	}
 	h.jobsTab()
-	h.golden("colour-jobs") // the selection's bar
-	flame := "\x1b[38;2;255;117;0m"
-	if !strings.Contains(h.screen(), flame+"━") || !strings.Contains(h.screen(), flame+"▌") {
-		t.Errorf("the stroke and the bar are not flame orange:\n%q", h.screen())
+	h.golden("colour-jobs") // the selection's bar, the filter shown, the keys in the hints
+	for what, drawn := range map[string]string{"the stroke": st.stroke.Render("━━━━━━"), "the bar": st.stroke.Render("▌"),
+		"a key": st.key.Render("tab"), "the filter": st.filter.Render("all")} {
+		if !strings.Contains(h.screen(), drawn) {
+			t.Errorf("%s is not drawn in the accent:\n%q", what, h.screen())
+		}
 	}
 }
 
@@ -80,7 +94,7 @@ func TestAFailedCheckStaysRedAmongTheFlame(t *testing.T) {
 	h.removeConfig()
 	h.open(100, 30)
 	h.golden("colour-setup")
-	if !strings.Contains(h.screen(), "\x1b[38;2;220;38;38m✗") {
+	if !strings.Contains(h.screen(), inColour().fail.Render("✗")) {
 		t.Errorf("the failed check is not red:\n%q", h.screen())
 	}
 }

@@ -231,6 +231,34 @@ func (h *harness) press(keys ...string) {
 	}
 }
 
+// selected starts the selected row of a list.
+const selected = "▌ "
+
+// selectedRow is the screen's selected row, or "".
+func (h *harness) selectedRow() string {
+	for _, l := range strings.Split(h.screen(), "\n") {
+		if strings.HasPrefix(l, selected) {
+			return l
+		}
+	}
+	return ""
+}
+
+// selectRow presses from (to reach the top of a list), then down, at most
+// limit times, until the selected row satisfies match; what names the row
+// when there is none.
+func (h *harness) selectRow(what string, from []string, limit int, match func(row string) bool) {
+	h.t.Helper()
+	h.press(from...)
+	for range limit {
+		if match(h.selectedRow()) {
+			return
+		}
+		h.press("down")
+	}
+	h.t.Fatalf("no %s:\n%s", what, h.screen())
+}
+
 // refresh is the one-second tick.
 func (h *harness) refresh() { h.send(tickMsg{}) }
 

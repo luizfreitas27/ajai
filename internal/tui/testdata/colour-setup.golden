@@ -1,17 +1,17 @@
-\e[1;38;2;255;117;0majai\e[0m   \e[1;38;2;255;117;0mSetup\e[0m   \e[2m1 Dashboard\e[0m   \e[2m2 Answers\e[0m   \e[2m3 Schedule\e[0m   \e[2m4 Jobs\e[0m   \e[2m5 Config\e[0m
-\e[2m───────\e[0m\e[38;2;255;117;0m━━━━━\e[0m\e[2m────────────────────────────────────────────────────────────────────────────────────────\e[0m
-\e[1;38;2;255;117;0mSetup checklist\e[0m  \e[2mwhat a run needs, as `ajai doctor` checks it\e[0m
+\e[1;38;2;234;88;12majai\e[0m   \e[1;38;2;234;88;12mSetup\e[0m   \e[2m1 Dashboard\e[0m   \e[2m2 Answers\e[0m   \e[2m3 Schedule\e[0m   \e[2m4 Jobs\e[0m   \e[2m5 Config\e[0m
+\e[2m───────\e[0m\e[38;2;234;88;12m━━━━━\e[0m\e[2m────────────────────────────────────────────────────────────────────────────────────────\e[0m
+\e[1;38;2;234;88;12mSetup checklist\e[0m  \e[2mwhat a run needs, as `ajai doctor` checks it\e[0m
 
-\e[38;2;255;117;0m▌\e[0m \e[38;2;220;38;38m✗\e[0m config          no config file at ~/config.yaml; run `ajai init`
+\e[38;2;234;88;12m▌\e[0m \e[38;2;220;38;38m✗\e[0m config          no config file at ~/config.yaml; run `ajai init`
   \e[38;2;22;163;73m✓\e[0m chrome          Chromium 152 (/usr/bin/chromium)
   \e[38;2;22;163;73m✓\e[0m chrome profile  ~/chrome-profile (the ajai profile), signed in to LinkedIn
   \e[38;2;22;163;73m✓\e[0m data dir        ~
 
 config: no config file at ~/config.yaml; run `ajai init`
-\e[38;2;255;117;0mEnter\e[0m: create the config with the init wizard (`ajai init`)
+\e[38;2;234;88;12mEnter\e[0m: create the config with the init wizard (`ajai init`)
 
-\e[38;2;255;117;0mi\e[0m  import settings, answers and history from the Python bot
-\e[38;2;255;117;0mr\e[0m  check again
+\e[38;2;234;88;12mi\e[0m  import settings, answers and history from the Python bot
+\e[38;2;234;88;12mr\e[0m  check again
 \e[2mThe other tabs open once there is a config file; the Config tab already sets the secrets.\e[0m
 
 
@@ -26,5 +26,5 @@ config: no config file at ~/config.yaml; run `ajai init`
 
 
 
-\e[2m────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m
-\e[2m↑↓ move · enter fix · i import · r check again · 5 config · q quit\e[0m
+\e[2m\e[0m\e[38;2;234;88;12m\e[0m\e[2m────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m
+\e[38;2;234;88;12m↑↓\e[0m\e[2m move\e[0m\e[2m · \e[0m\e[38;2;234;88;12menter\e[0m\e[2m fix\e[0m\e[2m · \e[0m\e[38;2;234;88;12mi\e[0m\e[2m import\e[0m\e[2m · \e[0m\e[38;2;234;88;12mr\e[0m\e[2m check again\e[0m\e[2m · \e[0m\e[38;2;234;88;12m5\e[0m\e[2m config\e[0m\e[2m · \e[0m\e[38;2;234;88;12mq\e[0m\e[2m quit\e[0m

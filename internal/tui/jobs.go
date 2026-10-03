@@ -300,7 +300,7 @@ func (j jobsTab) view(s styles, d Deps, width int) string {
 	if o := jobOutcomes[j.outcome]; o != "" {
 		filter = string(o)
 	}
-	head := s.section.Render("Jobs") + "  " + s.activeTab.Render(filter)
+	head := s.section.Render("Jobs") + "  " + s.filter.Render(filter)
 	if j.text != "" {
 		head += s.dim.Render(fmt.Sprintf(" matching %q (c clears)", j.text))
 	}

@@ -122,7 +122,7 @@ func (dash dashboard) view(s styles, width, height int, now time.Time, setup not
 	}
 	var top []string
 	add := func(label, text string) {
-		top = append(top, s.section.Render(fmt.Sprintf("%-12s", label))+"  "+text)
+		top = append(top, s.label.Render(fmt.Sprintf("%-12s", label))+"  "+text)
 	}
 	snap := dash.snap
 	for _, p := range snap.problems {

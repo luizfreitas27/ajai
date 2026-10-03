@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -27,14 +28,7 @@ func (h *harness) fileValue(key string) string {
 // moveTo walks the Config list down to the row named name.
 func (h *harness) moveTo(name string) {
 	h.t.Helper()
-	h.press("g")
-	for range 200 {
-		if strings.Contains(h.screen(), "▌ "+name+" ") {
-			return
-		}
-		h.press("down")
-	}
-	h.t.Fatalf("no row %q:\n%s", name, h.screen())
+	h.selectRow(fmt.Sprintf("row %q", name), []string{"g"}, 200, func(row string) bool { return strings.HasPrefix(row, selected+name+" ") })
 }
 
 func TestTheConfigTabListsTheSecretsAndEverySetting(t *testing.T) {
@@ -44,7 +38,7 @@ func TestTheConfigTabListsTheSecretsAndEverySetting(t *testing.T) {
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
 	h.shows(tabKey(tabConfig)+" Config", "There is no config file yet: run `ajai init`. The secrets can be set already.",
-		"▌ AJAI_AI_API_KEY", "set (your environment)", "AJAI_TELEGRAM_BOT_TOKEN", "not set",
+		selected+"AJAI_AI_API_KEY", "set (your environment)", "AJAI_TELEGRAM_BOT_TOKEN", "not set",
 		"The AI provider's API key", "Your environment sets it, and wins over .env.")
 	if strings.Contains(h.screen(), "sk-from-the-environment") {
 		t.Fatal("a secret's value is on screen")
@@ -214,10 +208,8 @@ func TestListsWithOptionsArePickedSeveralAtATime(t *testing.T) {
 
 // selectedLine is the screen line under the editor's cursor.
 func (h *harness) selectedLine() string {
-	for _, l := range strings.Split(h.screen(), "\n") {
-		if strings.HasPrefix(l, "▌ [") {
-			return l
-		}
+	if row := h.selectedRow(); strings.HasPrefix(row, selected+"[") {
+		return row
 	}
 	return ""
 }
@@ -247,14 +239,14 @@ func TestScrollingUpBringsTheSectionTitlesBack(t *testing.T) {
 	h.open(100, 30)
 	h.press(tabKey(tabConfig), "G")
 	for range 300 {
-		if strings.Contains(h.screen(), "▌ first_name ") {
+		if strings.Contains(h.screen(), selected+"first_name ") {
 			break
 		}
 		h.press("up")
 	}
-	h.shows("▌ first_name ", "personals")
+	h.shows(selected+"first_name ", "personals")
 	h.press("up")
-	h.shows("▌ AJAI_TELEGRAM_CHAT_ID", "secrets, kept in")
+	h.shows(selected+"AJAI_TELEGRAM_CHAT_ID", "secrets, kept in")
 }
 
 func TestAnOverrideInDotenvIsMarkedAndNeverSaved(t *testing.T) {
