@@ -83,6 +83,11 @@ to the tag before tagging and the workflow publishes that section as the release
   temporary AJAI_HOME is written as `$AJAI_HOME`). With `h.color` the harness draws in
   24-bit colour and the golden keeps the escape sequences, written `\e[…m` (the
   `colour-*` goldens pin the flame accent and the state colours; the rest stay plain).
+  The Dashboard's logo is fixed art in `logo.go`, coloured row by row from `flame` (in
+  `styles.go`). `summaryLines` sets it beside the summary when the width holds the logo and
+  the widest summary line (and is at least `logoBesideMinWidth`), above it otherwise, and
+  in either case only if the height still leaves `belowSummary` (the last runs and
+  `minLogLines` of log); else the summary goes alone. It never wraps or cuts a line.
   Colours live in `styles.go`: `accent` (flame orange, the state colours' mid tone so it
   reads on light and dark backgrounds) for the active tab, titles, the filter shown and
   key names (`styles.hints` draws the footer); `label` is a value's name, bold only.

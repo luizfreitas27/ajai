@@ -9,12 +9,15 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// inColour are the styles as the harness draws them with h.color.
-func inColour() styles {
+// colourRenderer draws as the harness does with h.color.
+func colourRenderer() *lipgloss.Renderer {
 	r := lipgloss.NewRenderer(io.Discard)
 	r.SetColorProfile(termenv.TrueColor)
-	return newStyles(r)
+	return r
 }
+
+// inColour are the styles as the harness draws them with h.color.
+func inColour() styles { return newStyles(colourRenderer()) }
 
 // stroked is the tab bar's text above the flame stroke in the divider under
 // it, or "" when the divider has no stroke.

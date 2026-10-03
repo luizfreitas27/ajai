@@ -3,11 +3,14 @@ ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 Stop a run started from the terminal (pid $PID) at 09:30? It ends once the job in hand is done.
 y stops it · n keeps it
 
-Run           starting, started from the terminal
-Pending       none
-Schedule      no schedule windows
-Daemon        not running
-Setup         every check passes
+  ▄███████         ▄█    ▄███████   ▄█   Run           starting, started from the terminal
+ ███   ███        ███   ███   ███  ███   Pending       none
+ ███   ███        ███   ███   ███  ███   Schedule      no schedule windows
+▄███▄▄▄███        ███  ▄███▄▄▄███  ███   Daemon        not running
+▀███▀▀▀███        ███  ▀███▀▀▀███  ███   Setup         every check passes
+ ███   ███  ▄██   ███   ███   ███  ███
+ ███   ███  ███   ███   ███   ███  ███
+ ███   █▀    ▀█████▀    ███   █▀   █▀
 
 Last runs
   started       market         mode    appl  ext fail skip  ended
@@ -15,9 +18,6 @@ Last runs
 
 Today's log
   nothing yet
-
-
-
 
 
 

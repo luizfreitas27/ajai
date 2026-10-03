@@ -14,9 +14,10 @@ import (
 // terminal draws against its own background.
 type styles struct {
 	plain, brand, tab, activeTab, dim, ok, warn, fail, key, section lipgloss.Style
-	label                                                           lipgloss.Style // what a value is, beside it
-	filter                                                          lipgloss.Style // the filter option shown
-	stroke                                                          lipgloss.Style // the selection's bar and the active tab's stroke
+	label                                                           lipgloss.Style   // what a value is, beside it
+	filter                                                          lipgloss.Style   // the filter option shown
+	logo                                                            []lipgloss.Style // the logo's rows, in its flame
+	stroke                                                          lipgloss.Style   // the selection's bar and the active tab's stroke
 }
 
 // accent is flame orange, the colour of what is active or selected: the active
@@ -35,6 +36,10 @@ func (s styles) hints(line string) string {
 	}
 	return strings.Join(parts, s.dim.Render(" · "))
 }
+
+// flame colours the logo row by row, top to bottom: a dark ember at the tips,
+// then red, orange and amber, down to yellow at the base.
+var flame = []lipgloss.Color{"#B8101E", "#D82814", "#F2420A", "#FB6403", "#FF8709", "#FFAA1B", "#FFCA39", "#FFE85C"}
 
 // mark starts a list row: a flame bar when the row is the selection.
 func (s styles) mark(selected bool) string {
@@ -56,7 +61,7 @@ func (s styles) byLevel(l level) lipgloss.Style {
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
-	return styles{
+	st := styles{
 		plain:     r.NewStyle(),
 		brand:     r.NewStyle().Bold(true).Foreground(accent),
 		activeTab: r.NewStyle().Bold(true).Foreground(accent),
@@ -71,4 +76,8 @@ func newStyles(r *lipgloss.Renderer) styles {
 		filter:    r.NewStyle().Bold(true).Underline(true).Foreground(accent),
 		stroke:    r.NewStyle().Foreground(accent),
 	}
+	for _, c := range flame {
+		st.logo = append(st.logo, r.NewStyle().Foreground(c))
+	}
+	return st
 }
