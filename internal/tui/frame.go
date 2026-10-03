@@ -13,10 +13,10 @@ import (
 // under it (a search box, a notice, a problem), the list's column names and
 // rows with the selection in view, and the selected item's details: in a panel
 // to the right of the list from detailsBesideMinWidth columns, directly under
-// the list on a narrower terminal. Under the list the details are never cut:
-// the list gives up rows first. Beside it they are wrapped to the panel, and
-// when they are taller than the screen their last line says how many more
-// there are.
+// the list on a narrower terminal. The details are wrapped to their width,
+// never cut: under the list, the list gives up rows first; beside it, when
+// they are taller than the screen their last line says how many more there
+// are.
 
 // detailsBesideMinWidth: from this width the details stand beside the list.
 const detailsBesideMinWidth = 120
@@ -36,10 +36,10 @@ type listFrame struct {
 	// both width wide at most (the selection mark comes before them).
 	heading func(width int) string
 	row     func(i, width int) string
-	// titled, if set, says whether row i is a section's title: drawn as it is,
-	// without a mark, never selected, and brought into view with the rows under
-	// it.
-	titled func(i int) bool
+	// isTitle, if set, says whether row i is a section's title: drawn as it
+	// is, without a mark, and brought into view with the rows under it; the
+	// tab never selects it.
+	isTitle func(i int) bool
 	// details is the selected item's, already styled, for a panel width wide;
 	// beside says whether it stands beside the list, with the room of its height.
 	details func(s styles, width int, beside bool) []string
@@ -81,7 +81,16 @@ func (f listFrame) visible(width, height int) int {
 	if _, panel := frameSplit(width); panel > 0 {
 		return max(1, height-f.above(width))
 	}
-	return max(1, height-f.above(width)-1-max(f.minDetails, len(f.details(measure, width, false))))
+	return max(1, height-f.above(width)-1-max(f.minDetails, len(f.detailLines(measure, width, false))))
+}
+
+// detailLines are the details wrapped to width.
+func (f listFrame) detailLines(s styles, width int, beside bool) []string {
+	var lines []string
+	for _, l := range f.details(s, width, beside) {
+		lines = append(lines, strings.Split(ansi.Wrap(l, width, "/-"), "\n")...)
+	}
+	return lines
 }
 
 // keep is where the selection and the first row shown go on a width × height
@@ -93,9 +102,9 @@ func (f listFrame) keep(cursor, top, width, height int) (int, int) {
 	n := f.visible(width, height)
 	if cursor < top {
 		top = cursor
-		if f.titled != nil {
+		if f.isTitle != nil {
 			title := cursor
-			for title > 0 && !f.titled(title) {
+			for title > 0 && !f.isTitle(title) {
 				title--
 			}
 			if cursor-title < n {
@@ -152,7 +161,7 @@ func (f listFrame) view(s styles, width, height, cursor, top int) string {
 		list = append(list, s.dim.Render("  "+f.heading(listWidth-2)))
 	}
 	for i := top; i < f.rows && i < top+f.visible(width, height); i++ {
-		if f.titled != nil && f.titled(i) {
+		if f.isTitle != nil && f.isTitle(i) {
 			list = append(list, ansi.Truncate(f.row(i, listWidth), listWidth, "…"))
 			continue
 		}
@@ -161,15 +170,9 @@ func (f listFrame) view(s styles, width, height, cursor, top int) string {
 	if panel == 0 {
 		lines = append(lines, list...)
 		lines = append(lines, s.dim.Render(strings.Repeat("─", width)))
-		for _, l := range f.details(s, width, false) {
-			lines = append(lines, ansi.Truncate(l, width, "…"))
-		}
-		return strings.Join(lines, "\n")
+		return strings.Join(append(lines, f.detailLines(s, width, false)...), "\n")
 	}
-	var details []string
-	for _, l := range f.details(s, panel, true) {
-		details = append(details, strings.Split(ansi.Wrap(l, panel, "/-"), "\n")...)
-	}
+	details := f.detailLines(s, panel, true)
 	if room := height - len(lines); len(details) > room {
 		details = append(details[:max(0, room-1)], s.dim.Render(fmt.Sprintf("… %d more lines", len(details)-room+1)))
 	}
@@ -190,12 +193,12 @@ func (f listFrame) view(s styles, width, height, cursor, top int) string {
 	return strings.Join(lines, "\n")
 }
 
-// reading is a list's waiting text: "Reading…" until it is read.
-func reading(loaded bool) string {
-	if loaded {
+// waitText is a list's waiting text: text until done, then "".
+func waitText(done bool, text string) string {
+	if done {
 		return ""
 	}
-	return "Reading…"
+	return text
 }
 
 // listNotes are the notes most list tabs show under their header: a problem

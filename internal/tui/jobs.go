@@ -123,7 +123,7 @@ func (j jobsTab) resized(width, height int) jobsTab {
 }
 
 func (j jobsTab) current() (store.Job, bool) {
-	if !j.loaded || j.cursor >= len(j.jobs) {
+	if !j.loaded || j.cursor < 0 || j.cursor >= len(j.jobs) { // a move past the top is settled after the details are measured
 		return store.Job{}, false
 	}
 	return j.jobs[j.cursor], true
@@ -305,7 +305,7 @@ func (j jobsTab) frame(s styles, d Deps) listFrame {
 		notes = []string{j.search.View()}
 	}
 	return listFrame{title: "Jobs", filters: filters, filter: j.outcome, summary: summary, notes: notes,
-		waiting: reading(j.loaded), empty: "No jobs here yet.", rows: len(j.jobs), minDetails: jobsDetailLines,
+		waiting: waitText(j.loaded, "Reading…"), empty: "No jobs here yet.", rows: len(j.jobs), minDetails: jobsDetailLines,
 		heading: func(width int) string { return jobRow(width, "recorded", "outcome", "title", "company", "location") },
 		row: func(i, width int) string {
 			job := j.jobs[i]

@@ -172,13 +172,14 @@ func TestBesideTheListALongLineWrapsAndTooManyLinesSayHowManyMore(t *testing.T) 
 }
 
 // cutEditors are the panel's editor lines (they start with the "> " prompt)
-// that the panel had to cut, or to wrap: then the line after one holds
-// tail, the end of what is typed.
-func (h *harness) cutEditors(tail string) []string {
+// that the panel had to cut, or to wrap: then typedEnd, the end of the text
+// in the editor, is on a line of its own.
+func (h *harness) cutEditors(typedEnd string) []string {
 	var cut []string
 	for _, l := range strings.Split(h.screen(), "\n") {
 		_, right, _ := strings.Cut(l, panelRule)
-		if strings.HasPrefix(right, "> ") && strings.Contains(right, "…") || tail != "" && strings.Contains(right, tail) && !strings.HasPrefix(right, "> ") {
+		editor := strings.HasPrefix(right, "> ")
+		if (editor && strings.Contains(right, "…")) || (typedEnd != "" && strings.Contains(right, typedEnd) && !editor) {
 			cut = append(cut, right)
 		}
 	}
@@ -250,5 +251,67 @@ func TestAPathShowsUnderHomeAsTildeButIsEditedAsItIs(t *testing.T) {
 	h.press("enter")
 	if !strings.Contains(h.screen(), "> "+filepath.Join(h.p.DataDir, "resumes", "cv.pdf")) {
 		t.Errorf("the editor does not hold the path as it is:\n%s", h.screen())
+	}
+}
+
+func TestMovingPastTheTopOfAListKeepsTheFirstRow(t *testing.T) {
+	h := newHarness(t)
+	h.someJobs()
+	h.remembered()
+	h.writeConfig()
+	h.open(100, 30)
+	for _, tab := range []string{tabKey(tabJobs), tabKey(tabAnswers), tabKey(tabConfig)} {
+		h.press(tab, "g", "up", "k", "pgup")
+		if h.selectedRow() == "" {
+			t.Errorf("tab %s: no row selected after moving past the top:\n%s", tab, h.screen())
+		}
+	}
+	h.press("1", "s", "up", "k", "pgup")
+	if row := h.selectedRow(); !strings.Contains(row, "config") {
+		t.Errorf("the checklist's first check is not selected: %q", row)
+	}
+}
+
+func TestUnderTheListWrappedDetailsTakeTheirRoomFromTheList(t *testing.T) {
+	long := strings.Repeat("word ", 50) + "END"
+	f := listFrame{title: "T", rows: 30, heading: func(int) string { return "h" },
+		row:     func(i, _ int) string { return fmt.Sprint("row ", i) },
+		details: func(styles, int, bool) []string { return []string{long} }}
+	screen := strings.Split(f.view(measure, 80, 16, 0, 0), "\n")
+	if len(screen) > 16 || !strings.Contains(strings.Join(screen, "\n"), "END") {
+		t.Errorf("%d lines for 16, or the details' end is missing:\n%s", len(screen), strings.Join(screen, "\n"))
+	}
+}
+
+func TestARefusalNeverPushesTheEditedRowOutOfView(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(80, 24)
+	h.press(tabKey(tabConfig))
+	h.moveTo("ethnicity") // eight options: the editor takes room from the list
+	h.press("enter")
+	edited := h.selectedRow()
+	h.removeConfig()
+	h.press("enter") // refused: there is no config file any more
+	h.shows("Refused:")
+	if row := h.selectedRow(); row == "" || row != edited {
+		t.Errorf("the edited row %q is out of view:\n%s", edited, h.screen())
+	}
+}
+
+func TestASecretTypedInThePanelIsNeverShownOrLogged(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(140, 30)
+	h.press(tabKey(tabConfig))
+	h.moveTo("AJAI_TELEGRAM_BOT_TOKEN")
+	h.press("enter")
+	h.shows("│ Edit AJAI_TELEGRAM_BOT_TOKEN (hidden as you type)")
+	h.press("123:SECRET")
+	h.shows("│ > ••••••••••")
+	h.press("enter")
+	h.shows("Saved AJAI_TELEGRAM_BOT_TOKEN in .env.", "set (.env)")
+	if strings.Contains(h.screen(), "123:SECRET") || strings.Contains(h.logs.String(), "SECRET") {
+		t.Errorf("the secret reached the screen or the log:\n%s\n%s", h.screen(), h.logs)
 	}
 }

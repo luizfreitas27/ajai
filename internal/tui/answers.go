@@ -154,7 +154,7 @@ func (a answersTab) update(msg tea.Msg, d Deps) (answersTab, tea.Cmd) {
 
 // current is the selected answer, if the list has any.
 func (a answersTab) current() (memory.Remembered, bool) {
-	if !a.loaded || a.cursor >= len(a.answers) {
+	if !a.loaded || a.cursor < 0 || a.cursor >= len(a.answers) { // a move past the top is settled after the details are measured
 		return memory.Remembered{}, false
 	}
 	return a.answers[a.cursor], true
@@ -348,7 +348,7 @@ func (a answersTab) frame(s styles) listFrame {
 		summary = fmt.Sprintf("%d %s", len(a.answers), a.shownState())
 	}
 	return listFrame{title: "Answers", filters: filters, filter: slices.Index(filters, a.shownState()), summary: summary, notes: listNotes(s, a.problem, a.notice, a.width),
-		waiting: reading(a.loaded), empty: empty, rows: len(a.answers), minDetails: answersDetailLines,
+		waiting: waitText(a.loaded, "Reading…"), empty: empty, rows: len(a.answers), minDetails: answersDetailLines,
 		heading: func(width int) string { return answerRow(width, "kind", "question", "answer", "from") },
 		row: func(i, width int) string {
 			r := a.answers[i]

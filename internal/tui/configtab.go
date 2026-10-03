@@ -77,6 +77,9 @@ type configRow struct {
 }
 
 // name is what the row edits: a secret's variable or a setting's key.
+// isTitle says whether the row is a section's title, which is never selected.
+func (r configRow) isTitle() bool { return r.kind == titleRow }
+
 func (r configRow) name() string {
 	if r.kind == secretRow {
 		return r.secret
@@ -209,7 +212,7 @@ func (c configTab) update(msg tea.Msg, d Deps) (configTab, tea.Cmd) {
 		if msg.refusal != "" {
 			e.refusal = msg.refusal
 			c.edit = &e
-			return c, nil
+			return c.scrolled(), nil // the details grew: the edited row stays in view
 		}
 		c.edit, c.notice = nil, msg.notice
 		return c, loadConfig(d)
@@ -237,7 +240,7 @@ func (c configTab) browseKey(msg tea.KeyMsg) configTab {
 	case "end", "G":
 		c.cursor = c.step(len(c.rows))
 	case "enter":
-		if c.cursor < len(c.rows) && c.rows[c.cursor].kind != titleRow {
+		if c.cursor < len(c.rows) && !c.rows[c.cursor].isTitle() {
 			c.edit = newConfigEdit(c.rows[c.cursor], detailWidth(c.width))
 			c.notice = notice{}
 		}
@@ -253,7 +256,7 @@ func (c configTab) step(n int) int {
 		if n < 0 {
 			dir = -1
 		}
-		for next += dir; next >= 0 && next < len(c.rows) && c.rows[next].kind == titleRow; next += dir {
+		for next += dir; next >= 0 && next < len(c.rows) && c.rows[next].isTitle(); next += dir {
 		}
 		if next < 0 || next >= len(c.rows) {
 			break
@@ -265,7 +268,7 @@ func (c configTab) step(n int) int {
 
 func (c configTab) nearestSelectable(i int) int {
 	for ; i < len(c.rows); i++ {
-		if c.rows[i].kind != titleRow {
+		if !c.rows[i].isTitle() {
 			return i
 		}
 	}
@@ -275,7 +278,7 @@ func (c configTab) nearestSelectable(i int) int {
 // find is the row that edits name, or the first selectable one.
 func (c configTab) find(name string) int {
 	for i, r := range c.rows {
-		if r.kind != titleRow && r.name() == name {
+		if !r.isTitle() && r.name() == name {
 			return i
 		}
 	}
@@ -498,9 +501,9 @@ func (c configTab) frame(s styles) listFrame {
 	for _, n := range c.heading() {
 		notes = append(notes, wrapStyled(s.byLevel(n.level), n.text, c.width)...)
 	}
-	return listFrame{title: "Config", summary: c.path, notes: notes, waiting: reading(c.loaded), rows: len(c.rows), minDetails: configDetailLines,
+	return listFrame{title: "Config", summary: c.path, notes: notes, waiting: waitText(c.loaded, "Reading…"), rows: len(c.rows), minDetails: configDetailLines,
 		row:     func(i, _ int) string { return c.rowLine(s, i) },
-		titled:  func(i int) bool { return c.rows[i].kind == titleRow },
+		isTitle: func(i int) bool { return c.rows[i].isTitle() },
 		details: func(s styles, width int, _ bool) []string { return c.detail(s, width) },
 	}
 }
@@ -512,7 +515,7 @@ func (c configTab) view(s styles, width int) string {
 // rowLine is row i: a section's title, or a secret or a setting and its value.
 func (c configTab) rowLine(s styles, i int) string {
 	r := c.rows[i]
-	if r.kind == titleRow {
+	if r.isTitle() {
 		return s.section.Render(r.title)
 	}
 	name, value := r.secret, ""
@@ -527,7 +530,7 @@ func (c configTab) rowLine(s styles, i int) string {
 		}
 	default:
 		_, name, _ = strings.Cut(r.field.Key, ".")
-		value = Deps{Home: c.home}.tilde(r.value) // shown only: the editor keeps the value as it is
+		value = tildeUnder(c.home, r.value) // shown only: the editor keeps the value as it is
 		if r.override != "" {
 			value += s.warn.Render("  ← " + r.override + " overrides it")
 		}
@@ -538,7 +541,7 @@ func (c configTab) rowLine(s styles, i int) string {
 // detail explains the selected row, or shows the editor.
 func (c configTab) detail(s styles, width int) []string {
 	var lines []string
-	if len(c.rows) == 0 || c.cursor >= len(c.rows) {
+	if c.cursor < 0 || c.cursor >= len(c.rows) {
 		return lines
 	}
 	if e := c.edit; e != nil {
