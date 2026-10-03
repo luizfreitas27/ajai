@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // recordJob stores a job recorded minutes after 08:00 on h's day.

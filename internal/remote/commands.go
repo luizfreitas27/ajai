@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // status describes the run in progress (or the last one), the pending answers
@@ -46,7 +46,7 @@ func (l *Listener) status() string {
 			}
 			reason := r.Reason
 			if r.EndedAt == "" {
-				reason = "it never recorded an end (aja was killed)"
+				reason = "it never recorded an end (ajai was killed)"
 			}
 			fmt.Fprintf(&b, "Last run (%s, market %s, %s): applied %d, external %d, failed %d, skipped %d; %s.\n",
 				when, r.Market, run.Mode(r.DryRun), r.Applied, r.External, r.Failed, r.Skipped, reason)
@@ -62,7 +62,7 @@ func (l *Listener) status() string {
 	switch {
 	case err != nil:
 	case len(windows) == 0:
-		b.WriteString("No schedule windows (aja schedule add).\n")
+		b.WriteString("No schedule windows (ajai schedule add).\n")
 	default:
 		now := l.now()
 		if o, ok := schedule.Current(windows, now); ok {
@@ -158,7 +158,7 @@ func (l *Listener) start(ctx context.Context, args []string) {
 
 // help lists the commands.
 func help() string {
-	return `aja listens to:
+	return `ajai listens to:
 /status: the run in progress (or the last one), pending answers, the next window
 /stop: stop the run in progress, wherever it was started
 /run [` + strings.Join(config.MarketNameList(), "|") + `] [dry]: start an unattended run now

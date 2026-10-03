@@ -6,18 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/questions"
 )
 
-// TestLiveOpenAIAnswer makes one real call; it runs only when AJA_LIVE_OPENAI_KEY
-// is set (never in CI). AJA_LIVE_MODEL picks the model (default: the config default).
+// TestLiveOpenAIAnswer makes one real call; it runs only when AJAI_LIVE_OPENAI_KEY
+// is set (never in CI). AJAI_LIVE_MODEL picks the model (default: the config default).
 func TestLiveOpenAIAnswer(t *testing.T) {
-	key := os.Getenv("AJA_LIVE_OPENAI_KEY")
+	key := os.Getenv("AJAI_LIVE_OPENAI_KEY")
 	if key == "" {
-		t.Skip("set AJA_LIVE_OPENAI_KEY to run the live smoke test")
+		t.Skip("set AJAI_LIVE_OPENAI_KEY to run the live smoke test")
 	}
-	model := os.Getenv("AJA_LIVE_MODEL")
+	model := os.Getenv("AJAI_LIVE_MODEL")
 	if model == "" {
 		model = config.Defaults().AI.Model
 	}

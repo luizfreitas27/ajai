@@ -46,4 +46,4 @@ jobs:
           ls dist/*.tar.gz dist/checksums.txt
           test "$(ls dist/*.tar.gz | wc -l)" -eq 2
           test -z "$(ls dist/*.zip 2>/dev/null)"
-          ./dist/aja_linux_amd64_v1/aja version
+          ./dist/ajai_linux_amd64_v1/ajai version

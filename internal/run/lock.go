@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/filelock"
-	"github.com/luizfreitas27/aja/internal/procs"
+	"github.com/luizfreitas27/ajai/internal/filelock"
+	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
 // Origin says who started a run.
@@ -63,7 +63,7 @@ type HeldError struct{ Holder Holder }
 
 // Error names the run in progress and how to stop it.
 func (e *HeldError) Error() string {
-	return "another run is in progress: " + e.Holder.String() + "; stop it with `aja stop` or wait for it to end"
+	return "another run is in progress: " + e.Holder.String() + "; stop it with `ajai stop` or wait for it to end"
 }
 
 // Lock is the machine-wide run lock: one run, or non-stop session, at a time,

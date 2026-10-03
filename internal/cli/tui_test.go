@@ -12,22 +12,22 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/tui"
+	"github.com/luizfreitas27/ajai/internal/tui"
 )
 
-func TestBareAjaPrintsTheHelpOutsideATerminal(t *testing.T) {
+func TestBareAjaiPrintsTheHelpOutsideATerminal(t *testing.T) {
 	h := newHarness(t)
 	code, out, _ := h.run()
-	if code != 0 || !strings.Contains(out, "Available Commands:") || !strings.Contains(out, `"aja" with no command opens the TUI`) {
+	if code != 0 || !strings.Contains(out, "Available Commands:") || !strings.Contains(out, `"ajai" with no command opens the TUI`) {
 		t.Errorf("%d %q", code, out)
 	}
-	if strings.Contains(out, "aja [flags]") {
+	if strings.Contains(out, "ajai [flags]") {
 		t.Errorf("the help keeps its usage lines; the TUI adds none:\n%s", out)
 	}
 	if _, help, _ := h.run("--help"); help != out {
-		t.Errorf("bare aja and aja --help print the same help:\n%s\n---\n%s", out, help)
+		t.Errorf("bare ajai and ajai --help print the same help:\n%s\n---\n%s", out, help)
 	}
-	if _, sub, _ := h.run("status", "--help"); !strings.Contains(sub, "aja status [flags]") {
+	if _, sub, _ := h.run("status", "--help"); !strings.Contains(sub, "ajai status [flags]") {
 		t.Errorf("a subcommand keeps its usage line:\n%s", sub)
 	}
 	if code, _, errOut := h.run("bogus"); code == 0 || !strings.Contains(errOut, `unknown command "bogus"`) {
@@ -35,7 +35,7 @@ func TestBareAjaPrintsTheHelpOutsideATerminal(t *testing.T) {
 	}
 }
 
-func TestBareAjaOpensTheTUIInATerminal(t *testing.T) {
+func TestBareAjaiOpensTheTUIInATerminal(t *testing.T) {
 	h := newHarness(t)
 	type call struct {
 		deps  tui.Deps
@@ -76,7 +76,7 @@ func TestBareAjaOpensTheTUIInATerminal(t *testing.T) {
 }
 
 // TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter runs the
-// shell line the launcher hands to Bubble Tea, with echo and false for aja.
+// shell line the launcher hands to Bubble Tea, with echo and false for ajai.
 func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.T) {
 	run := func(self string, args ...string) (string, int) {
 		t.Helper()
@@ -94,21 +94,21 @@ func TestTheTerminalLauncherPassesArgumentsAsTheyAreAndWaitsForEnter(t *testing.
 		return string(out), 0
 	}
 	out, code := run("/bin/echo", "import", "/home/ana/my bot; rm -rf x")
-	if code != 0 || !strings.HasPrefix(out, "import /home/ana/my bot; rm -rf x\n") || !strings.Contains(out, "[aja] Press Enter to go back to the TUI.") {
+	if code != 0 || !strings.HasPrefix(out, "import /home/ana/my bot; rm -rf x\n") || !strings.Contains(out, "[ajai] Press Enter to go back to the TUI.") {
 		t.Errorf("%d %q", code, out)
 	}
 	if _, code := run("/bin/false"); code != 1 {
-		t.Errorf("aja's exit status is kept: %d", code)
+		t.Errorf("ajai's exit status is kept: %d", code)
 	}
-	// Ctrl-C ends aja (SIGINT to the whole group); the shell still waits for Enter.
+	// Ctrl-C ends ajai (SIGINT to the whole group); the shell still waits for Enter.
 	out, code = run("/bin/sh", "-c", `kill -INT 0; echo never`)
-	if !strings.Contains(out, "[aja] Press Enter") || strings.Contains(out, "never") || code == 0 {
+	if !strings.Contains(out, "[ajai] Press Enter") || strings.Contains(out, "never") || code == 0 {
 		t.Errorf("after Ctrl-C: %d %q", code, out)
 	}
 }
 
-// TestStartRunsAjaInASessionOfItsOwnAndReportsItsEnd uses sh for aja.
-func TestStartRunsAjaInASessionOfItsOwnAndReportsItsEnd(t *testing.T) {
+// TestStartRunsAjaiInASessionOfItsOwnAndReportsItsEnd uses sh for ajai.
+func TestStartRunsAjaiInASessionOfItsOwnAndReportsItsEnd(t *testing.T) {
 	l := launcher{executable: "/bin/sh"}
 	pid, exited, err := l.Start([]string{"-c", "sleep 0.3; exit 3"})
 	if err != nil {
@@ -127,7 +127,7 @@ func TestStartRunsAjaInASessionOfItsOwnAndReportsItsEnd(t *testing.T) {
 	if err := <-exited; !errors.As(err, &exit) || exit.ExitCode() != 3 {
 		t.Errorf("its end: %v", err)
 	}
-	withFlags := launcher{executable: "aja", configFlag: "/x/c.yaml", noColor: true}.argv([]string{"run"})
+	withFlags := launcher{executable: "ajai", configFlag: "/x/c.yaml", noColor: true}.argv([]string{"run"})
 	if strings.Join(withFlags, " ") != "--config /x/c.yaml --no-color run" {
 		t.Errorf("%q", withFlags)
 	}

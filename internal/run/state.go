@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/procs"
+	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
 // State is the run in progress, written to a file in the data directory after
-// every change so `aja status` can show live counters.
+// every change so `ajai status` can show live counters.
 type State struct {
 	PID        int       `json:"pid"`
 	Started    time.Time `json:"started"`

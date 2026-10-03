@@ -15,11 +15,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/ui"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/ui"
 )
 
 // App carries what every command needs. Tests build one with buffers and a
@@ -42,7 +42,7 @@ type App struct {
 	logger   *slog.Logger
 	cleanups []func() error // closed in reverse order when the command ends
 
-	eventsAsJSON bool // aja run --json
+	eventsAsJSON bool // ajai run --json
 
 	linesOnce   sync.Once   // starts the stdin reader (readLine)
 	lines       chan string // lines typed on stdin; closed at end of input
@@ -57,12 +57,12 @@ func NewApp(version string) *App {
 // Command builds the root command and its subcommands.
 func (a *App) Command() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "aja",
+		Use:   "ajai",
 		Short: "Apply to LinkedIn Easy Apply jobs from your own Chrome",
-		Long: `aja drives your real, visible Chrome through LinkedIn job search and Easy Apply,
+		Long: `ajai drives your real, visible Chrome through LinkedIn job search and Easy Apply,
 answering forms from your configuration, its answer memory and (optionally) an AI
-model. Start with "aja init", sign in once with "aja login", check with "aja doctor",
-try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
+model. Start with "ajai init", sign in once with "ajai login", check with "ajai doctor",
+try "ajai run --dry-run". In a terminal, "ajai" with no command opens the TUI.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -85,13 +85,13 @@ try "aja run --dry-run". In a terminal, "aja" with no command opens the TUI.`,
 			a.cleanups = nil
 		},
 	}
-	// The root runs the TUI, which would add "aja [flags]" to the help; the
+	// The root runs the TUI, which would add "ajai [flags]" to the help; the
 	// help stays as it was, and subcommands keep their usage line.
 	root.SetUsageTemplate(strings.Replace(root.UsageTemplate(), "{{if .Runnable}}", "{{if and .Runnable .HasParent}}", 1))
 	root.SetOut(a.Stdout)
 	root.SetErr(a.Stderr)
 	root.SetIn(a.Stdin)
-	root.PersistentFlags().StringVar(&a.configFlag, "config", "", "config file (default: the OS config dir, or $AJA_HOME/config.yaml)")
+	root.PersistentFlags().StringVar(&a.configFlag, "config", "", "config file (default: the OS config dir, or $AJAI_HOME/config.yaml)")
 	root.PersistentFlags().BoolVar(&a.noColor, "no-color", false, "plain output (also honours NO_COLOR)")
 	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.loginCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd(), a.scheduleCmd(), a.daemonCmd())
 	return root
@@ -150,7 +150,7 @@ func (a *App) versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version",
 		Run: func(cmd *cobra.Command, args []string) {
-			line := "aja " + a.Version
+			line := "ajai " + a.Version
 			if a.Commit != "" {
 				line += " (" + a.Commit + ")"
 			}

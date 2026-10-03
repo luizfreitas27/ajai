@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/schedule"
 )
 
 func TestTheScheduleMigrationUpgradesAPhaseOneDatabase(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "aja.db")
+	path := filepath.Join(t.TempDir(), "ajai.db")
 	// A database as phase 1 left it: only the first migration applied.
 	db, err := sql.Open("sqlite", path)
 	if err != nil {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func (a *App) scheduleCmd() *cobra.Command {
@@ -21,12 +21,12 @@ func (a *App) scheduleCmd() *cobra.Command {
 market and dry run. When a window opens, one unattended run starts (a non-stop session when
 settings.run_non_stop is on); when it closes, the run is stopped. A run that ends early is
 not restarted in the same window, and a window that opens while another run is in
-progress is skipped. Nothing starts on a window until aja daemon runs.
+progress is skipped. Nothing starts on a window until ajai daemon runs.
 
 Windows never cross midnight: split one in two (22:00-24:00 and 00:00-02:00 the next day).`,
 	}
 	cmd.AddCommand(a.scheduleAddCmd(), a.scheduleListCmd(), a.scheduleRmCmd(), a.scheduleEnableCmd(true), a.scheduleEnableCmd(false))
-	// Changes to the schedule are logged, as `aja import` logs.
+	// Changes to the schedule are logged, as `ajai import` logs.
 	cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
 		if err := c.Root().PersistentPreRunE(c, args); err != nil {
 			return err
@@ -45,8 +45,8 @@ func (a *App) scheduleAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add a schedule window",
-		Example: `  aja schedule add --days mon-fri --start 09:00 --end 11:00
-  aja schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run`,
+		Example: `  ajai schedule add --days mon-fri --start 09:00 --end 11:00
+  ajai schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := schedule.Window{Market: market, DryRun: dryRun, Enabled: true}
@@ -103,7 +103,7 @@ func (a *App) scheduleListCmd() *cobra.Command {
 			}
 			if len(windows) == 0 {
 				a.ui.Println("No schedule windows.")
-				a.ui.Hint("Add one: aja schedule add --days mon-fri --start 09:00 --end 11:00")
+				a.ui.Hint("Add one: ajai schedule add --days mon-fri --start 09:00 --end 11:00")
 				return nil
 			}
 			for _, w := range windows {
@@ -141,7 +141,7 @@ func (a *App) scheduleRmCmd() *cobra.Command {
 	}
 }
 
-// scheduleEnableCmd builds `aja schedule enable` (on) and `aja schedule disable`.
+// scheduleEnableCmd builds `ajai schedule enable` (on) and `ajai schedule disable`.
 func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
 	use, short, action, verb := "disable <id>", "Turn a schedule window off, keeping it", "disable", "disabled"
 	if on {
@@ -174,7 +174,7 @@ func (a *App) scheduleEnableCmd(on bool) *cobra.Command {
 func (a *App) windowArg(arg string) (*schedule.Window, *store.Store, error) {
 	id, err := strconv.ParseInt(arg, 10, 64)
 	if err != nil || id <= 0 {
-		return nil, nil, fmt.Errorf("%q is not a window id; see aja schedule list", arg)
+		return nil, nil, fmt.Errorf("%q is not a window id; see ajai schedule list", arg)
 	}
 	st, err := a.openStore()
 	if err != nil {
@@ -185,7 +185,7 @@ func (a *App) windowArg(arg string) (*schedule.Window, *store.Store, error) {
 		return nil, nil, err
 	}
 	if w == nil {
-		return nil, nil, errors.New("no window " + arg + "; see aja schedule list")
+		return nil, nil, errors.New("no window " + arg + "; see ajai schedule list")
 	}
 	return w, st, nil
 }

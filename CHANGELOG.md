@@ -6,32 +6,48 @@ no such section the notes are the commit list.
 
 ## Unreleased
 
+### Renamed: aja is now ajai
+
+- **The tool is called ajai.**
+  - The command is `ajai`; the module and the repository are `luizfreitas27/ajai`.
+  - Every environment variable starts with `AJAI_`: `AJAI_HOME`, `AJAI_AI_API_KEY`,
+    `AJAI_TELEGRAM_BOT_TOKEN`, `AJAI_TELEGRAM_CHAT_ID`, `AJAI_CFG_*`.
+  - The config lives in `~/.config/ajai`, the data in `~/.local/share/ajai` (the database is
+    `ajai.db`), and the daemon's unit is `ajai.service`.
+- **The old names are not read.** If you had aja installed, move your setup by hand once:
+  1. Run `aja daemon uninstall` if you installed the unit.
+  2. Move `~/.config/aja` to `~/.config/ajai` and `~/.local/share/aja` to
+     `~/.local/share/ajai`. The Chrome profile moves with it and stays signed in.
+  3. Rename `aja.db` there to `ajai.db`, with its `-wal` and `-shm` files if present.
+  4. Rename the `AJA_` variables in `.env` to `AJAI_`.
+  5. Install `ajai`, and run `ajai daemon install` again if you used the unit.
+
 ### Upgrading from phase 1
 
-- **aja now uses a Chrome profile of its own.** With `settings.chrome_profile_dir` blank
-  (the default) runs use the aja profile in the data directory, so your everyday Chrome
-  stays open and free. Run `aja login` once to sign in to LinkedIn there, or set
-  `settings.chrome_profile_dir` to your everyday profile (`aja doctor` prints its path) to
-  keep the old behaviour. On the aja profile a run closes its Chrome when it ends; on yours
+- **ajai now uses a Chrome profile of its own.** With `settings.chrome_profile_dir` blank
+  (the default) runs use the ajai profile in the data directory, so your everyday Chrome
+  stays open and free. Run `ajai login` once to sign in to LinkedIn there, or set
+  `settings.chrome_profile_dir` to your everyday profile (`ajai doctor` prints its path) to
+  keep the old behaviour. On the ajai profile a run closes its Chrome when it ends; on yours
   it leaves the window open, as before.
 - **Linux only for now.** Releases are built for linux/amd64 and linux/arm64.
 
 ### New
 
-- `aja login`: sign in to LinkedIn once in the profile aja uses.
-- `aja stop`: stop the run in progress cleanly, from any terminal.
-- One run at a time on the machine: a second `aja run` refuses and names the run in
-  progress; `aja status` shows who started it.
-- `aja doctor` names the Chrome profile and whether LinkedIn is signed in there.
-- `aja schedule add/list/rm/enable/disable`: schedule windows (weekdays, hours, optional
-  market and dry run); `aja status` shows the next opening.
-- `aja daemon`: starts an unattended run when a window opens and stops it when it closes,
-  with Telegram notices; `aja logs --daemon` shows its log, `aja status` whether it runs.
-- `aja daemon install` / `status` / `uninstall`: the daemon from a systemd user unit tied
+- `ajai login`: sign in to LinkedIn once in the profile ajai uses.
+- `ajai stop`: stop the run in progress cleanly, from any terminal.
+- One run at a time on the machine: a second `ajai run` refuses and names the run in
+  progress; `ajai status` shows who started it.
+- `ajai doctor` names the Chrome profile and whether LinkedIn is signed in there.
+- `ajai schedule add/list/rm/enable/disable`: schedule windows (weekdays, hours, optional
+  market and dry run); `ajai status` shows the next opening.
+- `ajai daemon`: starts an unattended run when a window opens and stops it when it closes,
+  with Telegram notices; `ajai logs --daemon` shows its log, `ajai status` whether it runs.
+- `ajai daemon install` / `status` / `uninstall`: the daemon from a systemd user unit tied
   to your desktop session.
 - Telegram commands while the daemon runs: `/status`, `/stop`, `/run [market] [dry]`,
   `/help`, from your configured chat only.
-- `aja` with no command opens the TUI in a terminal: a live Dashboard with the run in
+- `ajai` with no command opens the TUI in a terminal: a live Dashboard with the run in
   progress, the last runs, pending answers, the next window, the daemon and today's log;
   starting a run (market, dry run or live, a maximum) that runs on its own after the TUI
   closes, and stopping any run; an Answers tab to approve, correct or delete remembered
@@ -39,7 +55,7 @@ no such section the notes are the commit list.
   install, start, stop or uninstall the daemon's systemd unit; a Jobs tab with the job
   history, filtered and searched, each job a key away from your browser; a Config tab
   that edits every setting (validated, environment overrides marked) and saves the
-  secrets in aja's `.env` from hidden fields; and a setup checklist, opened when
+  secrets in ajai's `.env` from hidden fields; and a setup checklist, opened when
   something a run needs is missing, that runs the init wizard, the LinkedIn sign-in and
   the import from the Python bot.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 // Period is how the user entered salaries in a market.

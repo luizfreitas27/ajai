@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/luizfreitas27/aja/internal/textmatch"
+	"github.com/luizfreitas27/ajai/internal/textmatch"
 )
 
 // MatchAnswerToOption returns the index of the option that honestly carries

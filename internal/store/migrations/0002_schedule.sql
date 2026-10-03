@@ -1,4 +1,4 @@
--- Schedule windows (managed by `aja schedule`) and the openings the scheduler
+-- Schedule windows (managed by `ajai schedule`) and the openings the scheduler
 -- has handled, so a window gets one run per day it opens.
 CREATE TABLE schedule_windows (
     id         INTEGER PRIMARY KEY,

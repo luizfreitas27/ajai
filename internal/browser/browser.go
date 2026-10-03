@@ -1,7 +1,7 @@
 // Package browser is the only package that talks to Chrome. It exposes a small
-// interface the rest of aja works against (so the run loop and the LinkedIn
+// interface the rest of ajai works against (so the run loop and the LinkedIn
 // session are testable with fakes) and one implementation on go-rod driving the
-// installed Chrome in a visible window, on the aja profile or the user's own (ADR 0001).
+// installed Chrome in a visible window, on the ajai profile or the user's own (ADR 0001).
 package browser
 
 import (
@@ -51,7 +51,7 @@ type Opener func(ctx context.Context, o Options) (Browser, error)
 
 // Browser is the Chrome instance.
 type Browser interface {
-	// Main is the tab aja works in.
+	// Main is the tab ajai works in.
 	Main() Page
 	// Pages lists open tabs, main first.
 	Pages() ([]Page, error)

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
-// jsonEvent is one line of `aja run --json`: one object per event, and the run
+// jsonEvent is one line of `ajai run --json`: one object per event, and the run
 // summary as the "run-end" event.
 type jsonEvent struct {
 	Time    string       `json:"time"`
@@ -108,6 +108,6 @@ func (a *App) printSummary(s run.Summary) {
 		a.ui.KV(strings.ToLower(kv[0]), kv[1])
 	}
 	if s.PendingAnswers > 0 {
-		a.ui.Hint("Review them with `aja answers review`.")
+		a.ui.Hint("Review them with `ajai answers review`.")
 	}
 }

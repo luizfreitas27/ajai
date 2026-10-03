@@ -1,4 +1,4 @@
-// Package daemon is what `aja daemon` runs: a Supervisor that owns the run in
+// Package daemon is what `ajai daemon` runs: a Supervisor that owns the run in
 // progress (started as a goroutine, never a child process), and a Scheduler
 // that starts and stops runs on the schedule windows. Every run it starts is
 // unattended and goes through internal/launch, so it is exactly a terminal run
@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/schedule"
 )
 
 // Request is what a run is started for.
@@ -155,7 +155,7 @@ func (s *Supervisor) run(ctx, daemonCtx context.Context, cancel context.CancelCa
 					crash = c // the runner recorded and reported it
 				} else {
 					crash = &run.Crash{Value: p}
-					s.notify("aja's run crashed.\n\n" + crash.Error())
+					s.notify("ajai's run crashed.\n\n" + crash.Error())
 				}
 				ended.Err = crash
 				s.logger.Error("run crashed", "panic", fmt.Sprint(crash.Value), "stack", string(debug.Stack()))

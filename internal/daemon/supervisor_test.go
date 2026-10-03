@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
 func newSup(t *testing.T) (*Supervisor, *fakeRuns, chan Ended) {
@@ -173,11 +173,11 @@ func TestACrashIsReportedOnceAndLeavesNoPhantomRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-ended
-	if n := notes.all(); len(n) != 1 || !strings.Contains(n[0], "aja crashed: in the non-stop loop") {
+	if n := notes.all(); len(n) != 1 || !strings.Contains(n[0], "ajai crashed: in the non-stop loop") {
 		t.Errorf("%q", n)
 	}
 	if _, err := run.ReadState(state); !errors.Is(err, run.ErrNoState) {
-		t.Error("aja status would show a run that is not there")
+		t.Error("ajai status would show a run that is not there")
 	}
 
 	// A crash inside a run: the runner recorded and reported it (*run.Crash); not twice.

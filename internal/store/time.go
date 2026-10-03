@@ -20,7 +20,7 @@ var pythonLayouts = []string{
 	"2006-01-02",
 }
 
-// ParseTime reads any timestamp the Python bot or aja wrote, in local time when
+// ParseTime reads any timestamp the Python bot or ajai wrote, in local time when
 // no offset is present. ok is false for blanks and words such as "Pending".
 func ParseTime(text string) (t time.Time, ok bool) {
 	text = strings.TrimSpace(text)

@@ -10,15 +10,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
 func TestRunRefusesBeforeAValidConfigAndWithoutDryRun(t *testing.T) {
 	h := newHarness(t)
 	code, _, errText := h.run("run", "--dry-run")
-	if code == 0 || !strings.Contains(errText, "aja init") {
+	if code == 0 || !strings.Contains(errText, "ajai init") {
 		t.Errorf("%d %s", code, errText)
 	}
 	h.initValid()
@@ -41,7 +41,7 @@ func TestRunReportsAProfileInUseInsteadOfHanging(t *testing.T) {
 	savedBase := notify.APIBase
 	notify.APIBase = srv.URL
 	defer func() { notify.APIBase = savedBase }()
-	h.env["AJA_TELEGRAM_BOT_TOKEN"], h.env["AJA_TELEGRAM_CHAT_ID"] = "1:tok", "42"
+	h.env["AJAI_TELEGRAM_BOT_TOKEN"], h.env["AJAI_TELEGRAM_CHAT_ID"] = "1:tok", "42"
 	saved := OpenBrowser
 	t.Cleanup(func() { OpenBrowser = saved })
 	OpenBrowser = func(ctx context.Context, o browser.Options) (browser.Browser, error) {
@@ -116,7 +116,7 @@ func TestRunTelegramWarningsReachTheLogAndABrokenConfigStillReports(t *testing.T
 
 	h := newHarness(t)
 	h.initValid()
-	h.env["AJA_TELEGRAM_BOT_TOKEN"] = "1:tok" // half configured
+	h.env["AJAI_TELEGRAM_BOT_TOKEN"] = "1:tok" // half configured
 	saved := OpenBrowser
 	t.Cleanup(func() { OpenBrowser = saved })
 	OpenBrowser = func(ctx context.Context, o browser.Options) (browser.Browser, error) {
@@ -128,7 +128,7 @@ func TestRunTelegramWarningsReachTheLogAndABrokenConfigStillReports(t *testing.T
 		t.Errorf("a half-configured Telegram warns in the log and sends nothing: %d sent\n%s", len(sent), logs)
 	}
 
-	h.env["AJA_TELEGRAM_CHAT_ID"] = "42"
+	h.env["AJAI_TELEGRAM_CHAT_ID"] = "42"
 	if err := os.WriteFile(filepath.Join(h.home, "config.yaml"), []byte("search:\n  trems: [x]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

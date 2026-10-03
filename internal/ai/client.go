@@ -14,9 +14,9 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/questions"
 )
 
 // Settings configure a Client.
@@ -47,7 +47,7 @@ var ErrKeyOverHTTP = errors.New("an API key is only sent over HTTPS or to this m
 // endpoint works and no Authorization header is sent. The SDK's environment
 // defaults (OPENAI_API_KEY, OPENAI_ORG_ID, OPENAI_PROJECT_ID,
 // OPENAI_CUSTOM_HEADERS, OPENAI_BASE_URL) are never read: whatever the user's
-// shell holds for other tools does not reach a provider aja talks to.
+// shell holds for other tools does not reach a provider ajai talks to.
 func New(s Settings) (*Client, error) {
 	if s.Logger == nil {
 		s.Logger = slog.New(slog.DiscardHandler)

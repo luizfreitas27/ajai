@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/apply"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/ui"
+	"github.com/luizfreitas27/ajai/internal/apply"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/ui"
 )
 
 func TestTheHelpPauseShowsTheQuestionsNudgesTelegramAndWaitsForEnter(t *testing.T) {

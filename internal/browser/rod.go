@@ -18,7 +18,7 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 
-	"github.com/luizfreitas27/aja/internal/procs"
+	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
 // Options for opening Chrome.
@@ -31,7 +31,7 @@ type Options struct {
 	// HeadlessForTests is honoured ONLY by the browser-tagged tests; the CLI never sets it
 	// and a run is never headless (ADR 0001).
 	HeadlessForTests bool
-	// QuitOnClose: the profile is the aja profile, so Close quits Chrome (gracefully, the
+	// QuitOnClose: the profile is the ajai profile, so Close quits Chrome (gracefully, the
 	// profile kept) and the next run finds it free. Otherwise Close only detaches.
 	QuitOnClose bool
 	Logger      *slog.Logger
@@ -52,7 +52,7 @@ func exited(pid int, d time.Duration) bool {
 }
 
 // ErrProfileInUse means the profile directory is locked by a running Chrome.
-var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or leave settings.chrome_profile_dir blank to use the aja profile")
+var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or leave settings.chrome_profile_dir blank to use the ajai profile")
 
 // Open launches Chrome on the given profile and connects to it.
 func Open(ctx context.Context, opts Options) (Browser, error) {
@@ -64,7 +64,7 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 	}
 	l := launcher.New().
 		Headless(opts.HeadlessForTests).
-		Leakless(false). // the user's Chrome must survive aja exiting
+		Leakless(false). // the user's Chrome must survive ajai exiting
 		Set("disable-blink-features", "AutomationControlled").
 		Delete("enable-automation").
 		Delete("no-startup-window")
@@ -128,7 +128,7 @@ type rodBrowser struct {
 	launcher    *launcher.Launcher
 	logger      *slog.Logger
 	testBrowser bool // a headless test browser: shut down, profile and all
-	quit        bool // the aja profile: quit Chrome on Close, keep the profile
+	quit        bool // the ajai profile: quit Chrome on Close, keep the profile
 }
 
 func (r *rodBrowser) Main() Page { return r.main }
@@ -147,9 +147,9 @@ func (r *rodBrowser) Pages() ([]Page, error) {
 	return out, nil
 }
 
-// Close leaves Chrome as it should be after aja: on the user's own profile it
+// Close leaves Chrome as it should be after ajai: on the user's own profile it
 // only detaches (the window is theirs; rod's Browser.Close would shut it); on
-// the aja profile it quits Chrome gracefully, so cookies are saved and the
+// the ajai profile it quits Chrome gracefully, so cookies are saved and the
 // profile is free for the next run. Never launcher.Cleanup on a real profile: it
 // deletes the user-data directory.
 func (r *rodBrowser) Close() error {
@@ -163,7 +163,7 @@ func (r *rodBrowser) Close() error {
 				r.launcher.Kill()
 			}
 		}
-		r.logger.Info("closed chrome on the aja profile")
+		r.logger.Info("closed chrome on the ajai profile")
 		return err
 	}
 	if r.testBrowser {

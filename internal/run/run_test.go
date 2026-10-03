@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/apply"
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/pacing"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/apply"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // fakeCard stands in for a browser.Element; the fake site maps it back to its data.
@@ -153,7 +153,7 @@ func job(id, title, company, desc string) fakeJob {
 
 func runner(t *testing.T, site *fakeSite, cfg config.Config) (*Runner, *store.Store, *[]Event) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func (f applierFunc) Apply(context.Context, linkedin.Card, browser.Element, appl
 func TestResolveResumePrefersTheMarketThenTheGeneralOne(t *testing.T) {
 	home := t.TempDir()
 	p := paths.Resolve("", func(k string) string {
-		if k == "AJA_HOME" {
+		if k == "AJAI_HOME" {
 			return home
 		}
 		return ""

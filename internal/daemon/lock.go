@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/filelock"
-	"github.com/luizfreitas27/aja/internal/procs"
+	"github.com/luizfreitas27/ajai/internal/filelock"
+	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
 const lockFileName = "daemon.lock"
@@ -35,7 +35,7 @@ type RunningError struct{ Daemon Process }
 
 // Error names the daemon that runs.
 func (e *RunningError) Error() string {
-	return "aja daemon is already running (" + e.Daemon.String() + ")"
+	return "ajai daemon is already running (" + e.Daemon.String() + ")"
 }
 
 // Lock is held by the one daemon of a data directory.

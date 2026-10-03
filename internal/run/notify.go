@@ -22,9 +22,9 @@ const notifyTimeout = 15 * time.Second
 // SummaryMessage is the message for a run that ended (finished, stopped by the
 // user, or stopped by a limit).
 func SummaryMessage(s Summary) string {
-	text := "aja: run finished.\n\n" + s.lines(true)
+	text := "ajai: run finished.\n\n" + s.lines(true)
 	if s.PendingAnswers > 0 {
-		text += "\n\nReview the pending answers with: aja answers review"
+		text += "\n\nReview the pending answers with: ajai answers review"
 	}
 	return text
 }
@@ -32,13 +32,13 @@ func SummaryMessage(s Summary) string {
 // FailureMessage is the message for a run that died with an error, with what
 // it had done until then (the error is the ending, so it is said once).
 func FailureMessage(s Summary, err error) string {
-	return "aja stopped with an error.\n\n" + err.Error() + "\n\n" + s.lines(false)
+	return "ajai stopped with an error.\n\n" + err.Error() + "\n\n" + s.lines(false)
 }
 
 // StartFailureMessage is the message for a run that could not start (bad
 // config, Chrome missing or busy, AI settings).
 func StartFailureMessage(err error) string {
-	return "aja could not start a run.\n\n" + err.Error()
+	return "ajai could not start a run.\n\n" + err.Error()
 }
 
 // notifyEnd sends exactly one message for a run: the summary, the error with

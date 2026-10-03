@@ -1,8 +1,8 @@
-// Package paths resolves where aja keeps its files: the YAML config, the .env
+// Package paths resolves where ajai keeps its files: the YAML config, the .env
 // with secrets, and the data directory (database, logs, screenshots, resumes).
 //
 // Resolution order: the --config flag relocates the config file alone (the
-// .env stays beside it); AJA_HOME puts everything under one directory; otherwise
+// .env stays beside it); AJAI_HOME puts everything under one directory; otherwise
 // the OS conventions apply (XDG on Linux, Application Support on macOS,
 // AppData on Windows).
 package paths
@@ -14,9 +14,9 @@ import (
 	"github.com/adrg/xdg"
 )
 
-// Paths is every location aja reads or writes.
+// Paths is every location ajai reads or writes.
 type Paths struct {
-	// Home is set only when AJA_HOME was used; informational.
+	// Home is set only when AJAI_HOME was used; informational.
 	Home          string
 	ConfigFile    string
 	EnvFile       string
@@ -25,7 +25,7 @@ type Paths struct {
 	LogDir        string
 	ScreenshotDir string
 	ResumeDir     string
-	// ChromeProfileDir is the aja profile, used when settings.chrome_profile_dir is blank.
+	// ChromeProfileDir is the ajai profile, used when settings.chrome_profile_dir is blank.
 	ChromeProfileDir string
 }
 
@@ -36,19 +36,19 @@ type Getenv func(string) string
 // --config ("" when absent).
 func Resolve(configFlag string, getenv Getenv) Paths {
 	var p Paths
-	if home := getenv("AJA_HOME"); home != "" {
+	if home := getenv("AJAI_HOME"); home != "" {
 		p.Home = home
 		p.ConfigFile = filepath.Join(home, "config.yaml")
 		p.DataDir = home
 	} else {
-		p.ConfigFile = filepath.Join(xdg.ConfigHome, "aja", "config.yaml")
-		p.DataDir = filepath.Join(xdg.DataHome, "aja")
+		p.ConfigFile = filepath.Join(xdg.ConfigHome, "ajai", "config.yaml")
+		p.DataDir = filepath.Join(xdg.DataHome, "ajai")
 	}
 	if configFlag != "" {
 		p.ConfigFile = configFlag
 	}
 	p.EnvFile = filepath.Join(filepath.Dir(p.ConfigFile), ".env")
-	p.DBFile = filepath.Join(p.DataDir, "aja.db")
+	p.DBFile = filepath.Join(p.DataDir, "ajai.db")
 	p.LogDir = filepath.Join(p.DataDir, "logs")
 	p.ScreenshotDir = filepath.Join(p.DataDir, "screenshots")
 	p.ResumeDir = filepath.Join(p.DataDir, "resumes")
@@ -59,12 +59,12 @@ func Resolve(configFlag string, getenv Getenv) Paths {
 // Profile is the Chrome profile runs use.
 type Profile struct {
 	Dir string
-	// Own: the aja profile, which aja creates and quits Chrome on; any other
+	// Own: the ajai profile, which ajai creates and quits Chrome on; any other
 	// profile is the user's, and Chrome there is only ever detached from.
 	Own bool
 }
 
-// ChromeProfile resolves settings.chrome_profile_dir: blank means the aja profile.
+// ChromeProfile resolves settings.chrome_profile_dir: blank means the ajai profile.
 func (p Paths) ChromeProfile(setting string) Profile {
 	if setting == "" {
 		return Profile{Dir: p.ChromeProfileDir, Own: true}

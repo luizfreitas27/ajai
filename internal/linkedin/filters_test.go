@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/pacing"
 )
 
 // fakeElement records clicks and typed text. The embedded interface value is nil:

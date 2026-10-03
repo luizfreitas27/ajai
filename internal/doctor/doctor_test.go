@@ -7,15 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 func setup(t *testing.T) (paths.Paths, *config.Loaded) {
 	t.Helper()
 	home := t.TempDir()
 	p := paths.Resolve("", func(k string) string {
-		if k == "AJA_HOME" {
+		if k == "AJAI_HOME" {
 			return home
 		}
 		return ""
@@ -46,7 +46,7 @@ func probe(found bool) Probe {
 
 func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.T) {
 	p, l := setup(t)
-	l.Config.Settings.ChromeProfileDir = "" // the aja profile
+	l.Config.Settings.ChromeProfileDir = "" // the ajai profile
 	cases := []struct {
 		name     string
 		create   bool
@@ -55,10 +55,10 @@ func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.
 		status   Status
 		want     []string
 	}{
-		{"not created", false, false, nil, Warn, []string{"(the aja profile) does not exist yet", "aja login", "/home/u/.config/google-chrome"}},
-		{"no session", true, false, nil, Warn, []string{"has no LinkedIn session", "aja login"}},
+		{"not created", false, false, nil, Warn, []string{"(the ajai profile) does not exist yet", "ajai login", "/home/u/.config/google-chrome"}},
+		{"no session", true, false, nil, Warn, []string{"has no LinkedIn session", "ajai login"}},
 		{"unreadable", true, false, errors.New("locked"), Warn, []string{"could not check", "locked"}},
-		{"signed in", true, true, nil, OK, []string{"(the aja profile), signed in to LinkedIn"}},
+		{"signed in", true, true, nil, OK, []string{"(the ajai profile), signed in to LinkedIn"}},
 	}
 	for _, tc := range cases {
 		_ = os.RemoveAll(p.ChromeProfileDir)
@@ -84,11 +84,11 @@ func TestTheProfileCheckSaysWhichProfileAndWhetherLinkedInIsSignedIn(t *testing.
 			}
 		}
 	}
-	// The user's own profile: no "the aja profile", no hint to switch.
+	// The user's own profile: no "the ajai profile", no hint to switch.
 	l.Config.Settings.ChromeProfileDir = t.TempDir()
 	pr := probe(true)
 	pr.HasLinkedInSession = func(string) (bool, error) { return false, nil }
-	if c := byName(Run(l, nil, p, pr), "chrome profile"); strings.Contains(c.Detail, "the aja profile") || strings.Contains(c.Detail, "everyday") || !strings.Contains(c.Detail, "aja login") {
+	if c := byName(Run(l, nil, p, pr), "chrome profile"); strings.Contains(c.Detail, "the ajai profile") || strings.Contains(c.Detail, "everyday") || !strings.Contains(c.Detail, "ajai login") {
 		t.Errorf("%+v", c)
 	}
 }

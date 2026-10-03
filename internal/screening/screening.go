@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/textmatch"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/textmatch"
 )
 
 // Job is what the screener reads about one posting.

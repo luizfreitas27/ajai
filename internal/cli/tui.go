@@ -8,12 +8,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/doctor"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/tui"
+	"github.com/luizfreitas27/ajai/internal/doctor"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/tui"
 )
 
-// inTerminal reports whether both ends of aja are a terminal; tests replace it.
+// inTerminal reports whether both ends of ajai are a terminal; tests replace it.
 var inTerminal = func(a *App) bool { return a.stdinIsTerminal() && a.stdoutIsTerminal() }
 
 // showTUI runs the TUI; tests replace it.
@@ -59,7 +59,7 @@ func openInBrowser(link string) error {
 	return nil
 }
 
-// launcher runs aja for the TUI, with the same --config and --no-color.
+// launcher runs ajai for the TUI, with the same --config and --no-color.
 type launcher struct {
 	executable, configFlag string
 	noColor                bool
@@ -78,18 +78,18 @@ func (l launcher) argv(args []string) []string {
 }
 
 // afterwards keeps a subcommand's last words on screen until Enter: a shell
-// runs aja ("$0", its arguments "$@"), then waits, and exits with aja's status.
-// Ctrl-C ends aja, not the shell (a trap is reset for aja, so aja still gets it).
-const afterwards = `trap ':' INT; "$0" "$@"; status=$?; printf '\n[aja] Press Enter to go back to the TUI. '; read -r _; exit $status`
+// runs ajai ("$0", its arguments "$@"), then waits, and exits with ajai's status.
+// Ctrl-C ends ajai, not the shell (a trap is reset for ajai, so ajai still gets it).
+const afterwards = `trap ':' INT; "$0" "$@"; status=$?; printf '\n[ajai] Press Enter to go back to the TUI. '; read -r _; exit $status`
 
-// InTerminal runs aja args in the TUI's terminal; Bubble Tea gives the terminal
+// InTerminal runs ajai args in the TUI's terminal; Bubble Tea gives the terminal
 // back to the TUI when it ends.
 func (l launcher) InTerminal(args []string, done func(error) tea.Msg) tea.Cmd {
 	sh := append([]string{"-c", afterwards, l.executable}, l.argv(args)...)
 	return tea.ExecProcess(exec.Command("/bin/sh", sh...), done)
 }
 
-// Start runs aja args in a session of its own, so the terminal closing (or
+// Start runs ajai args in a session of its own, so the terminal closing (or
 // the TUI quitting) never reaches it; its standard streams go to the null
 // device (it logs to the day's file) and it inherits the environment, the
 // display Chrome needs included.

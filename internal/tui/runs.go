@@ -11,10 +11,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 const (
@@ -47,7 +47,7 @@ func formLine(s styles, selected bool, label, value string) string {
 }
 
 // runControl starts and stops runs from the Dashboard and says how that went.
-// A run it starts is `aja run --unattended` in a process of its own: closing
+// A run it starts is `ajai run --unattended` in a process of its own: closing
 // the TUI never ends it.
 type runControl struct {
 	form     *runForm
@@ -117,7 +117,7 @@ func newRunForm() *runForm {
 	return &runForm{dry: true, max: in} // dry run unless chosen otherwise
 }
 
-// args are `aja run`'s for the form's choices.
+// args are `ajai run`'s for the form's choices.
 func (f runForm) args() ([]string, error) {
 	args := []string{"run", "--unattended", "--origin", string(run.OriginTUI)}
 	if m := marketChoices[f.market]; m != "" {
@@ -250,7 +250,7 @@ func (f runForm) change(step int) runForm {
 	return f
 }
 
-// startRun starts `aja args` in a process of its own, unless a run holds the
+// startRun starts `ajai args` in a process of its own, unless a run holds the
 // run lock (it would refuse anyway, with nobody to read why).
 func startRun(d Deps, args []string) tea.Cmd {
 	return func() tea.Msg {
@@ -260,7 +260,7 @@ func startRun(d Deps, args []string) tea.Cmd {
 		at := d.Now()
 		pid, exited, err := d.Launcher.Start(args)
 		if err != nil {
-			return runStartedMsg{refusal: "Could not start aja: " + err.Error()}
+			return runStartedMsg{refusal: "Could not start ajai: " + err.Error()}
 		}
 		d.logger().Info("run started from the TUI", "pid", pid, "args", strings.Join(args[1:], " "))
 		return runStartedMsg{run: &startedRun{pid: pid, at: at, exited: exited}}
@@ -325,7 +325,7 @@ func (c runControl) observe(before, now run.Activity, exit *startExit, runs []st
 	case exit != nil && exit.reason != "":
 		c.started, c.notice = nil, notice{"The run did not start: " + exit.reason, levelFail}
 	case exit != nil && !s.begun && exit.err != nil:
-		c.started, c.notice = nil, notice{fmt.Sprintf("The run did not start: aja ended (%v) before it began; today's log may say why.", exit.err), levelFail}
+		c.started, c.notice = nil, notice{fmt.Sprintf("The run did not start: ajai ended (%v) before it began; today's log may say why.", exit.err), levelFail}
 	case exit != nil:
 		c.started = nil // it ran and ended: the run's own line says how
 	case now.Held && now.Holder.PID == s.pid && !s.begun:

@@ -1,10 +1,10 @@
 # Build output
-/aja
+/ajai
 /dist/
 *.exe
 
 # Local runtime files; the real ones live in the OS config/data dirs, but a
-# developer may point AJA_HOME at the repo. Never commit any of them.
+# developer may point AJAI_HOME at the repo. Never commit any of them.
 .env
 *.db
 *.db-journal

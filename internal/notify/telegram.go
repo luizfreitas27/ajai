@@ -62,7 +62,7 @@ func (t *Telegram) Send(ctx context.Context, text string) bool {
 	if !t.Configured() {
 		if t.token != "" || t.chatID != "" {
 			t.halfWarn.Do(func() {
-				t.logger.Warn("Telegram notifications are off: set BOTH AJA_TELEGRAM_BOT_TOKEN and AJA_TELEGRAM_CHAT_ID to turn them on")
+				t.logger.Warn("Telegram notifications are off: set BOTH AJAI_TELEGRAM_BOT_TOKEN and AJAI_TELEGRAM_CHAT_ID to turn them on")
 			})
 		}
 		return false

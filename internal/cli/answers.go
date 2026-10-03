@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/memory"
 )
 
 func (a *App) openMemory() (*memory.Memory, error) {
@@ -195,8 +195,8 @@ func (a *App) answersReviewCmd() *cobra.Command {
   d  delete it
   s  skip it for now (also Enter)
   q  stop reviewing
-Questions aja could not answer at all are here too, with no answer yet: type one with e.
-For a checkbox, the answer "checked" lets aja tick that box from now on.`,
+Questions ajai could not answer at all are here too, with no answer yet: type one with e.
+For a checkbox, the answer "checked" lets ajai tick that box from now on.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mem, err := a.openMemory()

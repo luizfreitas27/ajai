@@ -13,15 +13,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/launch"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/remote"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/service"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/launch"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/remote"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/service"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func (a *App) daemonCmd() *cobra.Command {
@@ -29,13 +29,13 @@ func (a *App) daemonCmd() *cobra.Command {
 		Use:   "daemon",
 		Short: "Start and stop runs on the schedule windows, until stopped",
 		Long: `Runs in the foreground until Ctrl-C (or its systemd unit stops): every 30 seconds it
-looks at the schedule windows (aja schedule), starts one unattended run when a window opens
-and stops it when the window closes. With AJA_TELEGRAM_BOT_TOKEN and AJA_TELEGRAM_CHAT_ID set
+looks at the schedule windows (ajai schedule), starts one unattended run when a window opens
+and stops it when the window closes. With AJAI_TELEGRAM_BOT_TOKEN and AJAI_TELEGRAM_CHAT_ID set
 it also takes commands from that chat: /status, /stop, /run, /help. The configuration is
 read afresh for every run. A run in progress when the daemon stops ends cleanly first.
 
 Only one daemon runs at a time. Its log is the daemon file in the log directory
-(aja logs --daemon). To have it start with your desktop session: aja daemon install.`,
+(ajai logs --daemon). To have it start with your desktop session: ajai daemon install.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -73,7 +73,7 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 				return err
 			}
 			if len(windows) == 0 {
-				a.ui.Hint("No schedule windows yet: add one with aja schedule add.")
+				a.ui.Hint("No schedule windows yet: add one with ajai schedule add.")
 			} else {
 				a.printNextOpening(windows)
 			}
@@ -86,7 +86,7 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 				go func() { defer listening.Done(); listener.Loop(ctx) }()
 				a.ui.OK("telegram", "listening for commands: /status, /stop, /run, /help")
 			} else {
-				a.ui.Hint("Telegram commands are off: set AJA_TELEGRAM_BOT_TOKEN and AJA_TELEGRAM_CHAT_ID, then restart the daemon.")
+				a.ui.Hint("Telegram commands are off: set AJAI_TELEGRAM_BOT_TOKEN and AJAI_TELEGRAM_CHAT_ID, then restart the daemon.")
 			}
 			logger.Info("daemon started", "pid", os.Getpid(), "windows", len(windows))
 			sched.Loop(ctx, daemon.TickEvery)
@@ -105,7 +105,7 @@ Only one daemon runs at a time. Its log is the daemon file in the log directory
 }
 
 // daemonStarter opens a run for the daemon: the configuration and secrets read
-// afresh (with the request's market), unattended, through launch like aja run.
+// afresh (with the request's market), unattended, through launch like ajai run.
 func (a *App) daemonStarter(st *store.Store, logger *slog.Logger) daemon.Starter {
 	return func(ctx context.Context, req daemon.Request) (daemon.Opened, error) {
 		l, err := config.Load(a.paths, a.Env, marketFlag(req.Market))
@@ -161,7 +161,7 @@ func (a *App) serviceManager() (service.Manager, error) {
 // same config and data as this shell: what is set here, made absolute.
 func (a *App) pinnedEnv() (map[string]string, error) {
 	env := map[string]string{}
-	for _, k := range []string{"AJA_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
+	for _, k := range []string{"AJAI_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
 		if v := a.Env.Getenv(k); v != "" {
 			abs, err := filepath.Abs(v)
 			if err != nil {
@@ -173,7 +173,7 @@ func (a *App) pinnedEnv() (map[string]string, error) {
 	return env, nil
 }
 
-// handStarted is a daemon running outside systemd (`aja daemon` in a terminal)
+// handStarted is a daemon running outside systemd (`ajai daemon` in a terminal)
 // while the unit's is not: it keeps the unit's from starting, and the unit
 // cannot stop it.
 func (a *App) handStarted(m service.Manager) (daemon.Process, bool) {
@@ -185,7 +185,7 @@ func (a *App) handStarted(m service.Manager) (daemon.Process, bool) {
 // what reinstalling a running unit ends: the run in progress, if any.
 func (a *App) installCheck(m service.Manager) (restarting string, err error) {
 	if d, ok := a.handStarted(m); ok {
-		return "", fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
+		return "", fmt.Errorf("ajai daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
 	}
 	if h, held, _ := run.ReadLock(a.paths.DataDir); held && m.Status().Active == "active" {
 		return "restarting the daemon ends " + h.String() + "; its window resumes once the daemon is back", nil
@@ -209,7 +209,7 @@ func (a *App) installOptions() (service.Options, error) {
 	return o, err
 }
 
-// daemonUnit is the daemon's systemd user unit for the TUI, with `aja daemon
+// daemonUnit is the daemon's systemd user unit for the TUI, with `ajai daemon
 // install`'s checks and options. The manager is made on each call: making it
 // asks systemd, which the TUI does only while it shows the unit.
 type daemonUnit struct{ app *App }
@@ -223,7 +223,7 @@ func (u daemonUnit) Status() service.Status {
 	return m.Status()
 }
 
-// Install writes, enables and starts the unit as `aja daemon install` does;
+// Install writes, enables and starts the unit as `ajai daemon install` does;
 // what reinstalling ends comes first among the warnings.
 func (u daemonUnit) Install() (service.Installed, error) {
 	m, err := u.app.serviceManager()
@@ -263,7 +263,7 @@ func (u daemonUnit) Start() error {
 		return err
 	}
 	if d, ok := u.app.handStarted(m); ok {
-		return fmt.Errorf("aja daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal) first", d)
+		return fmt.Errorf("ajai daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal) first", d)
 	}
 	_, err = m.Start()
 	return err
@@ -286,7 +286,7 @@ func (a *App) daemonInstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
 		Short: "Run the daemon from a systemd user unit that starts with your desktop session",
-		Long: `Writes a systemd user unit for this aja binary (with AJA_HOME, the XDG directories and
+		Long: `Writes a systemd user unit for this ajai binary (with AJAI_HOME, the XDG directories and
 --config as this shell has them), enables it for your desktop session and (re)starts it. Run
 it again after moving or upgrading the binary. The unit is stopped like Ctrl-C, so a run in
 progress ends cleanly (and its window resumes when the daemon is back).`,
@@ -324,7 +324,7 @@ progress ends cleanly (and its window resumes when the daemon is back).`,
 				a.ui.Warn("unit", w)
 			}
 			if result.Started {
-				a.ui.OK("started", "the daemon runs, and starts with your desktop session; aja daemon status, aja logs --daemon -f")
+				a.ui.OK("started", "the daemon runs, and starts with your desktop session; ajai daemon status, ajai logs --daemon -f")
 			}
 			return nil
 		},
@@ -343,7 +343,7 @@ func (a *App) daemonUninstallCmd() *cobra.Command {
 			}
 			commands, err := m.Uninstall()
 			if errors.Is(err, service.ErrNotInstalled) {
-				a.ui.Println("The aja unit is not installed.")
+				a.ui.Println("The ajai unit is not installed.")
 				return nil
 			}
 			for _, c := range commands {
@@ -371,7 +371,7 @@ func (a *App) daemonStatusCmd() *cobra.Command {
 			if st := m.Status(); st.Installed {
 				a.ui.KV("unit", fmt.Sprintf("%s, %s (%s)", st.Enabled, st.Active, st.Path))
 			} else {
-				a.ui.KV("unit", "not installed (aja daemon install)")
+				a.ui.KV("unit", "not installed (ajai daemon install)")
 			}
 			if d, running, err := daemon.ReadLock(a.paths.DataDir); err != nil {
 				return err

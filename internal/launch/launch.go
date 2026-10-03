@@ -1,5 +1,5 @@
 // Package launch turns a loaded configuration into a run ready to go: the run
-// lock, Chrome, the LinkedIn session, the applier and the runner. `aja run` and
+// lock, Chrome, the LinkedIn session, the applier and the runner. `ajai run` and
 // the daemon both start runs through it, so a daemon run is a terminal run with
 // nobody at the terminal.
 package launch
@@ -11,20 +11,20 @@ import (
 	"os"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/ai"
-	"github.com/luizfreitas27/aja/internal/apply"
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/chrome"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/pacing"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/questions"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/ai"
+	"github.com/luizfreitas27/ajai/internal/apply"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/chrome"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // Plan is a run worked out from the configuration before anything is opened,
@@ -83,7 +83,7 @@ func (o *Opened) Session(ctx context.Context) ([]run.Summary, error) {
 	return o.Runner.Session(ctx, o.opts)
 }
 
-// Close closes Chrome (quitting it on the aja profile, detaching from the
+// Close closes Chrome (quitting it on the ajai profile, detaching from the
 // user's) and releases the run lock.
 func (o *Opened) Close() { o.close() }
 
@@ -117,7 +117,7 @@ func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, err
 			d.Events(e)
 		}
 		if e.Kind == run.EventLogin {
-			d.Notifier.Send(ctx, "aja is waiting for you to sign in to LinkedIn in the Chrome window.")
+			d.Notifier.Send(ctx, "ajai is waiting for you to sign in to LinkedIn in the Chrome window.")
 		}
 	}
 	runner := &run.Runner{Cfg: cfg, Market: p.Market, Site: session, Applier: applier, Store: d.Store, Pacer: pacer, Logger: d.Logger,
@@ -134,20 +134,20 @@ func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, err
 	}}, nil
 }
 
-// ErrOwnProfileInUse: the aja profile is open in another Chrome window. It is
+// ErrOwnProfileInUse: the ajai profile is open in another Chrome window. It is
 // also a browser.ErrProfileInUse for errors.Is.
 var ErrOwnProfileInUse error = ownProfileInUse{}
 
 type ownProfileInUse struct{}
 
 func (ownProfileInUse) Error() string {
-	return "the aja profile is in use by another Chrome window (a run, or aja login): close it, or wait for the run to end, and try again"
+	return "the ajai profile is in use by another Chrome window (a run, or ajai login): close it, or wait for the run to end, and try again"
 }
 
 func (ownProfileInUse) Is(target error) bool { return target == browser.ErrProfileInUse }
 
 // OpenChrome finds Chrome and opens it on the configured profile, which it
-// returns: the aja profile (created when missing, and quit again by Close)
+// returns: the ajai profile (created when missing, and quit again by Close)
 // unless settings.chrome_profile_dir names another.
 func OpenChrome(ctx context.Context, cfg config.Config, p paths.Paths, open browser.Opener, logger *slog.Logger) (browser.Browser, paths.Profile, error) {
 	profile := p.ChromeProfile(cfg.Settings.ChromeProfileDir)

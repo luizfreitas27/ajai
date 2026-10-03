@@ -1,4 +1,4 @@
-// Package config defines aja's configuration: the YAML file with one section per
+// Package config defines ajai's configuration: the YAML file with one section per
 // concern, the secrets that live only in the environment, the layering that
 // builds one Config value per process, validation with user-facing messages, and
 // the commented YAML writer.
@@ -16,7 +16,7 @@ type Config struct {
 	Settings  Settings  `yaml:"settings" doc:"How the tool behaves: Chrome, tabs, pacing of the search itself."`
 	Markets   Markets   `yaml:"markets" doc:"Values that differ between applying in Brazil and abroad. One market is active per run."`
 	Pacing    Pacing    `yaml:"pacing" doc:"Limits that keep a run at a human rhythm. Reaching one ends the run cleanly."`
-	AI        AI        `yaml:"ai" doc:"The language model that answers unrecognised questions. The API key is AJA_AI_API_KEY in the environment or .env, never here."`
+	AI        AI        `yaml:"ai" doc:"The language model that answers unrecognised questions. The API key is AJAI_AI_API_KEY in the environment or .env, never here."`
 }
 
 // Personals mirrors the Python config/personals.py.
@@ -97,7 +97,7 @@ type Search struct {
 // Settings mirrors the surviving parts of config/settings.py.
 type Settings struct {
 	ChromeBinary      string `yaml:"chrome_binary" doc:"Path to the Chrome or Chromium executable. Blank finds it on this machine."`
-	ChromeProfileDir  string `yaml:"chrome_profile_dir" doc:"Chrome user-data directory to use. Blank uses the aja profile, in the data directory (sign in once with aja login), so your everyday Chrome stays free; set your everyday profile here to use that instead."`
+	ChromeProfileDir  string `yaml:"chrome_profile_dir" doc:"Chrome user-data directory to use. Blank uses the ajai profile, in the data directory (sign in once with ajai login), so your everyday Chrome stays free; set your everyday profile here to use that instead."`
 	CloseTabs         bool   `yaml:"close_tabs" doc:"Close the tabs the run opened when it ends."`
 	FollowCompanies   bool   `yaml:"follow_companies" doc:"Leave the 'follow company' checkbox ticked when applying."`
 	RunNonStop        bool   `yaml:"run_non_stop" doc:"Start another run, ten minutes later, when one visits every search term or reaches the per-run cap; stop at LinkedIn's daily limit, the hourly cap, --max or an error."`
@@ -125,7 +125,7 @@ type Market struct {
 	Resume        string   `yaml:"resume" doc:"Resume to upload in this market, blank to use questions.resume."`
 }
 
-// Pacing is new in aja; see ADR 0001.
+// Pacing is new in ajai; see ADR 0001.
 type Pacing struct {
 	MaxPerHour        int `yaml:"max_applications_per_hour" doc:"Applications per rolling hour before the run ends." min:"1"`
 	MaxPerRun         int `yaml:"max_per_run" doc:"Applications per run before it ends." min:"1"`

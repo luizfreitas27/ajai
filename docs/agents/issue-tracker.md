@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues, specs and tickets for this repo are GitHub issues on `luizfreitas27/aja`. Use the `gh` CLI for all operations; it infers the repo from `git remote -v`.
+Issues, specs and tickets for this repo are GitHub issues on `luizfreitas27/ajai`. Use the `gh` CLI for all operations; it infers the repo from `git remote -v`.
 
 ## Conventions
 
@@ -11,8 +11,8 @@ Issues, specs and tickets for this repo are GitHub issues on `luizfreitas27/aja`
 - **Labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`.
 - **Close**: `gh issue close <number> --comment "..."`.
 - **Blocking edges between tickets**: GitHub native issue dependencies,
-  `gh api --method POST repos/luizfreitas27/aja/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`
-  where the db id comes from `gh api repos/luizfreitas27/aja/issues/<n> --jq .id`.
+  `gh api --method POST repos/luizfreitas27/ajai/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`
+  where the db id comes from `gh api repos/luizfreitas27/ajai/issues/<n> --jq .id`.
 
 ## Delivery rule
 

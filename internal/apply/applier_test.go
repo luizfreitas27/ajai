@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/pacing"
-	"github.com/luizfreitas27/aja/internal/questions"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func init() {
@@ -28,7 +28,7 @@ func quick() *pacing.Pacer {
 
 func answerer(t *testing.T) *questions.Answerer {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

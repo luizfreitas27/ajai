@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/ui"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/ui"
 )
 
 func TestJSONModePrintsOnlyJSONLinesForEventsAndSummaries(t *testing.T) {
@@ -66,7 +66,7 @@ func TestRunWithJSONKeepsStdoutJSONAndImpliesUnattended(t *testing.T) {
 			t.Fatalf("stdout has a non-JSON line: %q\nall:\n%s", line, out)
 		}
 	}
-	if !strings.Contains(out, `"label":"mode","text":"dry run, unattended`) || !strings.Contains(out, `"label":"market"`) || strings.Contains(out, "aja test") {
+	if !strings.Contains(out, `"label":"mode","text":"dry run, unattended`) || !strings.Contains(out, `"label":"market"`) || strings.Contains(out, "ajai test") {
 		t.Errorf("json implies unattended and prints no banner:\n%s", out)
 	}
 }

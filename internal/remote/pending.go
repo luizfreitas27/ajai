@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/questions"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 const (
@@ -146,7 +146,7 @@ func (l *Listener) applyButton(ctx context.Context, q *notify.CallbackQuery) str
 	action, rest, _ := strings.Cut(q.Data, ":")
 	id, shown, _ := strings.Cut(rest, ":")
 	if action != "delete" && (action != "approve" || shown == "") {
-		return "aja does not know this button."
+		return "ajai does not know this button."
 	}
 	a, err := l.mem.Get(id)
 	if err != nil {
@@ -160,7 +160,7 @@ func (l *Listener) applyButton(ctx context.Context, q *notify.CallbackQuery) str
 		if err := l.mem.Delete(id); err != nil && !errors.Is(err, memory.ErrUnknownID) {
 			return "Could not delete: " + err.Error()
 		}
-		l.edit(ctx, q.Message.MessageID, describe(*a, "Deleted: aja forgets this answer."), nil)
+		l.edit(ctx, q.Message.MessageID, describe(*a, "Deleted: ajai forgets this answer."), nil)
 		return "Deleted."
 	}
 	if shown != digest(a.Answer) {
@@ -174,7 +174,7 @@ func (l *Listener) applyButton(ctx context.Context, q *notify.CallbackQuery) str
 	case err != nil:
 		return "Could not approve: " + err.Error()
 	}
-	l.edit(ctx, q.Message.MessageID, describe(*approved, "Approved: aja uses this answer from now on."), nil)
+	l.edit(ctx, q.Message.MessageID, describe(*approved, "Approved: ajai uses this answer from now on."), nil)
 	return "Approved."
 }
 
@@ -217,7 +217,7 @@ func (l *Listener) replied(ctx context.Context, m notify.Message) {
 		l.reply(ctx, "Could not save the answer: "+err.Error())
 		return
 	}
-	if !l.edit(ctx, m.ReplyTo.MessageID, describe(*answered, "Answered: aja uses this answer from now on."), nil) {
+	if !l.edit(ctx, m.ReplyTo.MessageID, describe(*answered, "Answered: ajai uses this answer from now on."), nil) {
 		l.reply(ctx, "Saved: "+text)
 	}
 }

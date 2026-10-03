@@ -95,7 +95,7 @@ func TestTheSessionIsFoundWhileChromeHoldsTheDatabaseLocked(t *testing.T) {
 	if ok, err := HasLinkedInSession(dir, now); !ok || err != nil {
 		t.Errorf("%v %v", ok, err)
 	}
-	if entries, _ := filepath.Glob(filepath.Join(os.TempDir(), "aja-cookies-*")); len(entries) > 0 {
+	if entries, _ := filepath.Glob(filepath.Join(os.TempDir(), "ajai-cookies-*")); len(entries) > 0 {
 		t.Errorf("no copy of the cookies may be left on disk: %v", entries)
 	}
 }

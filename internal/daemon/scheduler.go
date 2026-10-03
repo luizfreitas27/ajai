@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // TickEvery is how often the scheduler looks at the clock.
@@ -107,17 +107,17 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 	switch {
 	case errors.As(err, &held):
 		s.logger.Info("schedule window skipped", "window", w.ID, "holder", held.Holder.String())
-		s.notify(fmt.Sprintf("aja skipped schedule window %d (%s) today: %s was in progress.", w.ID, w, held.Holder))
+		s.notify(fmt.Sprintf("ajai skipped schedule window %d (%s) today: %s was in progress.", w.ID, w, held.Holder))
 		return s.store.RecordOpening(due.Key(), schedule.OutcomeSkipped, held.Holder.String(), 0)
 	case err != nil:
 		if ctx.Err() != nil {
 			return nil // the daemon is stopping: this opening is not handled
 		}
 		s.logger.Error("schedule window could not start", "window", w.ID, "error", err)
-		s.notify(fmt.Sprintf("aja could not start the run for schedule window %d (%s).\n\n%s", w.ID, w, err))
+		s.notify(fmt.Sprintf("ajai could not start the run for schedule window %d (%s).\n\n%s", w.ID, w, err))
 		return s.store.RecordOpening(due.Key(), schedule.OutcomeFailed, err.Error(), 0)
 	}
-	s.notify(fmt.Sprintf("aja started a run for schedule window %d: %s.", w.ID, w))
+	s.notify(fmt.Sprintf("ajai started a run for schedule window %d: %s.", w.ID, w))
 	return s.store.RecordOpening(due.Key(), schedule.OutcomeStarted, "", 0)
 }
 

@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/daemon"
 )
 
 const (
@@ -34,7 +34,7 @@ var readAtDaemonStart = map[string]string{
 }
 
 // configTab is the Config tab: the three secrets, shown only as set or not and
-// typed into a masked field that saves them in aja's .env; then every setting
+// typed into a masked field that saves them in ajai's .env; then every setting
 // by section, as the config file alone has it (an override, from the
 // environment or .env, is marked and never saved), edited one at a time.
 type configTab struct {
@@ -158,7 +158,7 @@ func readConfigRows(d Deps) configLoadedMsg {
 	if dotenvOK {
 		effective, err := config.Load(d.Paths, d.Env, nil)
 		if effective == nil {
-			msg.invalid = append(msg.invalid, err.Error()) // an AJA_CFG_ value that cannot apply
+			msg.invalid = append(msg.invalid, err.Error()) // an AJAI_CFG_ value that cannot apply
 		} else {
 			for _, key := range effective.Overrides {
 				overridden[key] = true
@@ -437,7 +437,7 @@ func saveSetting(d Deps, key, value string) tea.Cmd {
 		case file == nil:
 			return configSavedMsg{refusal: "the config file cannot be read: " + err.Error()}
 		case !file.FileExisted:
-			return configSavedMsg{refusal: "there is no config file yet at " + d.tilde(d.Paths.ConfigFile) + "; run `aja init` first"}
+			return configSavedMsg{refusal: "there is no config file yet at " + d.tilde(d.Paths.ConfigFile) + "; run `ajai init` first"}
 		}
 		others, err := file.Config.SetChecked(key, value)
 		if err != nil {
@@ -457,7 +457,7 @@ func saveSetting(d Deps, key, value string) tea.Cmd {
 	}
 }
 
-// saveSecret writes name to aja's .env; the value is never shown or logged.
+// saveSecret writes name to ajai's .env; the value is never shown or logged.
 func saveSecret(d Deps, name, value string) tea.Cmd {
 	return func() tea.Msg {
 		value = strings.TrimSpace(value)
@@ -502,7 +502,7 @@ func (c configTab) heading() []notice {
 	case c.problem != "":
 		head = append(head, notice{c.problem, levelFail})
 	case c.missing:
-		head = append(head, notice{"There is no config file yet: run `aja init`. The secrets can be set already.", levelWarn})
+		head = append(head, notice{"There is no config file yet: run `ajai init`. The secrets can be set already.", levelWarn})
 	case len(c.invalid) > 0:
 		head = append(head, notice{fmt.Sprintf("The file has %d problem(s): %s", len(c.invalid), strings.Join(c.invalid, "; ")), levelWarn})
 	}

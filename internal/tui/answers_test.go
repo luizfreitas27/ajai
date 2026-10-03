@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/memory"
 )
 
 // remembered seeds the answer memory: an AI answer, a radio question nothing
@@ -97,7 +97,7 @@ func TestApproveCorrectAndDelete(t *testing.T) {
 		t.Fatal("n keeps it")
 	}
 	h.press("d", "y")
-	h.shows("Deleted: Send me updates. aja asks it again next time.")
+	h.shows("Deleted: Send me updates. ajai asks it again next time.")
 	if r, _ := mem.Get(consent.ID); r != nil {
 		t.Errorf("not deleted: %+v", r)
 	}

@@ -68,7 +68,7 @@ func (t *Telegram) BotID() string {
 	return id
 }
 
-// ChatID is the configured chat, the only one aja talks to and listens to.
+// ChatID is the configured chat, the only one ajai talks to and listens to.
 func (t *Telegram) ChatID() string { return t.chatID }
 
 // Updates long-polls for updates from offset on, waiting up to wait for one to

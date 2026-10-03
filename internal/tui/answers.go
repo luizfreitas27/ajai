@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/questions"
 )
 
 // answersDetailLines is the least room kept under the list for the selected
@@ -337,7 +337,7 @@ func deleteAnswer(d Deps, r memory.Remembered) tea.Cmd {
 			return answerChangedMsg{notice: notice{"Could not delete: " + err.Error(), levelFail}}
 		}
 		d.logger().Info("answer deleted from the TUI", "id", r.ID, "question", r.Label)
-		return answerChangedMsg{notice: notice{text: "Deleted: " + r.Label + ". aja asks it again next time."}}
+		return answerChangedMsg{notice: notice{text: "Deleted: " + r.Label + ". ajai asks it again next time."}}
 	}
 }
 
@@ -393,7 +393,7 @@ func (a answersTab) detail(s styles, width int) []string {
 	}
 	switch {
 	case a.deleting != nil:
-		return append(lines, s.warn.Render(fmt.Sprintf("Delete the answer to %q? aja asks the question again next time.", a.deleting.Label)),
+		return append(lines, s.warn.Render(fmt.Sprintf("Delete the answer to %q? ajai asks the question again next time.", a.deleting.Label)),
 			s.key.Render("y")+" deletes it · "+s.key.Render("n")+" keeps it")
 	case a.edit != nil:
 		e := a.edit

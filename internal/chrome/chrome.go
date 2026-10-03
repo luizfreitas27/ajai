@@ -1,6 +1,6 @@
 // Package chrome finds the Chrome or Chromium installed on this machine, the
 // user's everyday profile for it, and whether a profile is signed in to
-// LinkedIn, for doctor, aja login and the browser layer.
+// LinkedIn, for doctor, ajai login and the browser layer.
 package chrome
 
 import (
@@ -77,7 +77,7 @@ func Version(binary string) string {
 
 // EverydayProfileDir is where the browser at binary keeps the user's everyday
 // profile on Linux: ~/.config/chromium for Chromium, ~/.config/google-chrome
-// (or its -beta / -unstable sibling) for Chrome. The aja profile is
+// (or its -beta / -unstable sibling) for Chrome. The ajai profile is
 // paths.Paths.ChromeProfileDir.
 func EverydayProfileDir(binary string) string {
 	base := os.Getenv("XDG_CONFIG_HOME")

@@ -20,7 +20,7 @@ const (
 )
 
 // Activity is the run lock and the state file read together, the one
-// description `aja status`, Telegram's /status and the TUI give of the run in
+// description `ajai status`, Telegram's /status and the TUI give of the run in
 // progress.
 type Activity struct {
 	Kind   ActivityKind

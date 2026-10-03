@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
 func TestRunRefusesWhileAnotherRunHoldsTheLockWithoutOpeningChrome(t *testing.T) {
@@ -47,7 +47,7 @@ func TestRunRefusesWhileAnotherRunHoldsTheLockWithoutOpeningChrome(t *testing.T)
 		t.Error("a run that could not open Chrome must release the lock")
 	}
 	if asked.ProfileDir != filepath.Join(h.home, "chrome-profile") || !asked.QuitOnClose {
-		t.Errorf("with chrome_profile_dir blank a run uses the aja profile and closes Chrome after: %+v", asked)
+		t.Errorf("with chrome_profile_dir blank a run uses the ajai profile and closes Chrome after: %+v", asked)
 	}
 }
 

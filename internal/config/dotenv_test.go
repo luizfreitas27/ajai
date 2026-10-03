@@ -34,11 +34,11 @@ func TestSetDotenvWritesOneVariableAndKeepsTheRest(t *testing.T) {
 	if err := SetDotenv(path, EnvTelegramChatID, "-100123"); err != nil {
 		t.Fatal(err)
 	}
-	if text, m := read(); text != "AJA_TELEGRAM_CHAT_ID='-100123'\n" || m[EnvTelegramChatID] != "-100123" || perm() != 0o600 {
+	if text, m := read(); text != "AJAI_TELEGRAM_CHAT_ID='-100123'\n" || m[EnvTelegramChatID] != "-100123" || perm() != 0o600 {
 		t.Errorf("a new file: %q %v %v", text, m, perm())
 	}
 
-	existing := "# my secrets\nOTHER=1\nexport AJA_AI_API_KEY=old\nAJA_TELEGRAM_CHAT_ID='-100123'\nAJA_AI_API_KEY=older\n"
+	existing := "# my secrets\nOTHER=1\nexport AJAI_AI_API_KEY=old\nAJAI_TELEGRAM_CHAT_ID='-100123'\nAJAI_AI_API_KEY=older\n"
 	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestSetDotenvWritesOneVariableAndKeepsTheRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, m := read()
-	if text != "# my secrets\nOTHER=1\nAJA_AI_API_KEY='sk-$HOME#x y'\nAJA_TELEGRAM_CHAT_ID='-100123'\n" {
+	if text != "# my secrets\nOTHER=1\nAJAI_AI_API_KEY='sk-$HOME#x y'\nAJAI_TELEGRAM_CHAT_ID='-100123'\n" {
 		t.Errorf("replaced in place, the duplicate dropped, the rest kept:\n%s", text)
 	}
 	if m[EnvAIAPIKey] != "sk-$HOME#x y" || m["OTHER"] != "1" {
@@ -59,19 +59,19 @@ func TestSetDotenvWritesOneVariableAndKeepsTheRest(t *testing.T) {
 	if err := SetDotenv(path, EnvAIAPIKey, ""); err != nil {
 		t.Fatal(err)
 	}
-	if text, _ := read(); text != "# my secrets\nOTHER=1\nAJA_TELEGRAM_CHAT_ID='-100123'\n" {
+	if text, _ := read(); text != "# my secrets\nOTHER=1\nAJAI_TELEGRAM_CHAT_ID='-100123'\n" {
 		t.Errorf("an empty value removes the variable:\n%s", text)
 	}
 
 	if err := SetDotenv(path, EnvAIAPIKey, "sk-new"); err != nil {
 		t.Fatal(err)
 	}
-	if text, m := read(); text != "# my secrets\nOTHER=1\nAJA_TELEGRAM_CHAT_ID='-100123'\nAJA_AI_API_KEY='sk-new'\n" || m[EnvAIAPIKey] != "sk-new" {
+	if text, m := read(); text != "# my secrets\nOTHER=1\nAJAI_TELEGRAM_CHAT_ID='-100123'\nAJAI_AI_API_KEY='sk-new'\n" || m[EnvAIAPIKey] != "sk-new" {
 		t.Errorf("a new variable is appended, the rest kept:\n%s", text)
 	}
 
 	// The forms godotenv also reads are recognised, so a removal really removes.
-	if err := os.WriteFile(path, []byte("AJA_AI_API_KEY: colon\nexport\tAJA_TELEGRAM_CHAT_ID=tab\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("AJAI_AI_API_KEY: colon\nexport\tAJAI_TELEGRAM_CHAT_ID=tab\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{EnvAIAPIKey, EnvTelegramChatID} {
@@ -95,9 +95,9 @@ func TestSetDotenvWritesOneVariableAndKeepsTheRest(t *testing.T) {
 
 func TestEnvOverrideNameIsTheVariableThatOverridesAKey(t *testing.T) {
 	for key, want := range map[string]string{
-		"search.terms":            "AJA_CFG_SEARCH_TERMS",
-		"settings.run_non_stop":   "AJA_CFG_SETTINGS_RUN_NON_STOP",
-		"markets.brasil.currency": "AJA_CFG_MARKETS_BRASIL_CURRENCY",
+		"search.terms":            "AJAI_CFG_SEARCH_TERMS",
+		"settings.run_non_stop":   "AJAI_CFG_SETTINGS_RUN_NON_STOP",
+		"markets.brasil.currency": "AJAI_CFG_MARKETS_BRASIL_CURRENCY",
 	} {
 		got := EnvOverrideName(key)
 		if got != want || envKeyToDotted(got) != key {

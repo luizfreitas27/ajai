@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/markets"
 )
 
 // fullConfig mirrors the Python test fixture: every field set, including the

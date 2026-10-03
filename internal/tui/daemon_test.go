@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/daemon"
 )
 
 // systemctlSince is what the fake systemctl was asked after the first n calls,
@@ -41,8 +41,8 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 
 	before := len(h.systemd.calls)
 	h.press("i", "y")
-	h.shows("Installed ~/systemd/aja.service; the daemon runs, and starts with your desktop session.", "systemd unit: enabled, active")
-	if got := h.systemctlSince(before); !slices.Contains(got, "daemon-reload") || !slices.Contains(got, "enable aja.service") {
+	h.shows("Installed ~/systemd/ajai.service; the daemon runs, and starts with your desktop session.", "systemd unit: enabled, active")
+	if got := h.systemctlSince(before); !slices.Contains(got, "daemon-reload") || !slices.Contains(got, "enable ajai.service") {
 		t.Errorf("install ran %q", got)
 	}
 	if !strings.Contains(h.logs.String(), "daemon unit installed from the TUI") {
@@ -50,7 +50,7 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 	}
 
 	h.press("i")
-	h.shows("Reinstall the daemon's unit for this aja and restart it?")
+	h.shows("Reinstall the daemon's unit for this ajai and restart it?")
 	h.press("esc")
 
 	before = len(h.systemd.calls)
@@ -58,7 +58,7 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 	h.shows("Stopped the daemon.")
 	h.press("s", "y")
 	h.shows("Started the daemon.")
-	if got := h.systemctlSince(before); !slices.Equal(got, []string{"stop aja.service", "start aja.service"}) {
+	if got := h.systemctlSince(before); !slices.Equal(got, []string{"stop ajai.service", "start ajai.service"}) {
 		t.Errorf("ran %q", got)
 	}
 
@@ -67,7 +67,7 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 	h.shows("Stop the daemon and remove its unit? Schedule windows stop opening runs.")
 	h.press("y")
 	h.shows("Removed the daemon's unit.", "systemd unit: not installed")
-	if got := h.systemctlSince(before); !slices.Equal(got, []string{"disable --now aja.service", "daemon-reload"}) {
+	if got := h.systemctlSince(before); !slices.Equal(got, []string{"disable --now ajai.service", "daemon-reload"}) {
 		t.Errorf("uninstall ran %q", got)
 	}
 }
@@ -78,17 +78,17 @@ func TestDaemonFailuresAndWarningsAreSaid(t *testing.T) {
 	h.open(100, 30)
 	h.scheduleTab()
 	h.press("i", "y")
-	h.shows("Installed ~/systemd/aja.service, but the daemon did not start. Your session has not reached", // the warning, capitalised
+	h.shows("Installed ~/systemd/ajai.service, but the daemon did not start. Your session has not reached", // the warning, capitalised
 		"graphical-session.target")
 
-	h.systemd.fail = "start aja.service"
+	h.systemd.fail = "start ajai.service"
 	h.press("s", "y")
-	h.shows("Could not start the daemon: systemctl --user start aja.service: exit status 1")
+	h.shows("Could not start the daemon: systemctl --user start ajai.service: exit status 1")
 	if !strings.Contains(h.logs.String(), `"msg":"could not start the daemon from the TUI"`) {
 		t.Errorf("a failure is logged too: %s", h.logs)
 	}
 
-	h.systemd.fail, h.systemd.answers["is-active aja.service"] = "", "failed" // it starts, then exits
+	h.systemd.fail, h.systemd.answers["is-active ajai.service"] = "", "failed" // it starts, then exits
 	h.press("s", "y")
 	h.shows("Could not start the daemon: the daemon did not stay up")
 }
@@ -137,8 +137,8 @@ func TestTheDaemonProcessShowsAndTheUnitIsReadEveryFewSeconds(t *testing.T) {
 	h.scheduleTab()
 	h.shows("Daemon  running since Mon 05 Oct 08:30")
 
-	reads := func() int { return strings.Count(strings.Join(h.systemd.calls, "\n"), "is-enabled aja.service") }
-	if _, err := h.deps().Unit.Install(); err != nil { // installed elsewhere: `aja daemon install`
+	reads := func() int { return strings.Count(strings.Join(h.systemd.calls, "\n"), "is-enabled ajai.service") }
+	if _, err := h.deps().Unit.Install(); err != nil { // installed elsewhere: `ajai daemon install`
 		t.Fatal(err)
 	}
 	start := reads()

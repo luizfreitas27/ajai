@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/daemon"
 )
 
 // fileValue reads key from the config file alone.
@@ -43,8 +43,8 @@ func TestTheConfigTabListsTheSecretsAndEverySetting(t *testing.T) {
 	h.env[config.EnvAIAPIKey] = "sk-from-the-environment"
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
-	h.shows(tabKey(tabConfig)+" Config", "There is no config file yet: run `aja init`. The secrets can be set already.",
-		"> AJA_AI_API_KEY", "set (your environment)", "AJA_TELEGRAM_BOT_TOKEN", "not set",
+	h.shows(tabKey(tabConfig)+" Config", "There is no config file yet: run `ajai init`. The secrets can be set already.",
+		"> AJAI_AI_API_KEY", "set (your environment)", "AJAI_TELEGRAM_BOT_TOKEN", "not set",
 		"The AI provider's API key", "Your environment sets it, and wins over .env.")
 	if strings.Contains(h.screen(), "sk-from-the-environment") {
 		t.Fatal("a secret's value is on screen")
@@ -117,14 +117,14 @@ func TestASettingIsSavedOnlyOnceValid(t *testing.T) {
 func TestAnEnvironmentOverrideIsMarkedAndNeverSaved(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.env["AJA_CFG_SEARCH_TERMS"] = "From the environment"
-	h.env["AJA_CFG_SEARCH_LOCATION"] = "Lisboa"
+	h.env["AJAI_CFG_SEARCH_TERMS"] = "From the environment"
+	h.env["AJAI_CFG_SEARCH_LOCATION"] = "Lisboa"
 	location := h.fileValue("search.location")
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
 	h.moveTo("terms")
-	h.shows("Dev Python, QA  ← AJA_CFG_SEARCH_TERMS overrides it",
-		"AJA_CFG_SEARCH_TERMS in your environment wins over the file; an edit here changes the file.")
+	h.shows("Dev Python, QA  ← AJAI_CFG_SEARCH_TERMS overrides it",
+		"AJAI_CFG_SEARCH_TERMS in your environment wins over the file; an edit here changes the file.")
 	h.press("enter", "ctrl+u", "Rust", "enter")
 	if got := h.fileValue("search.terms"); got != "Rust" {
 		t.Errorf("the file gets the edit: %q", got)
@@ -145,19 +145,19 @@ func TestSecretsAreTypedHiddenSavedInDotenvAndNeverShownOrLogged(t *testing.T) {
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
 
-	h.moveTo("AJA_TELEGRAM_BOT_TOKEN")
+	h.moveTo("AJAI_TELEGRAM_BOT_TOKEN")
 	h.press("enter")
-	h.shows("Edit AJA_TELEGRAM_BOT_TOKEN (hidden as you type)")
+	h.shows("Edit AJAI_TELEGRAM_BOT_TOKEN (hidden as you type)")
 	h.press("123:SECRET")
 	if strings.Contains(h.screen(), "123:SECRET") {
 		t.Fatalf("the secret shows while typed:\n%s", h.screen())
 	}
 	h.shows("••••••••••")
 	h.press("enter")
-	h.shows("Saved AJA_TELEGRAM_BOT_TOKEN in .env. Restart the daemon to use it: it reads Telegram's settings", // wrapped
+	h.shows("Saved AJAI_TELEGRAM_BOT_TOKEN in .env. Restart the daemon to use it: it reads Telegram's settings", // wrapped
 		"when it starts.", "set (.env)")
 	data, err := os.ReadFile(h.p.EnvFile)
-	if err != nil || !strings.Contains(string(data), "AJA_TELEGRAM_BOT_TOKEN='123:SECRET'") {
+	if err != nil || !strings.Contains(string(data), "AJAI_TELEGRAM_BOT_TOKEN='123:SECRET'") {
 		t.Errorf(".env: %q %v", data, err)
 	}
 	if strings.Contains(h.screen(), "123:SECRET") || strings.Contains(h.logs.String(), "SECRET") {
@@ -165,13 +165,13 @@ func TestSecretsAreTypedHiddenSavedInDotenvAndNeverShownOrLogged(t *testing.T) {
 	}
 
 	h.env[config.EnvTelegramChatID] = "42"
-	h.moveTo("AJA_TELEGRAM_CHAT_ID")
+	h.moveTo("AJAI_TELEGRAM_CHAT_ID")
 	h.press("enter", "-100", "enter")
 	h.shows("Your environment sets it too, and wins.")
 
-	h.moveTo("AJA_TELEGRAM_BOT_TOKEN")
+	h.moveTo("AJAI_TELEGRAM_BOT_TOKEN")
 	h.press("enter", "enter")
-	h.shows("Removed AJA_TELEGRAM_BOT_TOKEN from .env.")
+	h.shows("Removed AJAI_TELEGRAM_BOT_TOKEN from .env.")
 	if data, _ := os.ReadFile(h.p.EnvFile); strings.Contains(string(data), "BOT_TOKEN") {
 		t.Errorf("not removed: %q", data)
 	}
@@ -254,20 +254,20 @@ func TestScrollingUpBringsTheSectionTitlesBack(t *testing.T) {
 	}
 	h.shows("> first_name ", "personals")
 	h.press("up")
-	h.shows("> AJA_TELEGRAM_CHAT_ID", "secrets, kept in")
+	h.shows("> AJAI_TELEGRAM_CHAT_ID", "secrets, kept in")
 }
 
 func TestAnOverrideInDotenvIsMarkedAndNeverSaved(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	location := h.fileValue("search.location")
-	if err := os.WriteFile(h.p.EnvFile, []byte("AJA_CFG_SEARCH_LOCATION=Lisboa\n"), 0o600); err != nil {
+	if err := os.WriteFile(h.p.EnvFile, []byte("AJAI_CFG_SEARCH_LOCATION=Lisboa\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
 	h.moveTo("location")
-	h.shows(location+"  ← AJA_CFG_SEARCH_LOCATION overrides it", "AJA_CFG_SEARCH_LOCATION in .env wins over the file")
+	h.shows(location+"  ← AJAI_CFG_SEARCH_LOCATION overrides it", "AJAI_CFG_SEARCH_LOCATION in .env wins over the file")
 	h.moveTo("terms")
 	h.press("enter", "ctrl+u", "Rust", "enter")
 	if got := h.fileValue("search.location"); got != location {
@@ -278,12 +278,12 @@ func TestAnOverrideInDotenvIsMarkedAndNeverSaved(t *testing.T) {
 func TestABrokenDotenvIsReportedWithoutItsContent(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	if err := os.WriteFile(h.p.EnvFile, []byte("AJA_AI_API_KEY='sk-unterminated\nAJA_TELEGRAM_BOT_TOKEN=123:SECRET\n"), 0o600); err != nil {
+	if err := os.WriteFile(h.p.EnvFile, []byte("AJAI_AI_API_KEY='sk-unterminated\nAJAI_TELEGRAM_BOT_TOKEN=123:SECRET\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
-	h.shows("cannot be read: fix it in an", "aja never shows its content") // wrapped
+	h.shows("cannot be read: fix it in an", "ajai never shows its content") // wrapped
 	if screen := h.screen(); strings.Contains(screen, "unterminated") || strings.Contains(screen, "SECRET") {
 		t.Fatalf("the .env's content is on screen:\n%s", screen)
 	}

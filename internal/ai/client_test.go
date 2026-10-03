@@ -15,9 +15,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/questions"
 )
 
 // fakeModel is an OpenAI-compatible chat endpoint that answers with reply and

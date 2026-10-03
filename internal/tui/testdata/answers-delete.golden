@@ -1,4 +1,4 @@
-aja   1 Dashboard   2 Answers (3)   3 Schedule   4 Jobs   5 Config
+ajai   1 Dashboard   2 Answers (3)   3 Schedule   4 Jobs   5 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Answers  pending   tab shows the approved ones
 Approved: Years of experience with Go?
@@ -19,7 +19,7 @@ Approved: Years of experience with Go?
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-Delete the answer to "Send me updates"? aja asks the question again next time.
+Delete the answer to "Send me updates"? ajai asks the question again next time.
 y deletes it · n keeps it
 
 

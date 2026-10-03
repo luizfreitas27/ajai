@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/textmatch"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/textmatch"
 )
 
 // Kind is a form control kind.
@@ -590,7 +590,7 @@ func rememberKey(q Question) string {
 }
 
 // Capture remembers, as approved (source user), what the user put into a
-// control by hand during a help pause. d is the decision aja made for that
+// control by hand during a help pause. d is the decision ajai made for that
 // control before the pause: only a question the memory is consulted for
 // (d.Remember) is captured, so the email question, a configured answer that
 // matches no option, and sensitive questions never fill the memory with
@@ -604,7 +604,7 @@ func (a *Answerer) Capture(q Question, d Decision, value string, jobLink string)
 	if a.remember(label, string(q.Kind), value, "user", jobLink, Choices(q.Options)) == nil {
 		return false
 	}
-	a.Logger.Info("captured your answer; aja will reuse it", "question", label, "kind", q.Kind, "answer", value)
+	a.Logger.Info("captured your answer; ajai will reuse it", "question", label, "kind", q.Kind, "answer", value)
 	return true
 }
 

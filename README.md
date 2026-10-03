@@ -1,4 +1,4 @@
-# aja
+# ajai
 
 A single-binary command-line tool that searches LinkedIn for jobs matching your
 criteria and submits Easy Apply applications from your own machine, in your own
@@ -6,7 +6,7 @@ Chrome, with your own account. It remembers the answers it gives, lets you revie
 them, knows the difference between applying in Brazil and abroad, and tells you on
 Telegram how a run went.
 
-`aja` is the Go successor of the Python
+`ajai` is the Go successor of the Python
 [Auto_job_applier_linkedIn fork](https://github.com/luizfreitas27/Auto_job_applier_linkedIn).
 The behaviour was ported, not reinvented: same selectors, same question heuristics
 (English and Portuguese), same answer memory. See `NOTICE`.
@@ -15,24 +15,24 @@ The behaviour was ported, not reinvented: same selectors, same question heuristi
 
 Phase 1, the command-line tool, is complete. Next:
 
-- **F2**: `aja daemon`, a systemd user service that starts and stops runs on schedule
+- **F2**: `ajai daemon`, a systemd user service that starts and stops runs on schedule
   windows and takes commands from your Telegram bot, all managed from the command line.
 - **F3**: a full-screen terminal view, installers, self-update.
 
 ## Install
 
-You need Google Chrome or Chromium. `aja` drives a real, visible Chrome, on a profile of its
+You need Google Chrome or Chromium. `ajai` drives a real, visible Chrome, on a profile of its
 own (or yours, if you prefer); it never runs headless and never stores your LinkedIn password.
 
 **Release binaries.** Download the archive for your system from the
-[Releases](https://github.com/luizfreitas27/aja/releases) page (Linux amd64 and arm64;
-`aja` targets Linux only for now), check it against `checksums.txt`, unpack it and put `aja` on your `PATH`.
+[Releases](https://github.com/luizfreitas27/ajai/releases) page (Linux amd64 and arm64;
+`ajai` targets Linux only for now), check it against `checksums.txt`, unpack it and put `ajai` on your `PATH`.
 While the repository is private, only its collaborators can download them.
 
 **With Go 1.26+:**
 
 ```bash
-go install github.com/luizfreitas27/aja/cmd/aja@latest
+go install github.com/luizfreitas27/ajai/cmd/ajai@latest
 ```
 
 While the repository is private, `go install` needs `GOPRIVATE=github.com/luizfreitas27`
@@ -41,80 +41,80 @@ and git access to it.
 **From source:**
 
 ```bash
-git clone git@github.com:luizfreitas27/aja.git && cd aja
-go build ./cmd/aja && ./aja version
+git clone git@github.com:luizfreitas27/ajai.git && cd ajai
+go build ./cmd/ajai && ./ajai version
 ```
 
 ## First run
 
-The easiest way: type `aja`. With nothing set up yet it opens on the **setup checklist**
+The easiest way: type `ajai`. With nothing set up yet it opens on the **setup checklist**
 (see [The TUI](#the-tui)), which walks you through the steps below, each one a key away.
 By hand:
 
 1. **Configure.** Either answer a short wizard:
 
    ```bash
-   aja init
+   ajai init
    ```
 
    or bring everything over from the Python bot (settings, answer memory, job history,
    resume; never secrets):
 
    ```bash
-   aja import ~/Projects/Automations/Auto_job_applier_linkedIn
+   ajai import ~/Projects/Automations/Auto_job_applier_linkedIn
    ```
 
-2. **Resume.** Put it in the resumes directory that `aja doctor` prints (`resume.pdf` by
-   default). Each market may have its own: `aja config set markets.brasil.resume cv-pt.pdf`.
+2. **Resume.** Put it in the resumes directory that `ajai doctor` prints (`resume.pdf` by
+   default). Each market may have its own: `ajai config set markets.brasil.resume cv-pt.pdf`.
 
 3. **Secrets**, only the ones you use, in the `.env` next to the config file:
 
    ```bash
-   AJA_AI_API_KEY=sk-...           # a hosted AI provider
-   AJA_TELEGRAM_BOT_TOKEN=123:ABC  # Telegram, both lines or neither
-   AJA_TELEGRAM_CHAT_ID=987654321
+   AJAI_AI_API_KEY=sk-...           # a hosted AI provider
+   AJAI_TELEGRAM_BOT_TOKEN=123:ABC  # Telegram, both lines or neither
+   AJAI_TELEGRAM_CHAT_ID=987654321
    ```
 
-4. **Sign in to LinkedIn, once.** aja uses a Chrome profile of its own, so your everyday
+4. **Sign in to LinkedIn, once.** ajai uses a Chrome profile of its own, so your everyday
    Chrome stays open and free while it works:
 
    ```bash
-   aja login
+   ajai login
    ```
 
-   Chrome opens on LinkedIn; sign in by hand (aja never types your password) and it closes
-   once the feed appears. The session stays in the aja profile.
+   Chrome opens on LinkedIn; sign in by hand (ajai never types your password) and it closes
+   once the feed appears. The session stays in the ajai profile.
 
-5. **Check.** `aja doctor` tests Chrome, the profile (and whether LinkedIn is signed in
+5. **Check.** `ajai doctor` tests Chrome, the profile (and whether LinkedIn is signed in
    there), the config, the secrets, the resume and the data directory, and prints every
    path in use.
 
 6. **Dry run.**
 
    ```bash
-   aja run --dry-run --fast
+   ajai run --dry-run --fast
    ```
 
-   aja searches,
+   ajai searches,
    screens each job, fills every form and discards it at the Review step, so you can see
    the answers it would send. `--fast` shortens the pauses and only works with `--dry-run`.
 
 7. **For real.** Start small, then let the pacing limits do their job:
 
    ```bash
-   aja run --max 1
-   aja run
+   ajai run --max 1
+   ajai run
    ```
 
-**Coming from phase 1?** aja used to drive your everyday Chrome profile. A blank
-`settings.chrome_profile_dir` now means the aja profile, one of aja's own: run `aja login` once, or set
-`settings.chrome_profile_dir` to your everyday profile (`aja doctor` prints its path) to
-keep the old behaviour. On the aja profile a run closes its Chrome when it ends; on yours
+**Coming from phase 1?** ajai used to drive your everyday Chrome profile. A blank
+`settings.chrome_profile_dir` now means the ajai profile, one of ajai's own: run `ajai login` once, or set
+`settings.chrome_profile_dir` to your everyday profile (`ajai doctor` prints its path) to
+keep the old behaviour. On the ajai profile a run closes its Chrome when it ends; on yours
 it leaves the window open, as before.
 
 ## The TUI
 
-Type `aja` with no command, in a terminal, and it opens a full-screen interface. Outside a
+Type `ajai` with no command, in a terminal, and it opens a full-screen interface. Outside a
 terminal (a pipe, a script, systemd) it prints the help instead, and every command below
 works exactly as without the TUI.
 
@@ -128,7 +128,7 @@ The **Dashboard** refreshes every second. It shows:
 
 `r` on the Dashboard starts a run. You choose the market (the config's, brasil or
 internacional), dry run (the default) or live, and a maximum of applications. It runs
-`aja run --unattended` in a process of its own, so closing the TUI never ends it, and
+`ajai run --unattended` in a process of its own, so closing the TUI never ends it, and
 questions nothing can answer go to the review queue. If a run is already in progress, Start
 says which one and starts nothing; if the new run cannot start (a config problem, Chrome
 missing or in use), the TUI says why. `x` stops the run in progress, whoever started it
@@ -143,16 +143,16 @@ options, who gave it, how often it was used and the last job. `a` approves it as
 run answered it again meanwhile, nothing is approved and the new answer is shown), `e`
 corrects it: a select or radio is picked from its options with ↑↓, or typed (an option, or
 the beginning of just one; the pick follows what you type), anything else typed; a correction is yours and approved. A checkbox
-takes only `a` or `d`; `d` deletes after asking, and aja asks the question again next time.
+takes only `a` or `d`; `d` deletes after asking, and ajai asks the question again next time.
 
 The **Schedule** tab lists the schedule windows (weekdays, hours, market, mode, on or off)
 with each one's next opening. `a` adds one in a form: tick the weekdays with Space, type
 the start and end (HH:MM, local time), choose the market and dry run or live. It is checked
-as `aja schedule add` checks it (no window crossing midnight, none overlapping another on
+as `ajai schedule add` checks it (no window crossing midnight, none overlapping another on
 the same weekday) and refused with the reason. Space turns the selected window off or back
 on (on again only if nothing overlaps it now), and `d` deletes it after asking. Windows open
 runs only while the daemon runs: the bottom of the tab says whether it does and how its
-systemd unit stands, and `i` installs (or reinstalls) the unit as `aja daemon install` does,
+systemd unit stands, and `i` installs (or reinstalls) the unit as `ajai daemon install` does,
 `u` uninstalls it, `s` starts the daemon and `t` stops it, each after a question that says
 what it does. Installing warns when it could not start the daemon (no desktop session) or
 when reinstalling ends a run in progress.
@@ -171,25 +171,25 @@ what it does. Enter edits one:
 - a setting with fixed values is picked from a list (several, with Space, for a list such
   as `search.on_site`);
 - anything else is typed, and refused with the reason if it is not valid;
-- a setting your environment or `.env` overrides (`AJA_CFG_...`) is marked, and an edit
+- a setting your environment or `.env` overrides (`AJAI_CFG_...`) is marked, and an edit
   changes the file, never saving the override.
 
-The three secrets (`AJA_AI_API_KEY`, `AJA_TELEGRAM_BOT_TOKEN`, `AJA_TELEGRAM_CHAT_ID`) show
+The three secrets (`AJAI_AI_API_KEY`, `AJAI_TELEGRAM_BOT_TOKEN`, `AJAI_TELEGRAM_CHAT_ID`) show
 only whether they are set, and where (your environment or `.env`). Each one is typed into a
-hidden field and saved in aja's `.env`, readable only by you; an empty value removes it. If
+hidden field and saved in ajai's `.env`, readable only by you; an empty value removes it. If
 the daemon runs, the TUI tells you when it needs a restart: it reads the Telegram settings
 when it starts, while settings take effect on its next run.
 
-The **setup checklist** lists every check `aja doctor` makes, with what fixes it. The TUI
+The **setup checklist** lists every check `ajai doctor` makes, with what fixes it. The TUI
 opens on it when something a run needs is missing (a check failed, or LinkedIn is not
-signed in in the aja profile); `s` on the Dashboard opens it at any time, and the Dashboard
+signed in in the ajai profile); `s` on the Dashboard opens it at any time, and the Dashboard
 says whether every check passes (they run again every half minute and after every
 change). Enter fixes the selected check:
-- no config file: the init wizard (`aja init`);
-- no LinkedIn session in the aja profile: `aja login`, which opens Chrome to sign in;
+- no config file: the init wizard (`ajai init`);
+- no LinkedIn session in the ajai profile: `ajai login`, which opens Chrome to sign in;
 - the AI key, Telegram or the resume: the Config tab.
 
-`i` imports from the Python bot after asking for its folder (`aja import`), and `r` checks
+`i` imports from the Python bot after asking for its folder (`ajai import`), and `r` checks
 again. The wizard, the sign-in and the import run in the same terminal while the TUI steps
 aside (with the same `--config` and `--no-color`); press Enter at the end to come back,
 and the checks run again. Without a config file
@@ -204,25 +204,25 @@ never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-co
 
 | Command | What it does |
 |---|---|
-| `aja run [--dry-run] [--max N] [--terms "a,b"] [--location X] [--market brasil]` | One run (or a non-stop session); flags override the config for this run only |
-| `aja run --json` | The same, with one JSON object per line for every event and summary, for scripts |
-| `aja stop` | Stop the run in progress cleanly, from any terminal (as Ctrl-C in its own would) |
-| `aja status` | The run in progress (live counters, who started it) and the last runs |
-| `aja logs -f` | Follow today's log (`--daemon`: the daemon's) |
-| `aja answers review` | Work through the pending answers: approve, edit, delete, skip |
-| `aja answers list --state pending` | The review queue; `approve`, `edit`, `delete`, `clear` per id or state |
-| `aja jobs list --applied --since 2026-10-01` | The job history; `--failed`, `--external`, `--skipped`, `--json` |
-| `aja export --csv ./sheets` | The Python bot's two spreadsheets, from the database |
-| `aja config show` / `get` / `set` / `validate` | The configuration, secrets masked |
-| `aja doctor` | Everything a run needs, and every path |
-| `aja login` | Sign in to LinkedIn once in the profile aja uses |
-| `aja schedule add/list/rm/enable/disable` | Schedule windows (see below) |
-| `aja daemon` | Start and stop runs on the schedule windows, until Ctrl-C |
-| `aja daemon install` / `status` / `uninstall` | The daemon from a systemd user unit |
+| `ajai run [--dry-run] [--max N] [--terms "a,b"] [--location X] [--market brasil]` | One run (or a non-stop session); flags override the config for this run only |
+| `ajai run --json` | The same, with one JSON object per line for every event and summary, for scripts |
+| `ajai stop` | Stop the run in progress cleanly, from any terminal (as Ctrl-C in its own would) |
+| `ajai status` | The run in progress (live counters, who started it) and the last runs |
+| `ajai logs -f` | Follow today's log (`--daemon`: the daemon's) |
+| `ajai answers review` | Work through the pending answers: approve, edit, delete, skip |
+| `ajai answers list --state pending` | The review queue; `approve`, `edit`, `delete`, `clear` per id or state |
+| `ajai jobs list --applied --since 2026-10-01` | The job history; `--failed`, `--external`, `--skipped`, `--json` |
+| `ajai export --csv ./sheets` | The Python bot's two spreadsheets, from the database |
+| `ajai config show` / `get` / `set` / `validate` | The configuration, secrets masked |
+| `ajai doctor` | Everything a run needs, and every path |
+| `ajai login` | Sign in to LinkedIn once in the profile ajai uses |
+| `ajai schedule add/list/rm/enable/disable` | Schedule windows (see below) |
+| `ajai daemon` | Start and stop runs on the schedule windows, until Ctrl-C |
+| `ajai daemon install` / `status` / `uninstall` | The daemon from a systemd user unit |
 
-Only one run happens on a machine at a time: a second `aja run` refuses and says which run
-is in progress. `aja stop` asks that run to end: the job in progress is finished or
-discarded, the run is recorded with "stopped with aja stop" and its summary sent.
+Only one run happens on a machine at a time: a second `ajai run` refuses and says which run
+is in progress. `ajai stop` asks that run to end: the job in progress is finished or
+discarded, the run is recorded with "stopped with ajai stop" and its summary sent.
 
 ## Answers, the AI and the help pause
 
@@ -236,15 +236,15 @@ authorization, citizenship, salary, disability, veteran status or clearances: th
 answered from your configuration or not at all. A key is only ever sent over HTTPS or to
 localhost.
 
-Every answer the AI gives is remembered as pending and used; `aja answers review` lets you
+Every answer the AI gives is remembered as pending and used; `ajai answers review` lets you
 approve or correct it. Only an approved answer may tick a checkbox.
 
-With you at the terminal, a question nothing can answer pauses the job: aja shows it (and
+With you at the terminal, a question nothing can answer pauses the job: ajai shows it (and
 sends a Telegram message), you fill it in Chrome and press Enter, and what you typed is
 remembered as approved, so the next form that asks goes through. The pause waits up to 15
 minutes. With `--unattended`, or when stdin or stdout is not a terminal (a script, a
 scheduler), the job is skipped instead and the question waits for your answer in
-`aja answers review`.
+`ajai answers review`.
 
 ## Non-stop runs and filter pauses
 
@@ -254,9 +254,9 @@ hourly cap, `--max`, an error or Ctrl-C. The filters change between runs the way
 Python bot changed them: `settings.cycle_date_posted` sets the date filter to "Past 24
 hours" for every later run, and `settings.alternate_sort_by` flips the sort order before
 each one (a blank sort becomes "Most relevant", then "Most recent", and so on). Each run is
-recorded and reported on its own; `aja status` shows when the next one starts.
+recorded and reported on its own; `ajai status` shows when the next one starts.
 
-With `search.pause_after_filters: true` (the default) and you at the terminal, aja stops
+With `search.pause_after_filters: true` (the default) and you at the terminal, ajai stops
 after applying each term's filters so you can check or adjust them in Chrome; press Enter
 to go on, or type `off` to stop pausing for the session.
 
@@ -266,38 +266,38 @@ A schedule window is a span of local time on chosen weekdays, optionally with it
 and dry run:
 
 ```bash
-aja schedule add --days mon-fri --start 09:00 --end 11:00 --market brasil
-aja schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run
-aja schedule list            # every window, and the next opening
-aja schedule disable 2       # enable, rm work the same way
+ajai schedule add --days mon-fri --start 09:00 --end 11:00 --market brasil
+ajai schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run
+ajai schedule list            # every window, and the next opening
+ajai schedule disable 2       # enable, rm work the same way
 ```
 
 When a window opens, one unattended run starts (a non-stop session with
 `settings.run_non_stop`); when it closes, the run is stopped. A run that ends early is not
 restarted in the same window, and a window that opens while another run is in progress is
 skipped. Windows never cross midnight: split one in two (`22:00`-`24:00` and `00:00`-`02:00`
-the next day). `aja status` shows the next opening.
+the next day). `ajai status` shows the next opening.
 
 ### The daemon
 
-Windows are acted on by `aja daemon`, which runs until Ctrl-C:
+Windows are acted on by `ajai daemon`, which runs until Ctrl-C:
 
 ```bash
-aja daemon install       # a systemd user unit that starts with your desktop session
-aja daemon status        # installed, running?
-aja logs --daemon -f     # what it decides, and the runs it starts
-aja daemon uninstall     # stop it and remove the unit
+ajai daemon install       # a systemd user unit that starts with your desktop session
+ajai daemon status        # installed, running?
+ajai logs --daemon -f     # what it decides, and the runs it starts
+ajai daemon uninstall     # stop it and remove the unit
 ```
 
-`aja daemon install` writes `~/.config/systemd/user/aja.service` for the binary you ran it
-with (carrying your `AJA_HOME`, XDG directories and `--config`, if you use them), enables it
+`ajai daemon install` writes `~/.config/systemd/user/ajai.service` for the binary you ran it
+with (carrying your `AJAI_HOME`, XDG directories and `--config`, if you use them), enables it
 for your desktop session, starts it and checks it stays up; run it again after moving or
-upgrading aja. It warns when your session does not reach `graphical-session.target` or
+upgrading ajai. It warns when your session does not reach `graphical-session.target` or
 systemd does not know your display, either of which would keep Chrome from opening, and
-refuses while an `aja daemon` you started by hand is running. Stopping the unit is Ctrl-C:
+refuses while an `ajai daemon` you started by hand is running. Stopping the unit is Ctrl-C:
 the run in progress ends cleanly and its window resumes when the daemon is back. On your own
 Chrome profile (`settings.chrome_profile_dir`), the window a daemon run opened closes with
-the unit. You can also just run `aja daemon` in a terminal you leave open.
+the unit. You can also just run `ajai daemon` in a terminal you leave open.
 
 Every 30 seconds it looks at the windows: when one opens it starts an unattended run with
 that window's market and dry run (a non-stop session if `settings.run_non_stop` is on) and
@@ -305,14 +305,14 @@ tells you on Telegram; when the window closes, or you disable or remove it, the 
 cleanly with that reason. A run that ends early is not restarted in the same window. A
 window that opens while another run is in progress (one you started in a terminal, say) is
 skipped, and Telegram says so; two windows back to back hand over instead. The
-configuration is read afresh for every run, so `aja config set` needs no restart. Only one
+configuration is read afresh for every run, so `ajai config set` needs no restart. Only one
 daemon runs at a time, and Ctrl-C lets the run in progress end cleanly first. Its runs use
-the aja profile, so sign in once with `aja login` before the first window.
+the ajai profile, so sign in once with `ajai login` before the first window.
 
 ## Remote commands (Telegram)
 
-With `AJA_TELEGRAM_BOT_TOKEN` and `AJA_TELEGRAM_CHAT_ID` set (the same bot that sends the run
-summaries; the chat id is the numeric one), `aja daemon` also takes commands from that chat:
+With `AJAI_TELEGRAM_BOT_TOKEN` and `AJAI_TELEGRAM_CHAT_ID` set (the same bot that sends the run
+summaries; the chat id is the numeric one), `ajai daemon` also takes commands from that chat:
 
 | Command | What it does |
 |---|---|
@@ -351,11 +351,11 @@ monthly salaries). Each market may set its own currency, salaries, search locati
 terms and resume; blank values fall back to the general settings (a blank currency to BRL or
 USD). Salary questions get the
 figure in the period they ask for, and the market's own period when they name none.
-Override per run with `aja run --market brasil`.
+Override per run with `ajai run --market brasil`.
 
 ## Telegram
 
-With both secrets set, aja sends one message when a run ends (the summary, or the error that
+With both secrets set, ajai sends one message when a run ends (the summary, or the error that
 stopped it with what was done until then), one when a run cannot start (configuration,
 Chrome, AI settings; not a mistyped flag), and a nudge when it waits for your login or your
 help. A failed send never affects the run, and the token never
@@ -367,11 +367,11 @@ token), send your bot any message, then open
 
 ## Files
 
-Config lives in the OS config directory (`~/.config/aja/config.yaml` on Linux), with the
+Config lives in the OS config directory (`~/.config/ajai/config.yaml` on Linux), with the
 `.env` beside it. The SQLite database (history and answer memory, pure-Go driver), the logs,
 the screenshots of failed applications and the resumes live in the OS data directory
-(`~/.local/share/aja` on Linux). `AJA_HOME=<dir>` puts everything under one directory;
-`--config <file>` relocates the config file alone; `AJA_CFG_SECTION_KEY=value` overrides one
+(`~/.local/share/ajai` on Linux). `AJAI_HOME=<dir>` puts everything under one directory;
+`--config <file>` relocates the config file alone; `AJAI_CFG_SECTION_KEY=value` overrides one
 key for one process without touching the file.
 
 ## Releasing
@@ -382,13 +382,13 @@ Releases are built by GitHub Actions from a tag:
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-`.goreleaser.yaml` builds the six binaries with the tag as the version (`aja version`), and
+`.goreleaser.yaml` builds the six binaries with the tag as the version (`ajai version`), and
 publishes them with `checksums.txt`. Every pull request already builds them without
 publishing, so a broken build shows up before a tag does.
 
 ## Honest note on detection
 
-There is no mature anti-detection browser library in Go. `aja` relies instead on driving
+There is no mature anti-detection browser library in Go. `ajai` relies instead on driving
 your genuine Chrome (so every network request is Chrome's own) and on conservative pacing:
 15 applications an hour and 50 a run by default, with jittered pauses between jobs and
 between form actions. The residual risk and the reasoning are in

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/pacing"
-	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/questions"
 )
 
 // MaxPages bounds the Next loop; the Python bot used the same ceiling.
@@ -47,7 +47,7 @@ type Outcome struct {
 	Blocked    []string // Unanswered: the questions left empty
 	Answered   []string // "label: value" for every control the applier set, each once
 	Resume     string   // the uploaded file's name, or "Previous resume"
-	Captured   int      // answers the user typed during a help pause and aja remembered
+	Captured   int      // answers the user typed during a help pause and ajai remembered
 	Queued     int      // unanswered questions put in the review queue for the user
 }
 
@@ -412,7 +412,7 @@ type stuckControl struct {
 // the pause count: a control that appeared afterwards belongs to another page
 // (the user clicked Next anyway) and carries LinkedIn's prefills, not answers.
 //
-// Only controls aja could not answer and would consult the memory for are
+// Only controls ajai could not answer and would consult the memory for are
 // captured (see questions.Answerer.Capture); the others are shown to the user
 // with what to fix in the config instead.
 func (a *Applier) askForHelp(ctx context.Context, st *formState, blocked []string, stuck []stuckControl) (int, error) {
@@ -497,7 +497,7 @@ func (a *Applier) fail(job linkedin.Card, out *Outcome, stage string, err error)
 
 // describe is how a stuck question is shown to the user and recorded: its label,
 // its options, and, when the cause is the configuration rather than a gap in
-// what aja knows, that cause.
+// what ajai knows, that cause.
 func describe(q questions.Question, d questions.Decision) string {
 	text := q.Label
 	switch {
