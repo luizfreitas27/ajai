@@ -37,6 +37,10 @@ func (s styles) hints(line string) string {
 	return strings.Join(parts, s.dim.Render(" · "))
 }
 
+// flame colours the logo row by row, top to bottom: a dark ember at the tips,
+// then red, orange and amber, down to yellow at the base.
+var flame = []lipgloss.Color{"#B8101E", "#D82814", "#F2420A", "#FB6403", "#FF8709", "#FFAA1B", "#FFCA39", "#FFE85C"}
+
 // mark starts a list row: a flame bar when the row is the selection.
 func (s styles) mark(selected bool) string {
 	if selected {

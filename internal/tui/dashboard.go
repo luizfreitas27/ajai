@@ -162,7 +162,7 @@ func (dash dashboard) view(s styles, width, height int, now time.Time, setup not
 	top := summaryLines(s, facts, width, height, len(snap.runs))
 
 	// The runs table takes what the log can spare.
-	rows := min(len(snap.runs), height-len(top)-3-2-minLogLines)
+	rows := min(len(snap.runs), height-len(top)-belowSummary(0))
 	top = append(top, "", s.section.Render("Last runs"))
 	switch {
 	case len(snap.runs) == 0:
@@ -195,6 +195,11 @@ func (dash dashboard) view(s styles, width, height int, now time.Time, setup not
 	}
 	return strings.Join(top, "\n")
 }
+
+// belowSummary is the room the Dashboard needs under its summary for runs
+// rows of last runs (a blank, the title, the heading or "none yet", the rows)
+// and the log (a blank, the title, minLogLines of it).
+func belowSummary(runs int) int { return 3 + runs + 2 + minLogLines }
 
 // runView describes the run in progress.
 func runView(s styles, act run.Activity, add func(label, text string)) {

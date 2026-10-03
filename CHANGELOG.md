@@ -60,7 +60,8 @@ no such section the notes are the commit list.
   something a run needs is missing, that runs the init wizard, the LinkedIn sign-in and
   the import from the Python bot. Flame orange marks the active tab (with a stroke under
   it that shows without colour too), the selected row and titles, and the Dashboard
-  greets with the ajai logo in a flame gradient, beside the summary.
+  greets with the ajai logo in a flame gradient, beside or over the summary as the room
+  allows.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a
   question by replying to its message (checked against the options a select or radio
   offered). Answers remembered from now on keep those options.

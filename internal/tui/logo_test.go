@@ -1,15 +1,15 @@
 package tui
 
 import (
-	"io"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 
 	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // logoTop is the screen line where the whole logo starts, its rows one under
@@ -23,16 +23,6 @@ func (h *harness) logoTop() int {
 		}
 		if row == len(logo) {
 			return top
-		}
-	}
-	return -1
-}
-
-// column is where text starts in the screen line that has it, in cells, or -1.
-func (h *harness) column(text string) int {
-	for _, l := range strings.Split(h.screen(), "\n") {
-		if i := strings.Index(l, text); i >= 0 {
-			return len([]rune(l[:i]))
 		}
 	}
 	return -1
@@ -52,21 +42,33 @@ func TestTheLogoStandsBesideTheSummaryOnAWideTerminal(t *testing.T) {
 	h.golden("dashboard-logo-beside")
 }
 
-func TestASummaryLineTooLongBesideTheLogoWrapsInItsColumn(t *testing.T) {
+func TestALongSummaryLineIsNeverCutBesideTheLogo(t *testing.T) {
 	h := newHarness(t)
 	if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Monday, time.Wednesday}, Start: 14 * 60, End: 16 * 60, Market: "brasil", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	h.open(100, 30)
-	h.shows("not running: schedule windows start runs only", "while it runs") // cut nowhere
+	h.open(100, 30) // the daemon's line is too long to stand beside the logo here
+	top := h.logoTop()
+	if top < 0 || strings.Contains(strings.Split(h.screen(), "\n")[top], "Run") {
+		t.Errorf("the logo is not above the summary:\n%s", h.screen())
+	}
+	h.shows("not running: schedule windows start runs only while it runs")
 	if strings.Contains(h.screen(), "…") {
 		t.Errorf("a summary line was cut:\n%s", h.screen())
 	}
-	if n := strings.Count(h.screen(), "Daemon"); n != 1 {
-		t.Errorf("the label is repeated on the line that continues it (%d times):\n%s", n, h.screen())
+}
+
+func TestBesideTheLogoNeverCostsTheLastRuns(t *testing.T) {
+	h := newHarness(t)
+	for day := range 5 {
+		h.pastRun(time.Date(2026, 10, day+1, 14, 0, 0, 0, time.Local), "brasil", true, store.Run{Skipped: day, Reason: "the search ran out of jobs"})
 	}
-	if text, rest := h.column("not running: schedule"), h.column("while it runs"); rest != text {
-		t.Errorf("the rest of the line starts at column %d, not under its text at %d:\n%s", rest, text, h.screen())
+	h.open(100, 24)
+	if h.logoTop() >= 0 {
+		t.Errorf("the logo takes the last runs' room:\n%s", h.screen())
+	}
+	for day := 1; day <= 5; day++ {
+		h.shows(fmt.Sprintf("0%d Oct 14:00", day))
 	}
 }
 
@@ -91,6 +93,13 @@ func TestOnTheSmallestTerminalTheLogoStepsAside(t *testing.T) {
 		t.Errorf("the logo takes the room of the runs and the log:\n%s", h.screen())
 	}
 	h.shows("Run", "Last runs", "Today's log")
+	h.golden("dashboard-logo-absent")
+}
+
+func TestEveryLogoRowHasItsFlame(t *testing.T) {
+	if len(flame) != len(logo) {
+		t.Errorf("%d logo rows, %d flame colours", len(logo), len(flame))
+	}
 }
 
 func TestTheLogoIsAFlameFromYellowAtTheBaseToEmberAtTheTips(t *testing.T) {
@@ -109,8 +118,6 @@ func TestTheLogoIsAFlameFromYellowAtTheBaseToEmberAtTheTips(t *testing.T) {
 // escapeOf is the escape sequence that starts text in the colour hex, as the
 // harness draws it with h.color.
 func escapeOf(hex string) string {
-	r := lipgloss.NewRenderer(io.Discard)
-	r.SetColorProfile(termenv.TrueColor)
-	drawn := r.NewStyle().Foreground(lipgloss.Color(hex)).Render("x")
+	drawn := colourRenderer().NewStyle().Foreground(lipgloss.Color(hex)).Render("x")
 	return drawn[:strings.Index(drawn, "x")]
 }

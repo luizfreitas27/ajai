@@ -88,7 +88,7 @@ func TestTheDashboardFollowsARunLive(t *testing.T) {
 	h.logAt(logging.FileName, h.now.Add(-time.Minute), "searching", `"term":"Go developer","page":2`)
 	h.logAt(logging.FileName, h.now.Add(-30*time.Second), "skipped a job", `"reason":"already applied"`)
 
-	h.open(120, 30) // every summary line whole beside the logo
+	h.open(100, 30)
 	h.shows("running since 09:10, started from the terminal", "market brasil, dry run", "searching Go developer",
 		"applied 2 · external 0 · failed 0 · skipped 5 · would apply 2", "1 to review",
 		"Mon 05 Oct 14:00, window 1 (Mon, Wed 14:00-16:00, market brasil)",
@@ -122,7 +122,7 @@ func TestTheDashboardFollowsARunLive(t *testing.T) {
 func TestTheDashboardShowsAWaitingSessionAStartAndADeadRun(t *testing.T) {
 	h := newHarness(t)
 	h.holdRun(run.Holder{PID: os.Getpid(), Origin: run.OriginTerminal, Started: h.now})
-	h.open(130, 30) // the summary lines whole beside the logo
+	h.open(100, 30)
 	h.shows("starting, started from the terminal")
 
 	state := run.State{PID: os.Getpid(), Started: h.now.Add(-time.Hour), Market: "internacional", NextRun: h.now.Add(45 * time.Minute)}
