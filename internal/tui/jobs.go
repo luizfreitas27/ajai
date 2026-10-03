@@ -19,8 +19,9 @@ const (
 	// the selection reaches the end of what is read.
 	jobsPage = 100
 	// jobsDetailLines is the least room kept under the list for the selected
-	// job; the details take more when they need it.
-	jobsDetailLines = 7
+	// job (on a terminal too narrow for the details beside it); the details
+	// take more when they need it.
+	jobsDetailLines = 6
 	// jobsEvery: what the tab shows is read again this often while it is
 	// shown (a run records jobs as it goes).
 	jobsEvery = 5 // refreshes
@@ -121,14 +122,6 @@ func (j jobsTab) resized(width, height int) jobsTab {
 	return j.settled()
 }
 
-func (j jobsTab) listHeight() int {
-	head := 2 // title, column names
-	if j.notice.text != "" || j.problem != "" || j.search != nil {
-		head++
-	}
-	return max(1, j.height-head-max(jobsDetailLines, len(j.detail(measure, Deps{}, j.width))))
-}
-
 func (j jobsTab) current() (store.Job, bool) {
 	if !j.loaded || j.cursor >= len(j.jobs) {
 		return store.Job{}, false
@@ -139,14 +132,7 @@ func (j jobsTab) current() (store.Job, bool) {
 // settled keeps the selection in the list and in view, and remembers whose
 // it is.
 func (j jobsTab) settled() jobsTab {
-	j.cursor = max(0, min(j.cursor, len(j.jobs)-1))
-	n := j.listHeight()
-	if j.cursor < j.top {
-		j.top = j.cursor
-	}
-	if j.cursor >= j.top+n {
-		j.top = j.cursor - n + 1
-	}
+	j.cursor, j.top = scroll(j.cursor, j.top, len(j.jobs), j.frame(measure, Deps{}).visible(j.width, j.height))
 	j.selected = ""
 	if job, ok := j.current(); ok {
 		j.selected = job.JobID
@@ -292,62 +278,104 @@ func openJob(d Deps, job store.Job) tea.Cmd {
 	}
 }
 
-// jobColumns lays out the list; it fits the smallest terminal.
-const jobColumns = "  %-12s  %-8s  %-24s  %-14s  %s"
+// jobRow is a row of the list width wide: the date and the outcome, then the
+// title, the company and the location sharing what is left.
+func jobRow(width int, recorded, outcome, title, company, location string) string {
+	rest := max(3, width-12-2-8-2-2-2)
+	t, c := rest*45/100, rest*30/100
+	return fmt.Sprintf("%-12s  %-8s  %-*s  %-*s  %s", recorded, outcome, t, clip(title, t), c, clip(company, c), clip(location, rest-t-c))
+}
 
-func (j jobsTab) view(s styles, d Deps, width int) string {
-	filter := "all"
-	if o := jobOutcomes[j.outcome]; o != "" {
-		filter = string(o)
-	}
-	head := s.section.Render("Jobs") + "  " + s.filter.Render(filter)
-	if j.text != "" {
-		head += s.dim.Render(fmt.Sprintf(" matching %q (c clears)", j.text))
+// frame is the tab for the frame to lay out.
+func (j jobsTab) frame(s styles, d Deps) listFrame {
+	filters := []string{"all"}
+	for _, o := range jobOutcomes[1:] {
+		filters = append(filters, string(o))
 	}
 	var counts []string
 	for _, o := range jobOutcomes[1:] {
 		counts = append(counts, fmt.Sprintf("%s %d", o, j.counts[o]))
 	}
-	lines := []string{head + "   " + s.dim.Render(strings.Join(counts, " · "))}
+	summary := strings.Join(counts, " · ")
+	if j.text != "" {
+		summary = fmt.Sprintf("matching %q (c clears) · %s", j.text, summary)
+	}
+	var notes []string
 	switch {
 	case j.search != nil:
-		lines = append(lines, j.search.View())
+		notes = append(notes, j.search.View())
 	case j.problem != "":
-		lines = append(lines, s.fail.Render(clip(j.problem, width)))
+		notes = append(notes, s.fail.Render(clip(j.problem, j.width)))
 	case j.notice.text != "":
-		lines = append(lines, s.byLevel(j.notice.level).Render(clip(j.notice.text, width)))
+		notes = append(notes, s.byLevel(j.notice.level).Render(clip(j.notice.text, j.width)))
 	}
-	if !j.loaded {
-		return strings.Join(append(lines, "Reading…"), "\n")
+	return listFrame{title: "Jobs", filters: filters, filter: j.outcome, summary: summary, notes: notes,
+		loading: !j.loaded, empty: "No jobs here yet.", rows: len(j.jobs), minDetails: jobsDetailLines,
+		heading: func(width int) string { return jobRow(width, "recorded", "outcome", "title", "company", "location") },
+		row: func(i, width int) string {
+			job := j.jobs[i]
+			return jobRow(width, localTime(job.RecordedAt, "02 Jan 15:04"), string(job.Outcome), job.Title, job.Company, job.WorkLocation)
+		},
+		details: func(s styles, width int, beside bool) []string { return j.detail(s, d, width, beside) },
 	}
-	if len(j.jobs) == 0 {
-		return strings.Join(append(lines, "", s.dim.Render("No jobs here yet.")), "\n")
-	}
-	lines = append(lines, s.dim.Render(fmt.Sprintf(jobColumns, "recorded", "outcome", "title", "company", "location")))
-	n := j.listHeight()
-	for i := j.top; i < len(j.jobs) && i < j.top+n; i++ {
-		job := j.jobs[i]
-		mark := s.mark(i == j.cursor)
-		lines = append(lines, mark+strings.TrimPrefix(fmt.Sprintf(jobColumns, localTime(job.RecordedAt, "02 Jan 15:04"), job.Outcome,
-			clip(job.Title, 24), clip(job.Company, 14), job.WorkLocation), "  "))
-	}
-	detail := j.detail(s, d, width)
-	return strings.Join(append(pad(lines, j.height-max(jobsDetailLines, len(detail))), detail...), "\n")
+}
+
+func (j jobsTab) view(s styles, d Deps, width int) string {
+	return j.frame(s, d).view(s, width, j.height, j.cursor, j.top)
 }
 
 // detail is the selected job in full: what it is, what happened and why
 // (a failure's error too), its links, its screenshot, the questions answered.
-func (j jobsTab) detail(s styles, d Deps, width int) []string {
-	lines := []string{s.dim.Render(strings.Repeat("─", width))}
+// Beside the list it has the room of its height: a line for each.
+func (j jobsTab) detail(s styles, d Deps, width int, beside bool) []string {
 	job, ok := j.current()
 	if !ok {
-		return lines
+		return nil
 	}
 	place := job.WorkLocation
 	if job.WorkStyle != "" {
 		place += " (" + job.WorkStyle + ")"
 	}
-	lines = append(lines, clip(strings.Join(nonEmpty(job.Title, job.Company, place), " · "), width))
+	shot := job.Screenshot
+	if shot != "" && !filepath.IsAbs(shot) && d.Paths.ScreenshotDir != "" { // runs record its name; it lives in the screenshots folder
+		shot = filepath.Join(d.Paths.ScreenshotDir, shot)
+	}
+	failure := ""
+	if job.Outcome == store.Failed {
+		failure, _, _ = strings.Cut(strings.TrimSpace(job.StackTrace), "\n")
+	}
+	var answered []string
+	if q := strings.TrimSpace(job.Questions); q != "" {
+		answered = strings.Split(q, "; ") // runs record them joined so
+	}
+	if beside {
+		lines := wrap(job.Title, width)
+		lines = append(lines, wrap(strings.Join(nonEmpty(job.Company, place), " · "), width)...)
+		lines = append(lines, "", string(job.Outcome)+" "+localTime(job.RecordedAt, dayTime))
+		if job.DatePosted != "" {
+			lines = append(lines, "posted "+job.DatePosted)
+		}
+		if job.Reason != "" {
+			lines = append(lines, wrap(job.Reason, width)...)
+		}
+		if failure != "" {
+			lines = append(lines, wrapStyled(s.fail, "error: "+failure, width)...)
+		}
+		lines = append(lines, "")
+		for _, l := range [][2]string{{"job", job.JobLink}, {"applies at", job.ExternalLink}, {"screenshot", d.tilde(shot)}} {
+			if l[1] != "" {
+				lines = append(lines, s.dim.Render(l[0]+": ")+l[1])
+			}
+		}
+		if len(answered) > 0 {
+			lines = append(lines, "", fmt.Sprintf("questions answered (%d)", len(answered)))
+			for _, q := range answered {
+				lines = append(lines, "  "+q)
+			}
+		}
+		return lines
+	}
+	lines := []string{clip(strings.Join(nonEmpty(job.Title, job.Company, place), " · "), width)}
 	facts := []string{string(job.Outcome) + " " + localTime(job.RecordedAt, dayTime)}
 	if job.DatePosted != "" {
 		facts = append(facts, "posted "+job.DatePosted)
@@ -360,10 +388,8 @@ func (j jobsTab) detail(s styles, d Deps, width int) []string {
 		why = append(why[:1], clip(why[1]+" "+strings.Join(why[2:], " "), width))
 	}
 	lines = append(lines, why...)
-	if job.Outcome == store.Failed {
-		if e, _, _ := strings.Cut(strings.TrimSpace(job.StackTrace), "\n"); e != "" {
-			lines = append(lines, s.fail.Render(clip("error: "+e, width)))
-		}
+	if failure != "" {
+		lines = append(lines, s.fail.Render(clip("error: "+failure, width)))
 	}
 	if job.JobLink != "" {
 		lines = append(lines, s.dim.Render(clip("job: "+job.JobLink, width)))
@@ -371,15 +397,10 @@ func (j jobsTab) detail(s styles, d Deps, width int) []string {
 	if job.ExternalLink != "" {
 		lines = append(lines, s.dim.Render(clip("applies at: "+job.ExternalLink, width)))
 	}
-	if job.Screenshot != "" {
-		shot := job.Screenshot
-		if !filepath.IsAbs(shot) && d.Paths.ScreenshotDir != "" { // runs record its name; it lives in the screenshots folder
-			shot = filepath.Join(d.Paths.ScreenshotDir, shot)
-		}
+	if shot != "" {
 		lines = append(lines, s.dim.Render(clip("screenshot: "+d.tilde(shot), width)))
 	}
-	if q := strings.TrimSpace(job.Questions); q != "" {
-		answered := strings.Split(q, "; ") // runs record them joined so
+	if len(answered) > 0 {
 		lines = append(lines, s.dim.Render(clip(fmt.Sprintf("questions answered (%d): %s", len(answered), strings.Join(answered, " · ")), width)))
 	}
 	return lines

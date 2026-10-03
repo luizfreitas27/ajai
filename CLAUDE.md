@@ -83,6 +83,12 @@ to the tag before tagging and the workflow publishes that section as the release
   temporary AJAI_HOME is written as `$AJAI_HOME`). With `h.color` the harness draws in
   24-bit colour and the golden keeps the escape sequences, written `\e[…m` (the
   `colour-*` goldens pin the flame accent and the state colours; the rest stay plain).
+  List tabs describe themselves as a `listFrame` (`frame.go`: title, filters, summary,
+  notes, column heading and rows for a given width, details for a width and whether they
+  stand beside the list) and the frame lays them out: details in a panel from
+  `detailsBesideMinWidth` columns, else directly under the list with `minDetails` kept so
+  the list keeps its height; `scroll` keeps the selection in view with the frame's
+  `visible` rows, and an editor inside the details takes `detailWidth`.
   The Dashboard's logo is fixed art in `logo.go`, coloured row by row from `flame` (in
   `styles.go`). `summaryLines` sets it beside the summary when the width holds the logo and
   the widest summary line (and is at least `logoBesideMinWidth`), above it otherwise, and

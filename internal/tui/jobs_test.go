@@ -50,7 +50,7 @@ func TestTheJobsTabListsTheHistoryWithCountsAndDetails(t *testing.T) {
 	h.someJobs()
 	h.open(100, 30)
 	h.jobsTab()
-	h.shows("4 Jobs", "Jobs  all", "applied 1 · external 1 · failed 0 · skipped 1",
+	h.shows("4 Jobs", "Jobs  [all]", "applied 1 · external 1 · failed 0 · skipped 1",
 		"05 Oct 08:03  skipped   Senior Java", "Initech", "Go Developer")
 	h.selectJob("Go Developer")
 	h.shows("Go Developer · Acme · Recife (Remote)", "applied Mon 05 Oct 08:01 · posted 2026-10-03", "job: https://www.linkedin.com/jobs/view/1/",
@@ -79,7 +79,7 @@ func TestJobsAreFilteredByOutcomeAndSearched(t *testing.T) {
 	h.open(100, 30)
 	h.jobsTab()
 	h.press("tab")
-	h.shows("Jobs  applied", "Go Developer")
+	h.shows("[applied]", "Go Developer")
 	if strings.Contains(h.screen(), "Initech") {
 		t.Errorf("only applied jobs:\n%s", h.screen())
 	}
