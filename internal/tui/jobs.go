@@ -305,7 +305,7 @@ func (j jobsTab) frame(s styles, d Deps) listFrame {
 		notes = []string{j.search.View()}
 	}
 	return listFrame{title: "Jobs", filters: filters, filter: j.outcome, summary: summary, notes: notes,
-		loading: !j.loaded, empty: "No jobs here yet.", rows: len(j.jobs), minDetails: jobsDetailLines,
+		waiting: reading(j.loaded), empty: "No jobs here yet.", rows: len(j.jobs), minDetails: jobsDetailLines,
 		heading: func(width int) string { return jobRow(width, "recorded", "outcome", "title", "company", "location") },
 		row: func(i, width int) string {
 			job := j.jobs[i]

@@ -127,7 +127,7 @@ func TestTheSelectionNeverGoesBelowZeroBeforeTheFirstReport(t *testing.T) {
 	}
 	h := newHarness(t)
 	v, _ = v.update(runDoctor(h.deps())(), Deps{})
-	if v.cursor != 0 || v.view(measure, h.deps(), 100) == "" {
+	if v.cursor != 0 || v.view(measure, h.deps(), 100, 26) == "" {
 		t.Errorf("cursor %d", v.cursor)
 	}
 }

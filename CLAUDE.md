@@ -83,9 +83,11 @@ to the tag before tagging and the workflow publishes that section as the release
   temporary AJAI_HOME is written as `$AJAI_HOME`). With `h.color` the harness draws in
   24-bit colour and the golden keeps the escape sequences, written `\e[…m` (the
   `colour-*` goldens pin the flame accent and the state colours; the rest stay plain).
-  List tabs describe themselves as a `listFrame` (`frame.go`: title, filters, summary,
-  notes, column heading and rows for a given width, details for a width and whether they
-  stand beside the list) and the frame lays them out: details in a panel from
+  List tabs (Answers, Jobs, Config, the setup checklist) describe themselves as a
+  `listFrame` (`frame.go`: title, filters, summary, notes, a waiting text, optional column
+  names, rows for a given width, `titled` rows that are section titles — never selected,
+  brought into view going up — and details for a width and whether they stand beside the
+  list) and the frame lays them out: details in a panel from
   `detailsBesideMinWidth` columns (wrapped to it, the last line saying how many more when
   they outgrow the screen), else directly under the list with `minDetails` kept so the
   list keeps its height; the summary drops under the filters when they leave no room.

@@ -129,7 +129,7 @@ Type `ajai` with no command, in a terminal, and it opens a full-screen interface
 terminal (a pipe, a script, systemd) it prints the help instead, and every command below
 works exactly as without the TUI.
 
-The list tabs share one layout: a header with the tab's title, every filter it has (the one
+The list tabs (Answers, Jobs, Config and the setup checklist) share one layout: a header with the tab's title, every filter it has (the one
 shown in brackets) and a summary; the list, the selected row marked; and the selected item's
 details, in a panel to the right of the list on a terminal 120 columns wide or more, or
 directly under the list on a narrower one.

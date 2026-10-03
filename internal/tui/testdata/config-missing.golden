@@ -1,27 +1,27 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ───────────────────────────────────────────────────────━━━━━━━━─────────────────────────────────────
-Config  ~/config.yaml
+Config   ~/config.yaml
 There is no config file yet: run `ajai init`. The secrets can be set already.
 secrets, kept in ~/.env
 ▌ AJAI_AI_API_KEY                    set (your environment)
   AJAI_TELEGRAM_BOT_TOKEN            not set
   AJAI_TELEGRAM_CHAT_ID              not set
-
-
-
-
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 The AI provider's API key, used when ai.enabled is true and the provider needs one.
 Your environment sets it, and wins over .env.
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

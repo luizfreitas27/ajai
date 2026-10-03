@@ -348,7 +348,7 @@ func (a answersTab) frame(s styles) listFrame {
 		summary = fmt.Sprintf("%d %s", len(a.answers), a.shownState())
 	}
 	return listFrame{title: "Answers", filters: filters, filter: slices.Index(filters, a.shownState()), summary: summary, notes: listNotes(s, a.problem, a.notice, a.width),
-		loading: !a.loaded, empty: empty, rows: len(a.answers), minDetails: answersDetailLines,
+		waiting: reading(a.loaded), empty: empty, rows: len(a.answers), minDetails: answersDetailLines,
 		heading: func(width int) string { return answerRow(width, "kind", "question", "answer", "from") },
 		row: func(i, width int) string {
 			r := a.answers[i]

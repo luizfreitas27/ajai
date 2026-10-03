@@ -18,6 +18,11 @@ import (
 // change made elsewhere (`ajai login` in another terminal) shows.
 const doctorEvery = 30 // refreshes, one a second
 
+// setupDetailLines is the least room kept under the checks (on a terminal too
+// narrow for the details beside them) for the selected check, its fix and the
+// checklist's actions.
+const setupDetailLines = 6
+
 // checklist is the setup checklist: `ajai doctor`'s checks, each with what
 // fixes it. It opens by itself when something a run needs is missing, and
 // with s from the Dashboard.
@@ -223,44 +228,63 @@ func (v checklist) summary() notice {
 	return notice{"every check passes", levelOK}
 }
 
-func (v checklist) view(s styles, d Deps, width int) string {
-	lines := []string{s.section.Render("Setup checklist") + "  " + s.dim.Render("what a run needs, as `ajai doctor` checks it")}
+// frame is the checklist for the frame to lay out: the checks, then the
+// selected one's problem and fix, and the checklist's own actions.
+func (v checklist) frame(s styles, d Deps) listFrame {
+	var notes []string
 	if v.notice.text != "" {
-		lines = append(lines, s.byLevel(v.notice.level).Render(v.notice.text))
+		notes = append(notes, s.byLevel(v.notice.level).Render(v.notice.text))
 	}
-	lines = append(lines, "")
+	waiting := ""
 	if !v.loaded {
-		return strings.Join(append(lines, "Checking…"), "\n")
+		waiting = "Checking…"
 	}
-	for i, c := range v.report.Checks {
-		mark := s.mark(i == v.cursor)
-		status := s.ok.Render("✓")
-		switch c.Status {
-		case doctor.Warn:
-			status = s.warn.Render("!")
-		case doctor.Fail:
-			status = s.fail.Render("✗")
-		}
-		detail, _, _ := strings.Cut(d.tilde(c.Detail), "\n")
-		lines = append(lines, mark+status+" "+fmt.Sprintf("%-15s", c.Name)+" "+detail)
+	return listFrame{title: "Setup checklist", summary: "what a run needs, as `ajai doctor` checks it", notes: notes,
+		waiting: waiting, rows: len(v.report.Checks), minDetails: setupDetailLines,
+		row: func(i, _ int) string {
+			c := v.report.Checks[i]
+			status := s.ok.Render("✓")
+			switch c.Status {
+			case doctor.Warn:
+				status = s.warn.Render("!")
+			case doctor.Fail:
+				status = s.fail.Render("✗")
+			}
+			detail, _, _ := strings.Cut(d.tilde(c.Detail), "\n")
+			return status + " " + fmt.Sprintf("%-15s", c.Name) + " " + detail
+		},
+		details: func(s styles, width int, _ bool) []string { return v.detail(s, d, width) },
 	}
-	lines = append(lines, "")
+}
+
+// detail is the selected check in full and what fixes it, then the import
+// (its folder being typed) or the checklist's actions.
+func (v checklist) detail(s styles, d Deps, width int) []string {
+	var lines []string
 	if v.cursor < len(v.report.Checks) {
 		c := v.report.Checks[v.cursor]
 		lines = append(lines, wrap(c.Name+": "+d.tilde(c.Detail), width)...)
 		if _, how := v.fixFor(c, d); how != "" {
 			lines = append(lines, s.key.Render("Enter")+": "+how)
 		}
+		lines = append(lines, "")
 	}
-	lines = append(lines, "")
 	if v.importing != nil {
-		return strings.Join(append(lines, s.section.Render("Import from the Python bot")+"  "+s.dim.Render("its settings, answer memory, job history and resume"),
-			v.importing.View()), "\n")
+		in := *v.importing
+		in.Width = inputWidth(width)
+		return append(lines, s.section.Render("Import from the Python bot")+"  "+s.dim.Render("its settings, answer memory, job history and resume"),
+			in.View())
 	}
 	lines = append(lines, s.key.Render("i")+"  import settings, answers and history from the Python bot",
 		s.key.Render("r")+"  check again")
 	if v.noConfig {
-		lines = append(lines, s.dim.Render("The other tabs open once there is a config file; the Config tab already sets the secrets."))
+		lines = append(lines, wrapStyled(s.dim, "The other tabs open once there is a config file; the Config tab already sets the secrets.", width)...)
 	}
-	return strings.Join(lines, "\n")
+	return lines
+}
+
+func (v checklist) view(s styles, d Deps, width, height int) string {
+	f := v.frame(s, d)
+	_, top := f.keep(v.cursor, 0, width, height) // a few checks: the list scrolls only on the smallest terminal
+	return f.view(s, width, height, v.cursor, top)
 }

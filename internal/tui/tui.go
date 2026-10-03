@@ -400,9 +400,9 @@ func (m Model) View() string {
 	case m.help:
 		body = m.helpView()
 	case m.setupShown:
-		body = m.checks.view(m.styles, m.deps, m.width)
+		body = m.checks.view(m.styles, m.deps, m.width, height)
 	case m.tab == tabConfig:
-		body = m.conf.view(m.styles, m.deps, m.width)
+		body = m.conf.view(m.styles, m.width)
 	case m.tab == tabAnswers:
 		body = m.ans.view(m.styles, m.width)
 	case m.tab == tabSchedule:

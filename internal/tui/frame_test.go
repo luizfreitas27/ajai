@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
@@ -166,5 +168,87 @@ func TestBesideTheListALongLineWrapsAndTooManyLinesSayHowManyMore(t *testing.T) 
 	h.shows("Question 00? yes", "more lines")
 	if strings.Contains(h.screen(), "Question 19? yes") {
 		t.Errorf("more lines than the screen holds:\n%s", h.screen())
+	}
+}
+
+// cutEditors are the panel's editor lines (they start with the "> " prompt)
+// that the panel had to cut, or to wrap: then the line after one holds
+// tail, the end of what is typed.
+func (h *harness) cutEditors(tail string) []string {
+	var cut []string
+	for _, l := range strings.Split(h.screen(), "\n") {
+		_, right, _ := strings.Cut(l, panelRule)
+		if strings.HasPrefix(right, "> ") && strings.Contains(right, "…") || tail != "" && strings.Contains(right, tail) && !strings.HasPrefix(right, "> ") {
+			cut = append(cut, right)
+		}
+	}
+	return cut
+}
+
+func TestConfigAndTheChecklistOnTheFrame(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(80, 24)
+	h.press(tabKey(tabConfig))
+	h.golden("config-smallest")
+	h.send(tea.WindowSizeMsg{Width: 140, Height: 30})
+	h.moveTo("first_name")
+	h.shows("│ Your first name")
+	h.golden("config-beside")
+	for _, l := range strings.Split(h.screen(), "\n") { // section titles keep no mark, beside the details too
+		if strings.HasPrefix(l, selected+"personals") || strings.HasPrefix(l, "  personals") {
+			t.Errorf("a section title is drawn as a row: %q", l)
+		}
+	}
+	h.press("1", "s")
+	h.shows("Setup checklist", "│ config:")
+	h.golden("setup-beside")
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
+	h.golden("setup-smallest")
+}
+
+func TestTheEditorsInThePanelFitIt(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	file, err := config.LoadFile(h.p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Config.SetChecked("search.terms", "Dev Python, QA, Software Engineer, Backend Developer, Golang Engineer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Write(h.p.ConfigFile, file.Config); err != nil {
+		t.Fatal(err)
+	}
+	h.open(120, 30) // the narrowest panel
+	h.press(tabKey(tabConfig))
+	h.moveTo("terms")
+	h.press("enter")
+	h.shows("│ Edit search.terms")
+	if cut := h.cutEditors("Golang Engineer"); len(cut) > 0 {
+		t.Errorf("the setting's editor is wider than the panel: %q", cut)
+	}
+	h.send(tea.WindowSizeMsg{Width: 120, Height: 30})
+	h.press("right") // typing on: the input lays its text out again
+	if cut := h.cutEditors("Golang Engineer"); len(cut) > 0 {
+		t.Errorf("resized, the setting's editor is wider than the panel: %q", cut)
+	}
+	h.press("esc", "1", "s", "i")
+	h.shows("│ Import from the Python bot")
+	if cut := h.cutEditors(""); len(cut) > 0 {
+		t.Errorf("the import's folder box is wider than the panel: %q", cut)
+	}
+}
+
+func TestAPathShowsUnderHomeAsTildeButIsEditedAsItIs(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.open(100, 30)
+	h.press(tabKey(tabConfig))
+	h.moveTo("resume")
+	h.shows(selected + "resume                             ~/resumes/cv.pdf")
+	h.press("enter")
+	if !strings.Contains(h.screen(), "> "+filepath.Join(h.p.DataDir, "resumes", "cv.pdf")) {
+		t.Errorf("the editor does not hold the path as it is:\n%s", h.screen())
 	}
 }
