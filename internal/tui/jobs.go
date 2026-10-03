@@ -300,7 +300,7 @@ func (j jobsTab) view(s styles, d Deps, width int) string {
 	if o := jobOutcomes[j.outcome]; o != "" {
 		filter = string(o)
 	}
-	head := s.section.Render("Jobs") + "  " + s.activeTab.Render(filter)
+	head := s.section.Render("Jobs") + "  " + s.filter.Render(filter)
 	if j.text != "" {
 		head += s.dim.Render(fmt.Sprintf(" matching %q (c clears)", j.text))
 	}
@@ -327,10 +327,7 @@ func (j jobsTab) view(s styles, d Deps, width int) string {
 	n := j.listHeight()
 	for i := j.top; i < len(j.jobs) && i < j.top+n; i++ {
 		job := j.jobs[i]
-		mark := "  "
-		if i == j.cursor {
-			mark = s.key.Render("> ")
-		}
+		mark := s.mark(i == j.cursor)
 		lines = append(lines, mark+strings.TrimPrefix(fmt.Sprintf(jobColumns, localTime(job.RecordedAt, "02 Jan 15:04"), job.Outcome,
 			clip(job.Title, 24), clip(job.Company, 14), job.WorkLocation), "  "))
 	}

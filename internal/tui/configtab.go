@@ -538,10 +538,7 @@ func (c configTab) rowLine(s styles, i int) string {
 	if r.kind == titleRow {
 		return s.section.Render(r.title)
 	}
-	mark := "  "
-	if i == c.cursor {
-		mark = s.key.Render("> ")
-	}
+	mark := s.mark(i == c.cursor)
 	name, value := r.secret, ""
 	switch r.kind {
 	case secretRow:
@@ -622,10 +619,7 @@ func (c configTab) editor(s styles, e configEdit) []string {
 		lines = append(lines, e.input.View())
 	}
 	for i, o := range e.options {
-		mark := "  "
-		if i == e.choice {
-			mark = s.key.Render("> ")
-		}
+		mark := s.mark(i == e.choice)
 		if e.multi {
 			box := "[ ] "
 			if e.picked[i] {

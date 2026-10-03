@@ -394,10 +394,7 @@ func (t scheduleTab) view(s styles, width int, now time.Time, proc daemonProc) s
 	n := t.listHeight()
 	for i := t.top; i < len(t.windows) && i < t.top+n; i++ {
 		w := t.windows[i]
-		mark := "  "
-		if i == t.cursor {
-			mark = s.key.Render("> ")
-		}
+		mark := s.mark(i == t.cursor)
 		market := w.Market
 		if market == "" {
 			market = "the config's"

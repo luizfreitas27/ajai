@@ -58,7 +58,8 @@ no such section the notes are the commit list.
   that edits every setting (validated, environment overrides marked) and saves the
   secrets in ajai's `.env` from hidden fields; and a setup checklist, opened when
   something a run needs is missing, that runs the init wizard, the LinkedIn sign-in and
-  the import from the Python bot.
+  the import from the Python bot. Flame orange marks the active tab (with a stroke under
+  it that shows without colour too), the selected row and titles.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a
   question by replying to its message (checked against the options a select or radio
   offered). Answers remembered from now on keep those options.

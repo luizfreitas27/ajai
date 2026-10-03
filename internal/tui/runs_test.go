@@ -20,7 +20,7 @@ func TestStartOpensAFormAndStartsARunOfItsOwn(t *testing.T) {
 	h.open(100, 30)
 	h.shows("r run · x stop · s setup")
 	h.press("r")
-	h.shows("Start a run", "closing the TUI never ends it", "> Market    ‹ the config's ›", "Mode      ‹ dry run: fills every form, sends none ›",
+	h.shows("Start a run", "closing the TUI never ends it", selected+"Market    ‹ the config's ›", "Mode      ‹ dry run: fills every form, sends none ›",
 		"↑↓ field · ←→ change · enter starts · esc cancels")
 	h.golden("start-form")
 

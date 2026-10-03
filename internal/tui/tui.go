@@ -393,7 +393,7 @@ func (m Model) View() string {
 		return fmt.Sprintf("ajai needs a terminal of at least %d×%d; this one is %d×%d.\nMake it larger, or press q to quit.",
 			minWidth, minHeight, m.width, m.height)
 	}
-	rule := m.styles.dim.Render(strings.Repeat("─", m.width))
+	rule := m.divider(0, 0)
 	height := m.bodyHeight()
 	var body string
 	switch {
@@ -413,26 +413,44 @@ func (m Model) View() string {
 		top := m.runs.lines(m.styles, m.width)
 		body = strings.Join(append(top, m.dash.view(m.styles, m.width, height-len(top), m.deps.Now(), m.checks.summary())), "\n")
 	}
-	return strings.Join([]string{m.tabBar(), rule, fit(body, m.width, height), rule, m.hints()}, "\n")
+	bar, start, width := m.tabBar()
+	return strings.Join([]string{bar, m.divider(start, width), fit(body, m.width, height), rule, m.hints()}, "\n")
 }
 
-func (m Model) tabBar() string {
+// tabGap separates the tab bar's labels.
+const tabGap = "   "
+
+// tabBar is the brand and the tabs, and where the active one's label sits:
+// its first column and its width (0 when none is active, as on the help).
+func (m Model) tabBar() (bar string, start, width int) {
 	parts := []string{m.styles.brand.Render("ajai")}
+	add := func(label string, active bool) {
+		if !active {
+			parts = append(parts, m.styles.tab.Render(label))
+			return
+		}
+		start, width = lipgloss.Width(strings.Join(parts, tabGap)+tabGap), lipgloss.Width(label)
+		parts = append(parts, m.styles.activeTab.Render(label))
+	}
 	if m.setupShown {
-		parts = append(parts, m.styles.activeTab.Render("Setup"))
+		add("Setup", true)
 	}
 	for i, name := range tabNames {
 		label := tabKey(tab(i)) + " " + name
 		if tab(i) == tabAnswers && m.dash.snap.pending > 0 {
 			label += fmt.Sprintf(" (%d)", m.dash.snap.pending)
 		}
-		if tab(i) == m.tab && !m.help && !m.setupShown {
-			parts = append(parts, m.styles.activeTab.Render(label))
-		} else {
-			parts = append(parts, m.styles.tab.Render(label))
-		}
+		add(label, tab(i) == m.tab && !m.help && !m.setupShown)
 	}
-	return strings.Join(parts, "   ")
+	return strings.Join(parts, tabGap), start, width
+}
+
+// divider is a full-width rule with a flame stroke over the width columns from
+// start: under the tab bar it marks the active tab's label, without colour too.
+func (m Model) divider(start, width int) string {
+	start, width = min(start, m.width), min(width, max(0, m.width-start))
+	return m.styles.dim.Render(strings.Repeat("─", start)) + m.styles.stroke.Render(strings.Repeat("━", width)) +
+		m.styles.dim.Render(strings.Repeat("─", m.width-start-width))
 }
 
 func (m Model) hints() string {
@@ -475,7 +493,7 @@ func (m Model) hints() string {
 	default:
 		hint = "r run · x stop · s setup · ? keys · q quit"
 	}
-	return m.styles.dim.Render(hint)
+	return m.styles.hints(hint)
 }
 
 // helpView lists every key that works now: the TUI's own, then the shown

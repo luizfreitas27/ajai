@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -89,18 +90,9 @@ func TestAWindowIsTurnedOffAndOnAndDeleted(t *testing.T) {
 // selectWindow moves the selection to window id.
 func (h *harness) selectWindow(id int) {
 	h.t.Helper()
-	for range 3 {
-		h.press("up")
-	}
-	for range 10 {
-		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "> "+strconv.Itoa(id)+" ") {
-				return
-			}
-		}
-		h.press("down")
-	}
-	h.t.Fatalf("no window %d:\n%s", id, h.screen())
+	h.selectRow(fmt.Sprintf("window %d", id), []string{"up", "up", "up"}, 10, func(row string) bool {
+		return strings.HasPrefix(row, selected+strconv.Itoa(id)+" ")
+	})
 }
 
 func TestTheSelectionStaysOnItsWindowWhenTheListChanges(t *testing.T) {
@@ -165,5 +157,5 @@ func TestTheListFitsTheSmallestTerminalScrollsAndKeepsUp(t *testing.T) {
 	}
 	h.refresh()
 	h.press("down")
-	h.shows("> 21")
+	h.shows(selected + "21")
 }

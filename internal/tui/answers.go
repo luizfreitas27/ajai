@@ -345,7 +345,7 @@ func deleteAnswer(d Deps, r memory.Remembered) tea.Cmd {
 const answerColumns = "  %-9s %-46s %-22s %s"
 
 func (a answersTab) view(s styles, width int) string {
-	lines := []string{s.section.Render("Answers") + "  " + s.activeTab.Render(a.shownState()) + s.dim.Render("   tab shows the "+otherState(a.shownState())+" ones")}
+	lines := []string{s.section.Render("Answers") + "  " + s.filter.Render(a.shownState()) + s.dim.Render("   tab shows the "+otherState(a.shownState())+" ones")}
 	switch {
 	case a.problem != "":
 		lines = append(lines, s.fail.Render(a.problem))
@@ -370,10 +370,7 @@ func (a answersTab) view(s styles, width int) string {
 			continue
 		}
 		r := a.answers[i]
-		mark := "  "
-		if i == a.cursor {
-			mark = s.key.Render("> ")
-		}
+		mark := s.mark(i == a.cursor)
 		answer := r.Answer
 		if unansweredYet(r) {
 			answer = "(none yet)"
@@ -397,12 +394,9 @@ func (a answersTab) detail(s styles, width int) []string {
 			s.key.Render("y")+" deletes it · "+s.key.Render("n")+" keeps it")
 	case a.edit != nil:
 		e := a.edit
-		lines = append(lines, s.section.Render("Answer: ")+e.target.Label, e.input.View())
+		lines = append(lines, s.label.Render("Answer: ")+e.target.Label, e.input.View())
 		for i, o := range e.target.Options {
-			mark := "  "
-			if i == e.choice {
-				mark = s.key.Render("> ")
-			}
+			mark := s.mark(i == e.choice)
 			lines = append(lines, mark+optionLabel(o))
 		}
 		if e.refusal != "" {

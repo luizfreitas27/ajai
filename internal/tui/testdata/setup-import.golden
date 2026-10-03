@@ -1,8 +1,8 @@
 ajai   Setup   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
-────────────────────────────────────────────────────────────────────────────────────────────────────
+───────━━━━━────────────────────────────────────────────────────────────────────────────────────────
 Setup checklist  what a run needs, as `ajai doctor` checks it
 
-> ✓ config          ~/config.yaml
+▌ ✓ config          ~/config.yaml
   ✓ chrome          Chromium 152 (/usr/bin/chromium)
   ✓ chrome profile  ~/chrome-profile (the ajai profile), signed in to LinkedIn
   ✓ ai              off (ai.enabled: false)
