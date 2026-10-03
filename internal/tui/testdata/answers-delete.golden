@@ -1,10 +1,10 @@
 ajai   1 Dashboard   2 Answers (3)   3 Schedule   4 Jobs   5 Config
 ─────────────────────━━━━━━━━━━━━━──────────────────────────────────────────────────────────────────
-Answers  [pending]  approved    2 pending
+Answers  [pending]  approved   2 pending
 Approved: Years of experience with Go?
-  kind     question                                         answer                          from
-  radio    Are you willing to relocate?                     (none yet)                      the form
-▌ checkbox Send me updates                                  checked                         the form
+  kind      question                                         answer                         from
+  radio     Are you willing to relocate?                     (none yet)                     the form
+▌ checkbox  Send me updates                                  checked                        the form
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Delete the answer to "Send me updates"? ajai asks the question again next time.
 y deletes it · n keeps it

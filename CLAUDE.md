@@ -86,9 +86,12 @@ to the tag before tagging and the workflow publishes that section as the release
   List tabs describe themselves as a `listFrame` (`frame.go`: title, filters, summary,
   notes, column heading and rows for a given width, details for a width and whether they
   stand beside the list) and the frame lays them out: details in a panel from
-  `detailsBesideMinWidth` columns, else directly under the list with `minDetails` kept so
-  the list keeps its height; `scroll` keeps the selection in view with the frame's
-  `visible` rows, and an editor inside the details takes `detailWidth`.
+  `detailsBesideMinWidth` columns (wrapped to it, the last line saying how many more when
+  they outgrow the screen), else directly under the list with `minDetails` kept so the
+  list keeps its height; the summary drops under the filters when they leave no room.
+  `listFrame.keep` keeps the selection in view, and an editor inside the details takes
+  `detailWidth`. Shared pieces: `listNotes` (a problem, else the notice), `columns` and
+  `shares` for rows that split the width, `labelled` for a fact in the panel.
   The Dashboard's logo is fixed art in `logo.go`, coloured row by row from `flame` (in
   `styles.go`). `summaryLines` sets it beside the summary when the width holds the logo and
   the widest summary line (and is at least `logoBesideMinWidth`), above it otherwise, and

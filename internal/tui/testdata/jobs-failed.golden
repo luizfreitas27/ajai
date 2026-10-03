@@ -1,6 +1,7 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ──────────────────────────────────────────────━━━━━━────────────────────────────
-Jobs  [all]  applied   external   failed   skipped    applied 0 · external 0 · …
+Jobs  [all]  applied   external   failed   skipped
+applied 0 · external 0 · failed 1 · skipped 30
   recorded      outcome   title                   company          location
 ▌ 05 Oct 08:01  failed    Platform Engineer       Hooli            Porto Alegre
   05 Oct 07:29  skipped   Job 029                                  
@@ -10,7 +11,6 @@ Jobs  [all]  applied   external   failed   skipped    applied 0 · external 0 ·
   05 Oct 07:25  skipped   Job 025                                  
   05 Oct 07:24  skipped   Job 024                                  
   05 Oct 07:23  skipped   Job 023                                  
-  05 Oct 07:22  skipped   Job 022                                  
 ────────────────────────────────────────────────────────────────────────────────
 Platform Engineer · Hooli · Porto Alegre (Hybrid)
 failed Mon 05 Oct 08:01 · posted 2026-10-01 · next: the form kept asking for the

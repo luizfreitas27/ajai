@@ -132,7 +132,7 @@ func (j jobsTab) current() (store.Job, bool) {
 // settled keeps the selection in the list and in view, and remembers whose
 // it is.
 func (j jobsTab) settled() jobsTab {
-	j.cursor, j.top = scroll(j.cursor, j.top, len(j.jobs), j.frame(measure, Deps{}).visible(j.width, j.height))
+	j.cursor, j.top = j.frame(measure, Deps{}).keep(j.cursor, j.top, j.width, j.height)
 	j.selected = ""
 	if job, ok := j.current(); ok {
 		j.selected = job.JobID
@@ -281,9 +281,9 @@ func openJob(d Deps, job store.Job) tea.Cmd {
 // jobRow is a row of the list width wide: the date and the outcome, then the
 // title, the company and the location sharing what is left.
 func jobRow(width int, recorded, outcome, title, company, location string) string {
-	rest := max(3, width-12-2-8-2-2-2)
-	t, c := rest*45/100, rest*30/100
-	return fmt.Sprintf("%-12s  %-8s  %-*s  %-*s  %s", recorded, outcome, t, clip(title, t), c, clip(company, c), clip(location, rest-t-c))
+	const date, outcomes = 12, 8 // "02 Jan 15:04", "external"
+	w := shares(max(3, width-date-outcomes-4*2), 45, 30)
+	return columns([]int{date, outcomes, w[0], w[1], w[2]}, recorded, outcome, title, company, location)
 }
 
 // frame is the tab for the frame to lay out.
@@ -300,14 +300,9 @@ func (j jobsTab) frame(s styles, d Deps) listFrame {
 	if j.text != "" {
 		summary = fmt.Sprintf("matching %q (c clears) · %s", j.text, summary)
 	}
-	var notes []string
-	switch {
-	case j.search != nil:
-		notes = append(notes, j.search.View())
-	case j.problem != "":
-		notes = append(notes, s.fail.Render(clip(j.problem, j.width)))
-	case j.notice.text != "":
-		notes = append(notes, s.byLevel(j.notice.level).Render(clip(j.notice.text, j.width)))
+	notes := listNotes(s, j.problem, j.notice, j.width)
+	if j.search != nil {
+		notes = []string{j.search.View()}
 	}
 	return listFrame{title: "Jobs", filters: filters, filter: j.outcome, summary: summary, notes: notes,
 		loading: !j.loaded, empty: "No jobs here yet.", rows: len(j.jobs), minDetails: jobsDetailLines,
@@ -364,7 +359,7 @@ func (j jobsTab) detail(s styles, d Deps, width int, beside bool) []string {
 		lines = append(lines, "")
 		for _, l := range [][2]string{{"job", job.JobLink}, {"applies at", job.ExternalLink}, {"screenshot", d.tilde(shot)}} {
 			if l[1] != "" {
-				lines = append(lines, s.dim.Render(l[0]+": ")+l[1])
+				lines = append(lines, labelled(s, l[0], l[1]))
 			}
 		}
 		if len(answered) > 0 {

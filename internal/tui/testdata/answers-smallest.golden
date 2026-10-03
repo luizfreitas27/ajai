@@ -1,0 +1,24 @@
+ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
+─────────────────────━━━━━━━━━──────────────────────────────────────────────────
+Answers  [pending]  approved   3 pending
+  kind      question                            answer                  from
+▌ text      Years of experience with Go?        3                       the AI
+  radio     Are you willing to relocate?        (none yet)              the form
+  checkbox  Send me updates                     checked                 the form
+────────────────────────────────────────────────────────────────────────────────
+Years of experience with Go?
+text · answer: 3 (the AI) · used 0 time(s)
+last job: https://www.linkedin.com/jobs/view/1/
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+↑↓ move · tab pending/approved · a approve · e edit · d delete · ? keys · q quit
