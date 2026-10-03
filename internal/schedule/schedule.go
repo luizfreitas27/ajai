@@ -284,6 +284,20 @@ func Next(windows []Window, now time.Time) (Opening, bool) {
 	return Opening{}, false
 }
 
+// Upcoming returns the next n openings of enabled windows that start after
+// now, in order.
+func Upcoming(windows []Window, now time.Time, n int) []Opening {
+	var out []Opening
+	for len(out) < n {
+		o, ok := Next(windows, now)
+		if !ok {
+			break
+		}
+		out, now = append(out, o), o.Start
+	}
+	return out
+}
+
 // Outcome is what the scheduler did with an opening.
 type Outcome string
 

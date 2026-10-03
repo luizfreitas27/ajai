@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/run"
 	"github.com/luizfreitas27/ajai/internal/schedule"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
@@ -21,6 +22,8 @@ import (
 type scheduleTab struct {
 	loaded   bool
 	windows  []schedule.Window
+	last     map[int64]lastOpening // each window's latest opening, by id
+	now      time.Time             // when the windows were read
 	problem  string
 	cursor   int
 	selected int64 // the selected window: the selection follows it when the list is read again
@@ -59,7 +62,16 @@ type windowForm struct {
 
 type windowsLoadedMsg struct {
 	windows []schedule.Window
+	last    map[int64]lastOpening
+	now     time.Time
 	problem string
+}
+
+// lastOpening is a window's latest handled opening and, when it started a
+// run, that run.
+type lastOpening struct {
+	record *store.OpeningRecord
+	run    *store.Run
 }
 
 type windowChangedMsg struct {
@@ -71,9 +83,19 @@ type windowChangedMsg struct {
 func loadWindows(d Deps) tea.Cmd {
 	return func() tea.Msg {
 		windows, err := d.Store.ListWindows()
-		msg := windowsLoadedMsg{windows: windows}
+		msg := windowsLoadedMsg{windows: windows, last: map[int64]lastOpening{}, now: d.Now()}
 		if err != nil {
 			msg.problem = "Could not read the schedule windows: " + err.Error()
+		}
+		for _, w := range windows {
+			var last lastOpening
+			if last.record, err = d.Store.LastOpening(w.ID); err == nil && last.record != nil && last.record.RunID > 0 {
+				last.run, err = d.Store.GetRun(last.record.RunID)
+			}
+			if err != nil && msg.problem == "" {
+				msg.problem = "Could not read the windows' openings: " + err.Error()
+			}
+			msg.last[w.ID] = last
 		}
 		return msg
 	}
@@ -82,7 +104,7 @@ func loadWindows(d Deps) tea.Cmd {
 func (t scheduleTab) editing() bool { return t.form != nil || t.deleting != nil || t.daemon.editing() }
 
 func (t scheduleTab) current() (schedule.Window, bool) {
-	if !t.loaded || t.cursor >= len(t.windows) {
+	if !t.loaded || t.cursor < 0 || t.cursor >= len(t.windows) { // a move past the top is settled after the details are measured
 		return schedule.Window{}, false
 	}
 	return t.windows[t.cursor], true
@@ -93,27 +115,14 @@ func (t scheduleTab) resized(width, height int) scheduleTab {
 	return t.settled()
 }
 
-// listHeight is the room for windows: the tab's less its title, the notice,
-// the column names and the delete question.
-func (t scheduleTab) listHeight() int {
-	used := 2 + len(wrap(t.notice.text, max(1, t.width))) + len(t.daemon.lines(measure, t.width, daemonProc{}))
-	if t.deleting != nil {
-		used += 3
-	}
-	return max(1, t.height-used)
-}
+// scheduleDetailLines is the least room kept under the list (on a terminal
+// too narrow for the details beside it) for the selected window.
+const scheduleDetailLines = 3
 
 // settled keeps the selection in the list and in view, and remembers whose
 // it is.
 func (t scheduleTab) settled() scheduleTab {
-	t.cursor = max(0, min(t.cursor, len(t.windows)-1))
-	n := t.listHeight()
-	if t.cursor < t.top {
-		t.top = t.cursor
-	}
-	if t.cursor >= t.top+n {
-		t.top = t.cursor - n + 1
-	}
+	t.cursor, t.top = t.frame(measure, t.now, daemonProc{}).keep(t.cursor, t.top, t.width, t.height)
 	t.selected = 0
 	if w, ok := t.current(); ok {
 		t.selected = w.ID
@@ -124,7 +133,7 @@ func (t scheduleTab) settled() scheduleTab {
 func (t scheduleTab) update(msg tea.Msg, d Deps) (scheduleTab, tea.Cmd) {
 	switch msg := msg.(type) {
 	case windowsLoadedMsg:
-		t.loaded, t.windows, t.problem = true, msg.windows, msg.problem
+		t.loaded, t.windows, t.last, t.now, t.problem = true, msg.windows, msg.last, msg.now, msg.problem
 		for i, w := range t.windows {
 			if w.ID == t.selected {
 				t.cursor = i
@@ -353,8 +362,130 @@ func deleteWindow(d Deps, w schedule.Window) tea.Cmd {
 	}
 }
 
-// windowRow lays out the list: it fits the smallest terminal.
-const windowRow = "  %-3s %-16s %-11s %-13s %-7s %-5s %s"
+// windowRow is a row of the list width wide: the window's number, its days
+// (what the width leaves), hours, market, mode, state and next opening.
+func windowRow(width int, cells ...string) string {
+	const id, hours, market, mode, state, next = 3, 11, 13, 7, 5, 16
+	days := max(4, width-id-hours-market-mode-state-next-6*2)
+	return columns([]int{id, days, hours, market, mode, state, next}, cells...)
+}
+
+// frame is the tab for the frame to lay out: the windows, the daemon's strip
+// under the title, the selected window in full.
+func (t scheduleTab) frame(s styles, now time.Time, proc daemonProc) listFrame {
+	summary := ""
+	if t.loaded {
+		if o, ok := schedule.Current(t.windows, now); ok {
+			summary = fmt.Sprintf("window %d open now, until %s", o.Window.ID, o.Window.End)
+		} else if o, ok := schedule.Next(t.windows, now); ok {
+			summary = fmt.Sprintf("next opening %s, window %d", o.Start.Format(dayTime), o.Window.ID)
+		}
+	}
+	return listFrame{title: "Schedule", summary: summary,
+		notes:   append(t.daemon.strip(s, t.width, proc), listNotes(s, t.problem, t.notice, t.width)...),
+		waiting: waitText(t.loaded, "Reading…"), empty: "No schedule windows: a adds one. Runs start in them only while the daemon runs.",
+		rows: len(t.windows), minDetails: scheduleDetailLines,
+		heading: func(width int) string {
+			return windowRow(width, "#", "days", "hours", "market", "mode", "state", "next opening")
+		},
+		row: func(i, width int) string {
+			w := t.windows[i]
+			state, next := "on", ""
+			switch o, ok := schedule.Current([]schedule.Window{w}, now); {
+			case !w.Enabled:
+				state = "off"
+			case ok:
+				next = "open until " + o.Window.End.String()
+			default:
+				if o, ok := schedule.Next([]schedule.Window{w}, now); ok {
+					next = o.Start.Format(dayTime)
+				}
+			}
+			return windowRow(width, fmt.Sprint(w.ID), schedule.DaysString(w.Days), w.Start.String()+"-"+w.End.String(), marketName(w.Market),
+				run.Mode(w.DryRun), state, next)
+		},
+		details: func(s styles, width int, beside bool) []string { return t.detail(s, now, beside) },
+	}
+}
+
+// marketName is a window's market, or the config's when it names none.
+func marketName(market string) string {
+	if market == "" {
+		return "the config's"
+	}
+	return market
+}
+
+// detail is the selected window in full: when it opens, its next openings,
+// what its last opening did and, when it started a run, how that run went;
+// or the question deleting it.
+func (t scheduleTab) detail(s styles, now time.Time, beside bool) []string {
+	if t.deleting != nil {
+		return []string{s.warn.Render(fmt.Sprintf("Delete window %d (%s)?", t.deleting.ID, t.deleting)),
+			s.key.Render("y") + " deletes it · " + s.key.Render("n") + " keeps it"}
+	}
+	w, ok := t.current()
+	if !ok {
+		return nil
+	}
+	state := "on"
+	if !w.Enabled {
+		state = "off"
+	}
+	var next []string
+	for _, o := range schedule.Upcoming([]schedule.Window{w}, now, 3) {
+		next = append(next, o.Start.Format(dayTime))
+	}
+	if len(next) == 0 {
+		next = []string{"none: the window is off"}
+	}
+	last := []string{"none handled yet"}
+	if l := t.last[w.ID]; l.record != nil {
+		date := l.record.Date
+		if d, err := time.ParseInLocation(time.DateOnly, date, time.Local); err == nil {
+			date = d.Format("Mon 02 Jan")
+		}
+		last = []string{date + ": " + openingOutcome(*l.record)}
+		if r := l.run; r != nil {
+			counts := fmt.Sprintf("applied %d · external %d · failed %d · skipped %d", r.Applied, r.External, r.Failed, r.Skipped)
+			if r.Reason != "" {
+				counts += " · " + r.Reason
+			}
+			last = append(last, counts)
+		}
+	}
+	if !beside {
+		lines := []string{fmt.Sprintf("Window %d · %s %s-%s · %s · %s · %s", w.ID, schedule.DaysString(w.Days), w.Start, w.End, marketName(w.Market), run.Mode(w.DryRun), state),
+			s.dim.Render("next: ") + strings.Join(next, " · "), s.dim.Render("last opening: ") + last[0]}
+		for _, l := range last[1:] { // the run it started
+			lines = append(lines, "  "+l)
+		}
+		return lines
+	}
+	lines := []string{fmt.Sprintf("Window %d", w.ID), labelled(s, "days", schedule.DaysString(w.Days)), labelled(s, "hours", w.Start.String()+"-"+w.End.String()),
+		labelled(s, "market", marketName(w.Market)), labelled(s, "mode", run.Mode(w.DryRun)), labelled(s, "state", state), "", s.dim.Render("next openings")}
+	for _, n := range next {
+		lines = append(lines, "  "+n)
+	}
+	lines = append(lines, "", s.dim.Render("last opening"))
+	for _, l := range last {
+		lines = append(lines, "  "+l)
+	}
+	return lines
+}
+
+// openingOutcome says what the scheduler did with an opening.
+func openingOutcome(r store.OpeningRecord) string {
+	switch r.Outcome {
+	case schedule.OutcomeStarted:
+		return "started a run"
+	case schedule.OutcomeSkipped:
+		return strings.Join(nonEmpty("skipped", r.Detail), ": ")
+	case schedule.OutcomeFailed:
+		return strings.Join(nonEmpty("the run could not start", r.Detail), ": ")
+	}
+	return string(r.Outcome)
+}
 
 // readUnit reads the daemon's unit, unless that is under way already.
 func (t scheduleTab) readUnit(d Deps) (scheduleTab, tea.Cmd) {
@@ -364,72 +495,12 @@ func (t scheduleTab) readUnit(d Deps) (scheduleTab, tea.Cmd) {
 }
 
 func (t scheduleTab) view(s styles, width int, now time.Time, proc daemonProc) string {
-	head := s.section.Render("Schedule")
-	if t.loaded {
-		if o, ok := schedule.Current(t.windows, now); ok {
-			head += "  " + s.ok.Render(fmt.Sprintf("window %d open now, until %s", o.Window.ID, o.Window.End))
-		} else if o, ok := schedule.Next(t.windows, now); ok {
-			head += "  " + s.dim.Render(fmt.Sprintf("next opening %s, window %d", o.Start.Format(dayTime), o.Window.ID))
-		}
-	}
-	lines := []string{head}
-	switch {
-	case t.problem != "":
-		lines = append(lines, s.fail.Render(t.problem))
-	case t.notice.text != "":
-		lines = append(lines, wrapStyled(s.byLevel(t.notice.level), t.notice.text, width)...)
-	}
-	if t.form != nil {
+	f := t.frame(s, now, proc)
+	if t.form != nil { // the add form takes the list's place
+		lines := append(f.headerLines(s, width), f.notes...)
 		return strings.Join(append(append(lines, ""), t.form.lines(s, width)...), "\n")
 	}
-	if !t.loaded {
-		return strings.Join(append(lines, "Reading…"), "\n")
-	}
-	bottom := t.daemon.lines(s, width, proc)
-	if len(t.windows) == 0 {
-		lines = append(lines, "", s.dim.Render("No schedule windows: a adds one. Runs start in them only while the daemon runs."))
-		return strings.Join(append(pad(lines, t.height-len(bottom)), bottom...), "\n")
-	}
-	lines = append(lines, s.dim.Render(fmt.Sprintf(windowRow, "#", "days", "hours", "market", "mode", "state", "next opening")))
-	n := t.listHeight()
-	for i := t.top; i < len(t.windows) && i < t.top+n; i++ {
-		w := t.windows[i]
-		mark := s.mark(i == t.cursor)
-		market := w.Market
-		if market == "" {
-			market = "the config's"
-		}
-		mode := "live"
-		if w.DryRun {
-			mode = "dry run"
-		}
-		state, next := "on", ""
-		switch o, ok := schedule.Current([]schedule.Window{w}, now); {
-		case !w.Enabled:
-			state = "off"
-		case ok:
-			next = "open until " + o.Window.End.String()
-		default:
-			if o, ok := schedule.Next([]schedule.Window{w}, now); ok {
-				next = o.Start.Format(dayTime)
-			}
-		}
-		lines = append(lines, mark+strings.TrimPrefix(fmt.Sprintf(windowRow, fmt.Sprint(w.ID), clip(schedule.DaysString(w.Days), 16),
-			w.Start.String()+"-"+w.End.String(), market, mode, state, next), "  "))
-	}
-	if t.deleting != nil {
-		lines = append(lines, "", s.warn.Render(fmt.Sprintf("Delete window %d (%s)?", t.deleting.ID, t.deleting)),
-			s.key.Render("y")+" deletes it · "+s.key.Render("n")+" keeps it")
-	}
-	return strings.Join(append(pad(lines, t.height-len(bottom)), bottom...), "\n")
-}
-
-// pad adds empty lines to reach n, so what follows sits at the bottom.
-func pad(lines []string, n int) []string {
-	for len(lines) < n {
-		lines = append(lines, "")
-	}
-	return lines
+	return f.view(s, width, t.height, t.cursor, t.top)
 }
 
 func (f windowForm) lines(s styles, width int) []string {

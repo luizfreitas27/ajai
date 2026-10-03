@@ -63,7 +63,8 @@ no such section the notes are the commit list.
   greets with the ajai logo in a flame gradient, beside or over the summary as the room
   allows. The list tabs share one layout, their filters all in view and the selected
   item's details beside the list on a wide terminal; the Config tab shows paths under
-  your home as `~/…`.
+  your home as `~/…`; the Schedule tab shows a window's next openings and what its last
+  one did, the daemon in a strip under its title.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a
   question by replying to its message (checked against the options a select or radio
   offered). Answers remembered from now on keep those options.

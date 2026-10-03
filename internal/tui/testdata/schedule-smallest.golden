@@ -1,24 +1,24 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ─────────────────────────────────━━━━━━━━━━─────────────────────────────────────
-Schedule  next opening Mon 05 Oct 10:00, window 5
-  #   days             hours       market        mode    state next opening
-▌ 1   Mon              06:00-06:30 the config's  live    on    Mon 12 Oct 06:00
-  2   Mon              07:00-07:30 the config's  live    on    Mon 12 Oct 07:00
-  3   Mon              08:00-08:30 the config's  live    on    Mon 12 Oct 08:00
-  4   Mon              09:00-09:30 the config's  live    on    Mon 12 Oct 09:00
-  5   Mon              10:00-10:30 the config's  live    on    Mon 05 Oct 10:00
-  6   Mon              11:00-11:30 the config's  live    on    Mon 05 Oct 11:00
-  7   Mon              12:00-12:30 the config's  live    on    Mon 05 Oct 12:00
-  8   Mon              13:00-13:30 the config's  live    on    Mon 05 Oct 13:00
-  9   Mon              14:00-14:30 the config's  live    on    Mon 05 Oct 14:00
-  10  Mon              15:00-15:30 the config's  live    on    Mon 05 Oct 15:00
-  11  Mon              16:00-16:30 the config's  live    on    Mon 05 Oct 16:00
-  12  Mon              17:00-17:30 the config's  live    on    Mon 05 Oct 17:00
-  13  Tue              06:00-06:30 the config's  live    on    Tue 06 Oct 06:00
-  14  Tue              07:00-07:30 the config's  live    on    Tue 06 Oct 07:00
-
-────────────────────────────────────────────────────────────────────────────────
+Schedule   next opening Mon 05 Oct 10:00, window 5
 Daemon  not running · systemd unit: not installed
 i install · u uninstall · s start · t stop
+  #    days         hours        market         mode     state  next opening
+▌ 1    Mon          06:00-06:30  the config's   live     on     Mon 12 Oct 06:00
+  2    Mon          07:00-07:30  the config's   live     on     Mon 12 Oct 07:00
+  3    Mon          08:00-08:30  the config's   live     on     Mon 12 Oct 08:00
+  4    Mon          09:00-09:30  the config's   live     on     Mon 12 Oct 09:00
+  5    Mon          10:00-10:30  the config's   live     on     Mon 05 Oct 10:00
+  6    Mon          11:00-11:30  the config's   live     on     Mon 05 Oct 11:00
+  7    Mon          12:00-12:30  the config's   live     on     Mon 05 Oct 12:00
+  8    Mon          13:00-13:30  the config's   live     on     Mon 05 Oct 13:00
+  9    Mon          14:00-14:30  the config's   live     on     Mon 05 Oct 14:00
+  10   Mon          15:00-15:30  the config's   live     on     Mon 05 Oct 15:00
+  11   Mon          16:00-16:30  the config's   live     on     Mon 05 Oct 16:00
+  12   Mon          17:00-17:30  the config's   live     on     Mon 05 Oct 17:00
+────────────────────────────────────────────────────────────────────────────────
+Window 1 · Mon 06:00-06:30 · the config's · live · on
+next: Mon 12 Oct 06:00 · Mon 19 Oct 06:00 · Mon 26 Oct 06:00
+last opening: none handled yet
 ────────────────────────────────────────────────────────────────────────────────
 ↑↓ move · a add · space on/off · d delete · ? keys · q quit

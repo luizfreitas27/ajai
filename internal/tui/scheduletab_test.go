@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func (h *harness) scheduleTab() { h.t.Helper(); h.press(tabKey(tabSchedule)) }
@@ -142,7 +145,7 @@ func TestTheListFitsTheSmallestTerminalScrollsAndKeepsUp(t *testing.T) {
 	}
 	h.open(80, 24)
 	h.scheduleTab()
-	h.shows("Mon", "06:00-06:30", "Tue 06 Oct 06:00") // the next opening fits in 80 columns
+	h.shows("Mon", "06:00-06:30", "Mon 12 Oct 06:00") // the next opening fits in 80 columns
 	h.golden("schedule-smallest")
 	for range 19 {
 		h.press("down")
@@ -158,4 +161,56 @@ func TestTheListFitsTheSmallestTerminalScrollsAndKeepsUp(t *testing.T) {
 	h.refresh()
 	h.press("down")
 	h.shows(selected + "21")
+}
+
+func TestTheSelectedWindowShowsItsNextOpeningsAndWhatItsLastOneDid(t *testing.T) {
+	h := newHarness(t)
+	ran, _ := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Tuesday}, Start: 14 * 60, End: 16 * 60, Market: "brasil", DryRun: true, Enabled: true})
+	skipped, _ := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Friday}, Start: 9 * 60, End: 10 * 60, Enabled: true})
+	if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Sunday}, Start: 9 * 60, End: 10 * 60}); err != nil { // never opened, and off
+		t.Fatal(err)
+	}
+	h.pastRun(time.Date(2026, 9, 29, 14, 0, 0, 0, time.Local), "brasil", true, store.Run{Applied: 3, Skipped: 4, Reason: "the search ran out of jobs"})
+	runs, _ := h.st.ListRuns(1)
+	for _, o := range []struct {
+		k       schedule.Key
+		outcome schedule.Outcome
+		detail  string
+		run     int64
+	}{
+		{schedule.Key{WindowID: ran, Date: "2026-09-29"}, schedule.OutcomeStarted, "", runs[0].ID},
+		{schedule.Key{WindowID: skipped, Date: "2026-10-02"}, schedule.OutcomeSkipped, "another run was in progress", 0},
+	} {
+		if err := h.st.RecordOpening(o.k, o.outcome, o.detail, o.run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.open(100, 30)
+	h.scheduleTab()
+	h.selectWindow(int(ran))
+	h.shows("Window 1 · Tue 14:00-16:00 · brasil · dry run · on", "next: Tue 06 Oct 14:00 · Tue 13 Oct 14:00 · Tue 20 Oct 14:00",
+		"last opening: Tue 29 Sep: started a run", "  applied 3 · external 0 · failed 0 · skipped 4 · the search ran out of jobs")
+	h.selectWindow(int(skipped))
+	h.shows("last opening: Fri 02 Oct: skipped: another run was in progress")
+	h.selectWindow(3)
+	h.shows("next: none: the window is off", "last opening: none handled yet")
+
+	h.send(tea.WindowSizeMsg{Width: 140, Height: 30})
+	h.selectWindow(int(ran))
+	h.shows("│ Window 1", "│ days: Tue", "│ hours: 14:00-16:00", "│ market: brasil", "│ mode: dry run", "│ state: on", "│ next openings",
+		"│   Tue 13 Oct 14:00", "│ last opening", "│   Tue 29 Sep: started a run", "│   applied 3 · external 0 · failed 0 · skipped 4")
+	h.golden("schedule-beside")
+}
+
+func TestMovingPastTheTopOfTheWindowsKeepsTheFirst(t *testing.T) {
+	h := newHarness(t)
+	if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Tuesday}, Start: 14 * 60, End: 16 * 60, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.open(100, 30)
+	h.scheduleTab()
+	h.press("up", "k", "pgup")
+	if row := h.selectedRow(); !strings.HasPrefix(row, selected+"1 ") {
+		t.Errorf("the first window is not selected: %q", row)
+	}
 }

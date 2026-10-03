@@ -189,9 +189,9 @@ func (s daemonSection) question(a daemonAction) string {
 	return ""
 }
 
-// lines are the section: the daemon, its unit, the keys, a question or the
-// last outcome.
-func (s daemonSection) lines(st styles, width int, proc daemonProc) []string {
+// strip is the daemon's strip under the Schedule tab's title: the daemon and
+// its unit, the keys, then a question or the last outcome.
+func (s daemonSection) strip(st styles, width int, proc daemonProc) []string {
 	running := st.warn.Render("not running")
 	if proc.up {
 		running = st.ok.Render("running") + " since " + proc.process.Started.Local().Format(dayTime)
@@ -206,9 +206,8 @@ func (s daemonSection) lines(st styles, width int, proc daemonProc) []string {
 	default:
 		unit = fmt.Sprintf("systemd unit: %s, %s", s.unit.Enabled, s.unit.Active)
 	}
-	out := []string{st.dim.Render(strings.Repeat("─", width)),
-		st.section.Render("Daemon") + "  " + running + st.dim.Render(" · "+unit),
-		st.dim.Render("i install · u uninstall · s start · t stop")}
+	out := []string{st.label.Render("Daemon") + "  " + running + st.dim.Render(" · "+unit),
+		st.hints("i install · u uninstall · s start · t stop")}
 	switch {
 	case s.asking != noDaemonAction:
 		out = append(out, wrapStyled(st.warn, s.question(s.asking), width)...)

@@ -202,13 +202,13 @@ func waitText(done bool, text string) string {
 }
 
 // listNotes are the notes most list tabs show under their header: a problem
-// reading what they list, or else the last notice.
+// reading what they list, or else the last notice, wrapped to the width.
 func listNotes(s styles, problem string, n notice, width int) []string {
 	switch {
 	case problem != "":
-		return []string{s.fail.Render(clip(problem, width))}
+		return wrapStyled(s.fail, problem, max(1, width))
 	case n.text != "":
-		return []string{s.byLevel(n.level).Render(clip(n.text, width))}
+		return wrapStyled(s.byLevel(n.level), n.text, max(1, width))
 	}
 	return nil
 }

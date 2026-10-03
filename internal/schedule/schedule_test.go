@@ -224,3 +224,26 @@ func TestWindowString(t *testing.T) {
 		t.Error("days are sorted")
 	}
 }
+
+func TestUpcomingListsTheNextOpeningsInOrder(t *testing.T) {
+	at := func(s string) time.Time {
+		tm, err := time.ParseInLocation("2006-01-02 15:04", s, time.Local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	w := Window{ID: 1, Days: []time.Weekday{time.Tuesday, time.Thursday}, Start: 14 * 60, End: 16 * 60, Enabled: true}
+	got := Upcoming([]Window{w}, at("2026-10-06 15:00"), 3) // a Tuesday, inside the window: the next one is Thursday's
+	var starts []string
+	for _, o := range got {
+		starts = append(starts, o.Start.Format("Mon 02 15:04"))
+	}
+	if want := "Thu 08 14:00, Tue 13 14:00, Thu 15 14:00"; strings.Join(starts, ", ") != want {
+		t.Errorf("%v, want %s", starts, want)
+	}
+	w.Enabled = false
+	if got := Upcoming([]Window{w}, at("2026-10-06 15:00"), 3); len(got) != 0 {
+		t.Errorf("a window turned off has no openings: %v", got)
+	}
+}

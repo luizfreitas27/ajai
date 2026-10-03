@@ -518,8 +518,21 @@ func (s *Store) ListRuns(limit int) ([]Run, error) {
 	if limit <= 0 {
 		limit = -1 // SQLite: no limit
 	}
+	return s.listRuns(`ORDER BY id DESC LIMIT ?`, limit)
+}
+
+// GetRun returns the run with id, or nil when there is none.
+func (s *Store) GetRun(id int64) (*Run, error) {
+	runs, err := s.listRuns(`WHERE id = ?`, id)
+	if err != nil || len(runs) == 0 {
+		return nil, err
+	}
+	return &runs[0], nil
+}
+
+func (s *Store) listRuns(tail string, args ...any) ([]Run, error) {
 	rows, err := s.db.Query(`SELECT id, started_at, COALESCE(ended_at, ''), market, dry_run, applied, external, failed, skipped,
-		pending_answers, COALESCE(reason, '') FROM runs ORDER BY id DESC LIMIT ?`, limit)
+		pending_answers, COALESCE(reason, '') FROM runs `+tail, args...)
 	if err != nil {
 		return nil, err
 	}
