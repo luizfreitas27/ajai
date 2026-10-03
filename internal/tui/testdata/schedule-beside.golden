@@ -1,14 +1,14 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ─────────────────────────────────━━━━━━━━━━─────────────────────────────────────────────────────────────────────────────────────────────────
-Schedule   next opening Tue 06 Oct 14:00, window 1
+Schedule   next opening Mon 05 Oct 20:00, window 4
 Daemon  not running · systemd unit: not installed
 i install · u uninstall · s start · t stop
   #    days          hours        market         mode     state  next opening     │ Window 1
 ▌ 1    Tue           14:00-16:00  brasil         dry run  on     Tue 06 Oct 14:00 │ days: Tue
   2    Fri           09:00-10:00  the config's   live     on     Fri 09 Oct 09:00 │ hours: 14:00-16:00
-  3    Sun           09:00-10:00  the config's   live     off                     │ market: brasil
-                                                                                  │ mode: dry run
-                                                                                  │ state: on
+  3    Sat           09:00-10:00  the config's   live     on     Sat 10 Oct 09:00 │ market: brasil
+  4    Mon           20:00-21:00  the config's   live     on     Mon 05 Oct 20:00 │ mode: dry run
+  5    Sun           09:00-10:00  the config's   live     off                     │ state: on
                                                                                   │
                                                                                   │ next openings
                                                                                   │   Tue 06 Oct 14:00
@@ -18,7 +18,7 @@ i install · u uninstall · s start · t stop
                                                                                   │ last opening
                                                                                   │   Tue 29 Sep: started a run
                                                                                   │   applied 3 · external 0 · failed 0 · skipped 4 · the
-                                                                                  │ search ran out of jobs
+                                                                                  │   search ran out of jobs
                                                                                   │
                                                                                   │
                                                                                   │

@@ -165,7 +165,7 @@ func DaysString(days []time.Weekday) string {
 
 // String describes the window: "Mon-Fri 09:00-11:00, market brasil, dry run".
 func (w Window) String() string {
-	s := DaysString(w.Days) + " " + w.Start.String() + "-" + w.End.String()
+	s := DaysString(w.Days) + " " + w.Hours()
 	if w.Market != "" {
 		s += ", market " + w.Market
 	}
@@ -174,6 +174,9 @@ func (w Window) String() string {
 	}
 	return s
 }
+
+// Hours is the window's start and end, "14:00-16:00".
+func (w Window) Hours() string { return w.Start.String() + "-" + w.End.String() }
 
 // Validate checks a window on its own and against the other enabled windows (a
 // window overlapping another on the same weekday is refused). markets are the

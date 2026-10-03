@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/run"
@@ -22,8 +23,8 @@ import (
 type scheduleTab struct {
 	loaded   bool
 	windows  []schedule.Window
-	last     map[int64]lastOpening // each window's latest opening, by id
-	now      time.Time             // when the windows were read
+	history  map[int64]windowHistory // each window's latest opening, by id
+	now      time.Time               // when the windows were read
 	problem  string
 	cursor   int
 	selected int64 // the selected window: the selection follows it when the list is read again
@@ -62,17 +63,20 @@ type windowForm struct {
 
 type windowsLoadedMsg struct {
 	windows []schedule.Window
-	last    map[int64]lastOpening
+	history map[int64]windowHistory
 	now     time.Time
 	problem string
 }
 
-// lastOpening is a window's latest handled opening and, when it started a
-// run, that run.
-type lastOpening struct {
-	record *store.OpeningRecord
-	run    *store.Run
+// windowHistory is what a window last did: its latest handled opening and,
+// when that started a run, the run.
+type windowHistory struct {
+	opening *store.OpeningRecord
+	run     *store.Run
 }
+
+// nextOpeningsShown is how many of a window's next openings its details list.
+const nextOpeningsShown = 3
 
 type windowChangedMsg struct {
 	notice  notice
@@ -83,19 +87,19 @@ type windowChangedMsg struct {
 func loadWindows(d Deps) tea.Cmd {
 	return func() tea.Msg {
 		windows, err := d.Store.ListWindows()
-		msg := windowsLoadedMsg{windows: windows, last: map[int64]lastOpening{}, now: d.Now()}
+		msg := windowsLoadedMsg{windows: windows, history: map[int64]windowHistory{}, now: d.Now()}
 		if err != nil {
 			msg.problem = "Could not read the schedule windows: " + err.Error()
 		}
 		for _, w := range windows {
-			var last lastOpening
-			if last.record, err = d.Store.LastOpening(w.ID); err == nil && last.record != nil && last.record.RunID > 0 {
-				last.run, err = d.Store.GetRun(last.record.RunID)
+			var h windowHistory
+			if h.opening, err = d.Store.LastOpening(w.ID); err == nil && h.opening != nil && h.opening.RunID > 0 {
+				h.run, err = d.Store.GetRun(h.opening.RunID)
 			}
 			if err != nil && msg.problem == "" {
 				msg.problem = "Could not read the windows' openings: " + err.Error()
 			}
-			msg.last[w.ID] = last
+			msg.history[w.ID] = h
 		}
 		return msg
 	}
@@ -133,7 +137,7 @@ func (t scheduleTab) settled() scheduleTab {
 func (t scheduleTab) update(msg tea.Msg, d Deps) (scheduleTab, tea.Cmd) {
 	switch msg := msg.(type) {
 	case windowsLoadedMsg:
-		t.loaded, t.windows, t.last, t.now, t.problem = true, msg.windows, msg.last, msg.now, msg.problem
+		t.loaded, t.windows, t.history, t.now, t.problem = true, msg.windows, msg.history, msg.now, msg.problem
 		for i, w := range t.windows {
 			if w.ID == t.selected {
 				t.cursor = i
@@ -390,30 +394,24 @@ func (t scheduleTab) frame(s styles, now time.Time, proc daemonProc) listFrame {
 		},
 		row: func(i, width int) string {
 			w := t.windows[i]
-			state, next := "on", ""
-			switch o, ok := schedule.Current([]schedule.Window{w}, now); {
-			case !w.Enabled:
-				state = "off"
-			case ok:
+			next := ""
+			if o, ok := schedule.Current([]schedule.Window{w}, now); ok {
 				next = "open until " + o.Window.End.String()
-			default:
-				if o, ok := schedule.Next([]schedule.Window{w}, now); ok {
-					next = o.Start.Format(dayTime)
-				}
+			} else if o, ok := schedule.Next([]schedule.Window{w}, now); ok {
+				next = o.Start.Format(dayTime)
 			}
-			return windowRow(width, fmt.Sprint(w.ID), schedule.DaysString(w.Days), w.Start.String()+"-"+w.End.String(), marketName(w.Market),
-				run.Mode(w.DryRun), state, next)
+			return windowRow(width, fmt.Sprint(w.ID), schedule.DaysString(w.Days), w.Hours(), marketName(w.Market), run.Mode(w.DryRun), windowState(w), next)
 		},
 		details: func(s styles, width int, beside bool) []string { return t.detail(s, now, beside) },
 	}
 }
 
-// marketName is a window's market, or the config's when it names none.
-func marketName(market string) string {
-	if market == "" {
-		return "the config's"
+// windowState is whether a window is on.
+func windowState(w schedule.Window) string {
+	if w.Enabled {
+		return "on"
 	}
-	return market
+	return "off"
 }
 
 // detail is the selected window in full: when it opens, its next openings,
@@ -428,47 +426,39 @@ func (t scheduleTab) detail(s styles, now time.Time, beside bool) []string {
 	if !ok {
 		return nil
 	}
-	state := "on"
-	if !w.Enabled {
-		state = "off"
-	}
 	var next []string
-	for _, o := range schedule.Upcoming([]schedule.Window{w}, now, 3) {
+	for _, o := range schedule.Upcoming([]schedule.Window{w}, now, nextOpeningsShown) {
 		next = append(next, o.Start.Format(dayTime))
 	}
 	if len(next) == 0 {
 		next = []string{"none: the window is off"}
 	}
-	last := []string{"none handled yet"}
-	if l := t.last[w.ID]; l.record != nil {
-		date := l.record.Date
+	lastOpening := []string{"none handled yet"} // what it did, then the run it started
+	if h := t.history[w.ID]; h.opening != nil {
+		date := h.opening.Date
 		if d, err := time.ParseInLocation(time.DateOnly, date, time.Local); err == nil {
 			date = d.Format("Mon 02 Jan")
 		}
-		last = []string{date + ": " + openingOutcome(*l.record)}
-		if r := l.run; r != nil {
-			counts := fmt.Sprintf("applied %d · external %d · failed %d · skipped %d", r.Applied, r.External, r.Failed, r.Skipped)
-			if r.Reason != "" {
-				counts += " · " + r.Reason
-			}
-			last = append(last, counts)
+		lastOpening = []string{date + ": " + openingOutcome(*h.opening)}
+		if h.run != nil {
+			lastOpening = append(lastOpening, runCounts(*h.run)+" · "+runEnding(*h.run))
 		}
 	}
 	if !beside {
-		lines := []string{fmt.Sprintf("Window %d · %s %s-%s · %s · %s · %s", w.ID, schedule.DaysString(w.Days), w.Start, w.End, marketName(w.Market), run.Mode(w.DryRun), state),
-			s.dim.Render("next: ") + strings.Join(next, " · "), s.dim.Render("last opening: ") + last[0]}
-		for _, l := range last[1:] { // the run it started
+		lines := []string{fmt.Sprintf("Window %d · %s %s · %s · %s · %s", w.ID, schedule.DaysString(w.Days), w.Hours(), marketName(w.Market), run.Mode(w.DryRun), windowState(w)),
+			labelled(s, "next", strings.Join(next, " · ")), labelled(s, "last opening", lastOpening[0])}
+		for _, l := range lastOpening[1:] {
 			lines = append(lines, "  "+l)
 		}
 		return lines
 	}
-	lines := []string{fmt.Sprintf("Window %d", w.ID), labelled(s, "days", schedule.DaysString(w.Days)), labelled(s, "hours", w.Start.String()+"-"+w.End.String()),
-		labelled(s, "market", marketName(w.Market)), labelled(s, "mode", run.Mode(w.DryRun)), labelled(s, "state", state), "", s.dim.Render("next openings")}
+	lines := []string{fmt.Sprintf("Window %d", w.ID), labelled(s, "days", schedule.DaysString(w.Days)), labelled(s, "hours", w.Hours()),
+		labelled(s, "market", marketName(w.Market)), labelled(s, "mode", run.Mode(w.DryRun)), labelled(s, "state", windowState(w)), "", s.dim.Render("next openings")}
 	for _, n := range next {
 		lines = append(lines, "  "+n)
 	}
 	lines = append(lines, "", s.dim.Render("last opening"))
-	for _, l := range last {
+	for _, l := range lastOpening {
 		lines = append(lines, "  "+l)
 	}
 	return lines
@@ -526,7 +516,7 @@ func (f windowForm) lines(s styles, width int) []string {
 		field(fieldWindowDays, "Days", strings.Join(days, " ")),
 		field(fieldWindowStart, "Start", f.start.View()),
 		field(fieldWindowEnd, "End", f.end.View()),
-		field(fieldWindowMarket, "Market", "‹ "+marketLabel(f.market)+" ›"),
+		field(fieldWindowMarket, "Market", "‹ "+marketName(marketChoices[f.market])+" ›"),
 		field(fieldWindowMode, "Mode", "‹ "+mode+" ›"),
 	}
 	if f.saving {
@@ -538,11 +528,14 @@ func (f windowForm) lines(s styles, width int) []string {
 	return out
 }
 
-// wrapStyled wraps text to width and styles each line.
+// wrapStyled wraps text to width, a word longer than the width (a link, a
+// path) broken where it must be, and styles each line.
 func wrapStyled(st interface{ Render(...string) string }, text string, width int) []string {
 	var out []string
 	for _, l := range wrap(text, width) {
-		out = append(out, st.Render(l))
+		for _, part := range strings.Split(ansi.Wrap(l, max(1, width), "/-"), "\n") {
+			out = append(out, st.Render(part))
+		}
 	}
 	return out
 }

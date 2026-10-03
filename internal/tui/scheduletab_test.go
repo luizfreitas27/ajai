@@ -93,7 +93,11 @@ func TestAWindowIsTurnedOffAndOnAndDeleted(t *testing.T) {
 // selectWindow moves the selection to window id.
 func (h *harness) selectWindow(id int) {
 	h.t.Helper()
-	h.selectRow(fmt.Sprintf("window %d", id), []string{"up", "up", "up"}, 10, func(row string) bool {
+	up := make([]string, 10) // to the top: the tab takes no g yet
+	for i := range up {
+		up[i] = "up"
+	}
+	h.selectRow(fmt.Sprintf("window %d", id), up, 10, func(row string) bool {
 		return strings.HasPrefix(row, selected+strconv.Itoa(id)+" ")
 	})
 }
@@ -167,11 +171,14 @@ func TestTheSelectedWindowShowsItsNextOpeningsAndWhatItsLastOneDid(t *testing.T)
 	h := newHarness(t)
 	ran, _ := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Tuesday}, Start: 14 * 60, End: 16 * 60, Market: "brasil", DryRun: true, Enabled: true})
 	skipped, _ := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Friday}, Start: 9 * 60, End: 10 * 60, Enabled: true})
+	failed, _ := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Saturday}, Start: 9 * 60, End: 10 * 60, Enabled: true})
+	quiet, _ := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Monday}, Start: 20 * 60, End: 21 * 60, Enabled: true})
 	if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Sunday}, Start: 9 * 60, End: 10 * 60}); err != nil { // never opened, and off
 		t.Fatal(err)
 	}
+	h.pastRun(time.Date(2026, 9, 28, 20, 0, 0, 0, time.Local), "", false, store.Run{Applied: 1}) // no reason recorded
 	h.pastRun(time.Date(2026, 9, 29, 14, 0, 0, 0, time.Local), "brasil", true, store.Run{Applied: 3, Skipped: 4, Reason: "the search ran out of jobs"})
-	runs, _ := h.st.ListRuns(1)
+	runs, _ := h.st.ListRuns(2)
 	for _, o := range []struct {
 		k       schedule.Key
 		outcome schedule.Outcome
@@ -179,7 +186,9 @@ func TestTheSelectedWindowShowsItsNextOpeningsAndWhatItsLastOneDid(t *testing.T)
 		run     int64
 	}{
 		{schedule.Key{WindowID: ran, Date: "2026-09-29"}, schedule.OutcomeStarted, "", runs[0].ID},
-		{schedule.Key{WindowID: skipped, Date: "2026-10-02"}, schedule.OutcomeSkipped, "another run was in progress", 0},
+		{schedule.Key{WindowID: skipped, Date: "2026-10-02"}, schedule.OutcomeSkipped, "a run started from the terminal (pid 4242) at 08:50", 0}, // as the daemon writes it
+		{schedule.Key{WindowID: failed, Date: "2026-10-03"}, schedule.OutcomeFailed, "the config file has errors", 0},
+		{schedule.Key{WindowID: quiet, Date: "2026-09-28"}, schedule.OutcomeStarted, "", runs[1].ID},
 	} {
 		if err := h.st.RecordOpening(o.k, o.outcome, o.detail, o.run); err != nil {
 			t.Fatal(err)
@@ -191,8 +200,12 @@ func TestTheSelectedWindowShowsItsNextOpeningsAndWhatItsLastOneDid(t *testing.T)
 	h.shows("Window 1 · Tue 14:00-16:00 · brasil · dry run · on", "next: Tue 06 Oct 14:00 · Tue 13 Oct 14:00 · Tue 20 Oct 14:00",
 		"last opening: Tue 29 Sep: started a run", "  applied 3 · external 0 · failed 0 · skipped 4 · the search ran out of jobs")
 	h.selectWindow(int(skipped))
-	h.shows("last opening: Fri 02 Oct: skipped: another run was in progress")
-	h.selectWindow(3)
+	h.shows("last opening: Fri 02 Oct: skipped: a run started from the terminal (pid 4242) at 08:50")
+	h.selectWindow(int(failed))
+	h.shows("last opening: Sat 03 Oct: the run could not start: the config file has errors")
+	h.selectWindow(int(quiet))
+	h.shows("  applied 1 · external 0 · failed 0 · skipped 0 · ended") // no reason recorded: still how it ended
+	h.selectWindow(5)
 	h.shows("next: none: the window is off", "last opening: none handled yet")
 
 	h.send(tea.WindowSizeMsg{Width: 140, Height: 30})

@@ -190,7 +190,8 @@ func (s daemonSection) question(a daemonAction) string {
 }
 
 // strip is the daemon's strip under the Schedule tab's title: the daemon and
-// its unit, the keys, then a question or the last outcome.
+// its unit, then its keys and the last outcome, or a question (or the change
+// under way) in the keys' place.
 func (s daemonSection) strip(st styles, width int, proc daemonProc) []string {
 	running := st.warn.Render("not running")
 	if proc.up {
@@ -206,14 +207,15 @@ func (s daemonSection) strip(st styles, width int, proc daemonProc) []string {
 	default:
 		unit = fmt.Sprintf("systemd unit: %s, %s", s.unit.Enabled, s.unit.Active)
 	}
-	out := []string{st.label.Render("Daemon") + "  " + running + st.dim.Render(" · "+unit),
-		st.hints("i install · u uninstall · s start · t stop")}
-	switch {
+	out := []string{st.label.Render("Daemon") + "  " + running + st.dim.Render(" · "+unit)}
+	switch { // a question, or the change under way, takes the keys' line
 	case s.asking != noDaemonAction:
-		out = append(out, wrapStyled(st.warn, s.question(s.asking), width)...)
+		return append(out, wrapStyled(st.warn, s.question(s.asking), width)...)
 	case s.busy != noDaemonAction:
-		out = append(out, st.dim.Render("Working…"))
-	case s.notice.text != "":
+		return append(out, st.dim.Render("Working…"))
+	}
+	out = append(out, st.hints("i install · u uninstall · s start · t stop"))
+	if s.notice.text != "" {
 		out = append(out, wrapStyled(st.byLevel(s.notice.level), s.notice.text, width)...)
 	}
 	return out

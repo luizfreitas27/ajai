@@ -177,28 +177,22 @@ type OpeningRecord struct {
 
 // GetOpening returns the record of one opening, or nil when it was not handled.
 func (s *Store) GetOpening(k schedule.Key) (*OpeningRecord, error) {
-	var r OpeningRecord
-	var outcome string
-	var runID sql.NullInt64
-	err := s.db.QueryRow(`SELECT outcome, detail, run_id FROM schedule_openings WHERE window_id = ? AND date = ?`, k.WindowID, k.Date).
-		Scan(&outcome, &r.Detail, &runID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	r.Date, r.Outcome, r.RunID = k.Date, schedule.Outcome(outcome), runID.Int64
-	return &r, nil
+	return s.opening(`window_id = ? AND date = ?`, k.WindowID, k.Date)
 }
 
 // LastOpening returns the record of a window's latest handled opening, or nil
 // when none was handled.
 func (s *Store) LastOpening(windowID int64) (*OpeningRecord, error) {
+	return s.opening(`window_id = ? ORDER BY date DESC LIMIT 1`, windowID)
+}
+
+// opening reads the first opening that where (a constant condition) matches,
+// or nil.
+func (s *Store) opening(where string, args ...any) (*OpeningRecord, error) {
 	var r OpeningRecord
 	var outcome string
 	var runID sql.NullInt64
-	err := s.db.QueryRow(`SELECT date, outcome, detail, run_id FROM schedule_openings WHERE window_id = ? ORDER BY date DESC LIMIT 1`, windowID).
+	err := s.db.QueryRow(`SELECT date, outcome, detail, run_id FROM schedule_openings WHERE `+where, args...).
 		Scan(&r.Date, &outcome, &r.Detail, &runID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
