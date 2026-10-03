@@ -10,6 +10,20 @@ import "github.com/charmbracelet/lipgloss"
 // terminal draws against its own background.
 type styles struct {
 	plain, brand, tab, activeTab, dim, ok, warn, fail, key, section lipgloss.Style
+	bar                                                             lipgloss.Style // the selection's bar and the active tab's stroke
+}
+
+// accent is flame orange, the colour of what is active or selected: the active
+// tab, the selection, titles and key names. Green, amber and red keep meaning
+// ok, warning and failure.
+const accent = lipgloss.Color("#FF7500")
+
+// mark starts a list row: a flame bar when the row is the selection.
+func (s styles) mark(selected bool) string {
+	if selected {
+		return s.bar.Render("▌") + " "
+	}
+	return "  "
 }
 
 // byLevel is the style of a notice.
@@ -26,14 +40,15 @@ func (s styles) byLevel(l level) lipgloss.Style {
 func newStyles(r *lipgloss.Renderer) styles {
 	return styles{
 		plain:     r.NewStyle(),
-		brand:     r.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED")),
-		activeTab: r.NewStyle().Bold(true).Underline(true),
+		brand:     r.NewStyle().Bold(true).Foreground(accent),
+		activeTab: r.NewStyle().Bold(true).Foreground(accent),
 		tab:       r.NewStyle().Faint(true),
 		dim:       r.NewStyle().Faint(true),
 		ok:        r.NewStyle().Foreground(lipgloss.Color("#16A34A")),
 		warn:      r.NewStyle().Foreground(lipgloss.Color("#D97706")),
 		fail:      r.NewStyle().Foreground(lipgloss.Color("#DC2626")),
-		key:       r.NewStyle().Foreground(lipgloss.Color("#06B6D4")),
-		section:   r.NewStyle().Bold(true),
+		key:       r.NewStyle().Foreground(accent),
+		section:   r.NewStyle().Bold(true).Foreground(accent),
+		bar:       r.NewStyle().Foreground(accent),
 	}
 }

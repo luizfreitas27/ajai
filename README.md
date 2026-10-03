@@ -118,6 +118,10 @@ Type `ajai` with no command, in a terminal, and it opens a full-screen interface
 terminal (a pipe, a script, systemd) it prints the help instead, and every command below
 works exactly as without the TUI.
 
+Flame orange marks what is active: the tab you are on (with a thick stroke under its name,
+which shows even with `--no-color`), the selected row (a `▌` bar), titles and keys. Green,
+amber and red keep meaning ok, warning and failure.
+
 The **Dashboard** refreshes every second. It shows:
 - the run in progress: who started it (the terminal, a schedule window, Telegram), the
   market, dry run or live, the term being searched and the counts so far;

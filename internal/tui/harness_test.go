@@ -50,6 +50,7 @@ type harness struct {
 	systemd *fakeSystemd
 	opened  []string // the links opened in the "browser"
 	noOpen  error    // what opening a link fails with, if it does
+	color   bool     // open draws in 24-bit colour, as a modern terminal would
 	quit    bool
 }
 
@@ -168,6 +169,9 @@ func (h *harness) open(width, height int) {
 	h.t.Helper()
 	r := lipgloss.NewRenderer(io.Discard)
 	r.SetColorProfile(termenv.Ascii)
+	if h.color {
+		r.SetColorProfile(termenv.TrueColor)
+	}
 	m := New(h.deps(), r)
 	m.tickAfter = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
 	h.m = m
@@ -244,10 +248,12 @@ func (h *harness) shows(texts ...string) {
 }
 
 // golden compares the screen with testdata/name.golden (go test -update rewrites it).
+// A coloured screen's escape sequences are written \e[…m, so the file reads as text.
 func (h *harness) golden(name string) {
 	h.t.Helper()
 	path := filepath.Join("testdata", name+".golden")
 	screen := strings.ReplaceAll(h.screen(), h.p.DataDir, "$AJAI_HOME") // a new temporary directory each run (most show as ~)
+	screen = strings.ReplaceAll(screen, "\x1b", `\e`)
 	screen = strings.ReplaceAll(screen, "pid "+strconv.Itoa(os.Getpid()), "pid $PID")
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {

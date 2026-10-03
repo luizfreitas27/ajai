@@ -39,10 +39,7 @@ func marketLabel(i int) string {
 
 // formLine is one field of a form: a marker when selected, the label, the value.
 func formLine(s styles, selected bool, label, value string) string {
-	mark := "  "
-	if selected {
-		mark = s.key.Render("> ")
-	}
+	mark := s.mark(selected)
 	return mark + fmt.Sprintf("%-9s", label) + " " + value
 }
 

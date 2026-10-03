@@ -233,10 +233,7 @@ func (v checklist) view(s styles, d Deps, width int) string {
 		return strings.Join(append(lines, "Checking…"), "\n")
 	}
 	for i, c := range v.report.Checks {
-		mark := "  "
-		if i == v.cursor {
-			mark = s.key.Render("> ")
-		}
+		mark := s.mark(i == v.cursor)
 		status := s.ok.Render("✓")
 		switch c.Status {
 		case doctor.Warn:

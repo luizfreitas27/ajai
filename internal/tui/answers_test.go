@@ -34,7 +34,7 @@ func (h *harness) selectAnswer(label string) {
 	h.press("g")
 	for range 50 {
 		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "> ") && strings.Contains(l, label) {
+			if strings.HasPrefix(l, "▌ ") && strings.Contains(l, label) {
 				return
 			}
 		}
@@ -72,7 +72,7 @@ func TestApproveCorrectAndDelete(t *testing.T) {
 	if r, _ := mem.Get(years.ID); r.State != "approved" || r.Source != "ai" {
 		t.Errorf("approved as shown, still the AI's: %+v", r)
 	}
-	if strings.Contains(h.screen(), "> Years") || strings.Contains(h.screen(), "  text      Years") {
+	if strings.Contains(h.screen(), "▌ Years") || strings.Contains(h.screen(), "  text      Years") {
 		t.Errorf("an approved answer left the review queue:\n%s", h.screen())
 	}
 
@@ -146,7 +146,7 @@ func TestThePickListIsUsedWithArrowsAndShowsEveryOption(t *testing.T) {
 
 	// Typing moves the pick; an arrow afterwards wins over what was typed.
 	h.press("tab", "e", "mor")
-	if !strings.Contains(h.screen(), "> More than 10 years") {
+	if !strings.Contains(h.screen(), "▌ More than 10 years") {
 		t.Errorf("the pick follows the typing:\n%s", h.screen())
 	}
 	h.press("up", "enter")

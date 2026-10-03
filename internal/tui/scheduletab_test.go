@@ -94,7 +94,7 @@ func (h *harness) selectWindow(id int) {
 	}
 	for range 10 {
 		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "> "+strconv.Itoa(id)+" ") {
+			if strings.HasPrefix(l, "▌ "+strconv.Itoa(id)+" ") {
 				return
 			}
 		}
@@ -165,5 +165,5 @@ func TestTheListFitsTheSmallestTerminalScrollsAndKeepsUp(t *testing.T) {
 	}
 	h.refresh()
 	h.press("down")
-	h.shows("> 21")
+	h.shows("▌ 21")
 }

@@ -1,8 +1,8 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────────────━━━━━━────────────────────────────
 Jobs  all   applied 0 · external 0 · failed 0 · skipped 150
   recorded      outcome   title                     company         location
-> 05 Oct 10:29  skipped   Job 149                                   
+▌ 05 Oct 10:29  skipped   Job 149                                   
   05 Oct 10:28  skipped   Job 148                                   
   05 Oct 10:27  skipped   Job 147                                   
   05 Oct 10:26  skipped   Job 146                                   

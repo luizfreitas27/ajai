@@ -20,7 +20,7 @@ func (h *harness) selectCheck(name string) {
 	}
 	for range 20 {
 		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "> ") && strings.Contains(l, " "+name+" ") {
+			if strings.HasPrefix(l, "▌ ") && strings.Contains(l, " "+name+" ") {
 				return
 			}
 		}
@@ -38,7 +38,7 @@ func TestWithoutAConfigTheTUIOpensOnTheChecklistAndTheInitWizardFixesIt(t *testi
 		}
 	}
 	h.open(100, 30)
-	h.shows("ajai   Setup", "Setup checklist", "> ✗ config", "no config file at", "Enter: create the config with the init wizard (`ajai init`)",
+	h.shows("ajai   Setup", "Setup checklist", "▌ ✗ config", "no config file at", "Enter: create the config with the init wizard (`ajai init`)",
 		"✓ chrome ", "i  import settings, answers and history from the Python bot", "r  check again",
 		"The other tabs open once there is a config file")
 	h.golden("setup-no-config")

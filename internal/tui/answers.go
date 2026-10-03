@@ -370,10 +370,7 @@ func (a answersTab) view(s styles, width int) string {
 			continue
 		}
 		r := a.answers[i]
-		mark := "  "
-		if i == a.cursor {
-			mark = s.key.Render("> ")
-		}
+		mark := s.mark(i == a.cursor)
 		answer := r.Answer
 		if unansweredYet(r) {
 			answer = "(none yet)"
@@ -399,10 +396,7 @@ func (a answersTab) detail(s styles, width int) []string {
 		e := a.edit
 		lines = append(lines, s.section.Render("Answer: ")+e.target.Label, e.input.View())
 		for i, o := range e.target.Options {
-			mark := "  "
-			if i == e.choice {
-				mark = s.key.Render("> ")
-			}
+			mark := s.mark(i == e.choice)
 			lines = append(lines, mark+optionLabel(o))
 		}
 		if e.refusal != "" {

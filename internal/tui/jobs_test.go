@@ -36,7 +36,7 @@ func (h *harness) selectJob(title string) {
 	h.press("g")
 	for range 200 {
 		for _, l := range strings.Split(h.screen(), "\n") {
-			if strings.HasPrefix(l, "> ") && strings.Contains(l, title) {
+			if strings.HasPrefix(l, "▌ ") && strings.Contains(l, title) {
 				return
 			}
 		}
@@ -179,18 +179,18 @@ func TestTheHistoryIsReadPageByPageAndKeepsUp(t *testing.T) {
 	h.press("G") // the end of the first page: the next is read
 	h.selectJob("Job 050")
 	h.press("down")
-	h.shows("> 05 Oct 08:49  skipped   Job 049")
+	h.shows("▌ 05 Oct 08:49  skipped   Job 049")
 	h.press("G")
-	h.shows("> 05 Oct 08:00  skipped   Job 000")
+	h.shows("▌ 05 Oct 08:00  skipped   Job 000")
 
 	// Read again, the list keeps every job shown, and the selection its job.
 	h.recordJob(201, store.Job{JobID: "newer", Outcome: store.Applied, Title: "Applied again"})
 	h.refreshJobs()
-	h.shows("> 05 Oct 08:00  skipped   Job 000")
+	h.shows("▌ 05 Oct 08:00  skipped   Job 000")
 	h.selectJob("Job 120")
 	h.recordJob(202, store.Job{JobID: "newest", Outcome: store.Applied, Title: "Applied once more"})
 	h.refreshJobs()
-	h.shows("> 05 Oct 10:00  skipped   Job 120")
+	h.shows("▌ 05 Oct 10:00  skipped   Job 120")
 	h.press("g")
-	h.shows("> 05 Oct 11:22  applied   Applied once more", "Applied again", "Just applied")
+	h.shows("▌ 05 Oct 11:22  applied   Applied once more", "Applied again", "Just applied")
 }

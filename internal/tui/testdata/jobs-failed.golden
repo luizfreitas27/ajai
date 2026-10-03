@@ -1,8 +1,8 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────────────━━━━━━────────────────────────────
 Jobs  all   applied 0 · external 0 · failed 1 · skipped 30
   recorded      outcome   title                     company         location
-> 05 Oct 08:01  failed    Platform Engineer         Hooli           Porto Alegre
+▌ 05 Oct 08:01  failed    Platform Engineer         Hooli           Porto Alegre
   05 Oct 07:29  skipped   Job 029                                   
   05 Oct 07:28  skipped   Job 028                                   
   05 Oct 07:27  skipped   Job 027                                   

@@ -1,7 +1,7 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
-────────────────────────────────────────────────────────────────────────────────────────────────────
+───────━━━━━━━━━━━──────────────────────────────────────────────────────────────────────────────────
 Start a run  unattended, in a process of its own: closing the TUI never ends it
-> Market    ‹ the config's ›
+▌ Market    ‹ the config's ›
   Mode      ‹ dry run: fills every form, sends none ›
   Maximum   0        applications; 0 or blank: the pacing cap
 
