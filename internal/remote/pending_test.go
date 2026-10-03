@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // press queues a press of the button with data under message on, in chat c.
@@ -135,7 +135,7 @@ func TestButtonsApproveOrDeleteAndEditTheMessage(t *testing.T) {
 	w.tg.press(chat, years, years.Buttons[0].Data)
 	d = w.tg.until(t, "approve", func(d did) bool { return len(d.acks) >= 1 })
 	if d.acks[0] != "Approved." || len(d.edits) != 1 || d.edits[0].ID != years.ID ||
-		!strings.Contains(d.edits[0].Text, "Approved: aja uses this answer from now on.") || d.edits[0].Buttons == nil || len(d.edits[0].Buttons) != 0 {
+		!strings.Contains(d.edits[0].Text, "Approved: ajai uses this answer from now on.") || d.edits[0].Buttons == nil || len(d.edits[0].Buttons) != 0 {
 		t.Errorf("acks %q edits %+v", d.acks, d.edits)
 	}
 	if a, _ := s.mem.Get(s.years.ID); a.State != "approved" || a.Answer != "3" || a.Source != "ai" {
@@ -144,7 +144,7 @@ func TestButtonsApproveOrDeleteAndEditTheMessage(t *testing.T) {
 
 	w.tg.press(chat, consent, "delete:"+s.consent.ID)
 	d = w.tg.until(t, "delete", func(d did) bool { return len(d.acks) >= 2 })
-	if d.acks[1] != "Deleted." || len(d.edits) != 2 || d.edits[1].ID != consent.ID || !strings.Contains(d.edits[1].Text, "Deleted: aja forgets this answer.") {
+	if d.acks[1] != "Deleted." || len(d.edits) != 2 || d.edits[1].ID != consent.ID || !strings.Contains(d.edits[1].Text, "Deleted: ajai forgets this answer.") {
 		t.Errorf("acks %q edits %+v", d.acks, d.edits)
 	}
 	if a, _ := s.mem.Get(s.consent.ID); a != nil {
@@ -158,7 +158,7 @@ func TestButtonsApproveOrDeleteAndEditTheMessage(t *testing.T) {
 	w.tg.press(chat, consent, "delete:"+s.consent.ID)
 	w.tg.press(chat, years, "approve:"+s.years.ID)
 	d = w.tg.until(t, "the last presses", func(d did) bool { return len(d.acks) >= 5 })
-	if d.acks[2] != "Reply to the message with the answer first." || d.acks[3] != "Already gone." || d.acks[4] != "aja does not know this button." {
+	if d.acks[2] != "Reply to the message with the answer first." || d.acks[3] != "Already gone." || d.acks[4] != "ajai does not know this button." {
 		t.Errorf("acks %q", d.acks)
 	}
 	if len(d.edits) != 3 || d.edits[2].ID != consent.ID || !strings.HasSuffix(d.edits[2].Text, "No longer in the answer memory.") {
@@ -218,7 +218,7 @@ func TestARepliedAnswerIsApprovedAndCheckedAgainstTheOptions(t *testing.T) {
 	w.tg.replyTo(chat, relocate.ID, "no,  NOT")
 	d = w.tg.until(t, "the answer", func(d did) bool { return len(d.edits) >= 1 })
 	if d.edits[0].ID != relocate.ID || !strings.Contains(d.edits[0].Text, "Answer: No, not now (yours)") ||
-		!strings.Contains(d.edits[0].Text, "Answered: aja uses this answer from now on.") || len(d.edits[0].Buttons) != 0 {
+		!strings.Contains(d.edits[0].Text, "Answered: ajai uses this answer from now on.") || len(d.edits[0].Buttons) != 0 {
 		t.Errorf("%+v", d.edits)
 	}
 	if a, _ := s.mem.Get(s.relocate.ID); a.Answer != "No, not now" || a.State != "approved" || a.Source != "user" {
@@ -260,7 +260,7 @@ func TestRepliesAndButtonsStillWorkAfterARestart(t *testing.T) {
 	if err := w.st.Close(); err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(filepath.Join(w.dir, "aja.db"))
+	st, err := store.Open(filepath.Join(w.dir, "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

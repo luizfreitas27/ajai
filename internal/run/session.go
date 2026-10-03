@@ -7,19 +7,19 @@ import (
 	"os"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/pacing"
 )
 
 // defaultNonStopWait is the pause between the runs of a non-stop session, the
 // ten minutes the Python bot slept.
 const defaultNonStopWait = 10 * time.Minute
 
-// DefaultLoginTimeout is how long a run (and aja login) waits for the user to
+// DefaultLoginTimeout is how long a run (and ajai login) waits for the user to
 // sign in to LinkedIn by hand.
 const DefaultLoginTimeout = 10 * time.Minute
 
-// Session is one invocation of aja run: a single run, or, with
+// Session is one invocation of ajai run: a single run, or, with
 // settings.run_non_stop, run after run until one ends in a way that should not
 // be retried (End.Continues), with the Python bot's filter changes between runs
 // (FilterCycle) and NonStopWait in between. Each run is recorded and reported
@@ -57,7 +57,7 @@ func (r *Runner) Session(ctx context.Context, opts Options) ([]Summary, error) {
 	}
 }
 
-// saveWaiting records, for aja status, that a non-stop session is between runs.
+// saveWaiting records, for ajai status, that a non-stop session is between runs.
 func (r *Runner) saveWaiting(last Summary, opts Options, next time.Time) {
 	if r.StatePath == "" {
 		return

@@ -1,6 +1,6 @@
 // Package logging writes a structured JSON log file per day in the data
 // directory. Terminal output is the ui package's job; the file is for reading
-// after the fact and for `aja logs -f`.
+// after the fact and for `ajai logs -f`.
 package logging
 
 import (
@@ -16,7 +16,7 @@ import (
 
 // FileName is the log file for a given day.
 func FileName(dir string, day time.Time) string {
-	return filepath.Join(dir, "aja-"+day.Format("2006-01-02")+".log")
+	return filepath.Join(dir, "ajai-"+day.Format("2006-01-02")+".log")
 }
 
 // FileNamer names a day's log file in a directory: FileName or DaemonFileName.

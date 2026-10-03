@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 func tmpPaths(t *testing.T) paths.Paths {
 	t.Helper()
 	return paths.Resolve("", func(k string) string {
-		if k == "AJA_HOME" {
+		if k == "AJAI_HOME" {
 			return t.TempDir()
 		}
 		return ""
@@ -223,7 +223,7 @@ func TestWrittenFileIsCommentedAndRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"# aja configuration.",
+		"# ajai configuration.",
 		"# Which market this run applies in.",
 		`# Options: "brasil", "internacional"`,
 		"# Example: Software Engineer,Python Developer",
@@ -280,8 +280,8 @@ func TestLayersEnvironmentBeatsDotenvAndFlagsBeatEverything(t *testing.T) {
 	if err := Write(p.ConfigFile, valid()); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, p.EnvFile, "AJA_AI_API_KEY=from-file\nAJA_TELEGRAM_CHAT_ID=42\nAJA_CFG_SEARCH_LOCATION=Lisboa\nAJA_CFG_MARKETS_BRASIL_TERMS=Dev,QA\n")
-	env := MapEnv(map[string]string{"AJA_AI_API_KEY": "from-env", "AJA_CFG_SEARCH_SWITCH_NUMBER": "5", "PATH": "/bin"})
+	mustWrite(t, p.EnvFile, "AJAI_AI_API_KEY=from-file\nAJAI_TELEGRAM_CHAT_ID=42\nAJAI_CFG_SEARCH_LOCATION=Lisboa\nAJAI_CFG_MARKETS_BRASIL_TERMS=Dev,QA\n")
+	env := MapEnv(map[string]string{"AJAI_AI_API_KEY": "from-env", "AJAI_CFG_SEARCH_SWITCH_NUMBER": "5", "PATH": "/bin"})
 	l, err := Load(p, env, map[string]string{"markets.active": "brasil"})
 	if err != nil {
 		t.Fatal(err)
@@ -298,12 +298,28 @@ func TestLayersEnvironmentBeatsDotenvAndFlagsBeatEverything(t *testing.T) {
 	}
 }
 
+func TestTheOldAJAVariablesAreNotRead(t *testing.T) {
+	p := tmpPaths(t)
+	if err := Write(p.ConfigFile, valid()); err != nil {
+		t.Fatal(err)
+	}
+	old := "AJA_AI_API_KEY=k\nAJA_TELEGRAM_BOT_TOKEN=t\nAJA_TELEGRAM_CHAT_ID=42\nAJA_CFG_SEARCH_LOCATION=Lisboa\n" // as aja named them
+	mustWrite(t, p.EnvFile, old)
+	l, err := Load(p, MapEnv(map[string]string{"AJA_AI_API_KEY": "k", "AJA_CFG_SEARCH_SWITCH_NUMBER": "5"}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Secrets != (Secrets{}) || len(l.Overrides) > 0 || l.Config.Search.Location == "Lisboa" || l.Config.Search.SwitchNumber == 5 {
+		t.Errorf("an AJA_ variable was read: secrets set %v, overrides %v", l.Secrets != (Secrets{}), l.Overrides)
+	}
+}
+
 func TestLoadFileIsTheFileAloneWithNoOverrideFromDotenv(t *testing.T) {
 	p := tmpPaths(t)
 	if err := Write(p.ConfigFile, valid()); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, p.EnvFile, "AJA_AI_API_KEY=from-file\nAJA_CFG_SEARCH_LOCATION=Lisboa\n")
+	mustWrite(t, p.EnvFile, "AJAI_AI_API_KEY=from-file\nAJAI_CFG_SEARCH_LOCATION=Lisboa\n")
 	l, err := LoadFile(p)
 	if err != nil || !l.FileExisted {
 		t.Fatal(l, err)
@@ -315,7 +331,7 @@ func TestLoadFileIsTheFileAloneWithNoOverrideFromDotenv(t *testing.T) {
 
 func TestABrokenDotenvIsReportedWithoutItsContent(t *testing.T) {
 	p := tmpPaths(t)
-	mustWrite(t, p.EnvFile, "AJA_AI_API_KEY='sk-SECRET\nAJA_TELEGRAM_BOT_TOKEN=123:ALSO\n")
+	mustWrite(t, p.EnvFile, "AJAI_AI_API_KEY='sk-SECRET\nAJAI_TELEGRAM_BOT_TOKEN=123:ALSO\n")
 	_, err := Load(p, MapEnv(nil), nil)
 	if err == nil || strings.Contains(err.Error(), "SECRET") || strings.Contains(err.Error(), "ALSO") || !strings.Contains(err.Error(), "never shows its content") {
 		t.Errorf("%v", err)
@@ -348,7 +364,7 @@ func TestARetiredKeyStillLoadsWithAWarningAndSetDropsIt(t *testing.T) {
 	data, _ := os.ReadFile(p.ConfigFile)
 	old := strings.Replace(string(data), "settings:\n", "settings:\n  click_gap: 2\n", 1)
 	mustWrite(t, p.ConfigFile, old)
-	mustWrite(t, p.EnvFile, "AJA_CFG_SETTINGS_CLICK_GAP=3\n")
+	mustWrite(t, p.EnvFile, "AJAI_CFG_SETTINGS_CLICK_GAP=3\n")
 	l, err := Load(p, MapEnv(nil), nil)
 	if err != nil {
 		t.Fatalf("an old file must keep loading: %v", err)

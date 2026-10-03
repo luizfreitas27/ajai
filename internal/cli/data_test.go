@@ -43,7 +43,7 @@ func TestImportWritesConfigDatabaseAndResumeWithoutSecrets(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("%s", errText)
 	}
-	for _, want := range []string{"settings mapped", "1 remembered answers imported", "1 applied, 0 external, 1 failed imported", "resume", "AJA_AI_API_KEY=...", "AJA_TELEGRAM_BOT_TOKEN=...", "secrets.password"} {
+	for _, want := range []string{"settings mapped", "1 remembered answers imported", "1 applied, 0 external, 1 failed imported", "resume", "AJAI_AI_API_KEY=...", "AJAI_TELEGRAM_BOT_TOKEN=...", "secrets.password"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}

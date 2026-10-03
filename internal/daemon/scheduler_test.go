@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 type notices struct {
@@ -51,7 +51,7 @@ type world struct {
 func newWorld(t *testing.T, windows ...schedule.Window) *world {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "aja.db"))
+	st, err := store.Open(filepath.Join(dir, "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestAWindowStartsItsRunAndStopsItWhenItCloses(t *testing.T) {
 		reqs[0].Opening != (schedule.Key{WindowID: 1, Date: "2026-10-05"}) {
 		t.Fatalf("%+v", reqs)
 	}
-	if n := w.notes.all(); len(n) != 1 || !strings.Contains(n[0], "aja started a run for schedule window 1: Mon-Fri 09:00-11:00, market brasil, dry run") {
+	if n := w.notes.all(); len(n) != 1 || !strings.Contains(n[0], "ajai started a run for schedule window 1: Mon-Fri 09:00-11:00, market brasil, dry run") {
 		t.Errorf("Telegram says which window: %q", n)
 	}
 	w.at("Mon 10:30")
@@ -196,7 +196,7 @@ func TestAnOpeningDuringAnotherRunIsSkippedRecordedAndNotified(t *testing.T) {
 	if len(w.runs.requests()) != 0 || w.outcome(1, "2026-10-05") != schedule.OutcomeSkipped {
 		t.Fatal("skipped and recorded")
 	}
-	if n := w.notes.all(); len(n) != 1 || !strings.Contains(n[0], "aja skipped schedule window 1 (Mon 09:00-11:00) today: a run started from the terminal") {
+	if n := w.notes.all(); len(n) != 1 || !strings.Contains(n[0], "ajai skipped schedule window 1 (Mon 09:00-11:00) today: a run started from the terminal") {
 		t.Errorf("%q", n)
 	}
 	w.at("Mon 09:30")
@@ -209,7 +209,7 @@ func TestAFailedStartOrACrashIsReportedAndTheNextWindowStillStarts(t *testing.T)
 	w := newWorld(t, window(t, "mon", "09:00", "10:00"), window(t, "mon", "12:00", "13:00"), window(t, "mon", "14:00", "15:00"))
 	w.runs.startErr = errors.New("Chrome was not found")
 	w.at("Mon 09:00")
-	if n := w.notes.all(); len(n) != 1 || !strings.Contains(n[0], "aja could not start the run for schedule window 1") || !strings.Contains(n[0], "Chrome was not found") {
+	if n := w.notes.all(); len(n) != 1 || !strings.Contains(n[0], "ajai could not start the run for schedule window 1") || !strings.Contains(n[0], "Chrome was not found") {
 		t.Errorf("%q", n)
 	}
 	w.runs.startErr = nil

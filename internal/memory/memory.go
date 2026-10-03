@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/store"
-	"github.com/luizfreitas27/aja/internal/textmatch"
+	"github.com/luizfreitas27/ajai/internal/store"
+	"github.com/luizfreitas27/ajai/internal/textmatch"
 )
 
 // Vocabularies, the same strings the Python memory used.
@@ -173,7 +173,7 @@ func (m *Memory) PendingCount() (int, error) { return m.st.CountAnswers("pending
 var ErrUnknownID = errors.New("no remembered answer with that id")
 
 // ErrNothingToApprove: the entry is a question with no answer yet; give it one.
-var ErrNothingToApprove = errors.New("this question has no answer yet; give it one (aja answers edit <id> \"<answer>\")")
+var ErrNothingToApprove = errors.New("this question has no answer yet; give it one (ajai answers edit <id> \"<answer>\")")
 
 // Approve marks an entry approved, optionally replacing its answer first (newAnswer
 // "" keeps it). Approving as-is keeps who gave the answer; a corrected answer is

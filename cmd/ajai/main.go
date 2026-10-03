@@ -1,4 +1,4 @@
-// Command aja applies to LinkedIn Easy Apply jobs from the user's own machine.
+// Command ajai applies to LinkedIn Easy Apply jobs from the user's own machine.
 package main
 
 import (
@@ -8,7 +8,7 @@ import (
 	"runtime/debug"
 	"syscall"
 
-	"github.com/luizfreitas27/aja/internal/cli"
+	"github.com/luizfreitas27/ajai/internal/cli"
 )
 
 // Set by goreleaser through -ldflags at release time.

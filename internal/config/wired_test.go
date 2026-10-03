@@ -23,7 +23,7 @@ var notReadOnPurpose = map[string]string{}
 // only: the importer assigning a field, or the filter cycle overwriting one, is
 // not a use. A read inside a Config method counts where the method is called.
 func TestEverySettingIsReadSomewhere(t *testing.T) {
-	const self = "github.com/luizfreitas27/aja/internal/config"
+	const self = "github.com/luizfreitas27/ajai/internal/config"
 	pcfg := &packages.Config{Mode: packages.NeedName | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax,
 		Dir: "../..", Fset: token.NewFileSet()}
 	pkgs, err := packages.Load(pcfg, "./...")

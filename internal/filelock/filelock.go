@@ -137,7 +137,7 @@ func Held(path string) (bool, error) {
 	return false, nil
 }
 
-// tryLock is flock(2): aja targets Linux only for now.
+// tryLock is flock(2): ajai targets Linux only for now.
 func tryLock(f *os.File) error {
 	err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {

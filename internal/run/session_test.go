@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 func TestTheFilterCycleChangesFiltersBetweenRunsLikeThePythonBot(t *testing.T) {
@@ -120,7 +120,7 @@ func TestCtrlCDuringTheWaitEndsTheSessionAndAnErrorOrHourlyCapNeverRetries(t *te
 	ctx, cancel := context.WithCancel(context.Background())
 	var waiting State
 	r.Sleep = func(context.Context, time.Duration) error {
-		waiting, _ = ReadState(r.StatePath) // what aja status sees during the wait
+		waiting, _ = ReadState(r.StatePath) // what ajai status sees during the wait
 		cancel()
 		return context.Canceled
 	}
@@ -129,7 +129,7 @@ func TestCtrlCDuringTheWaitEndsTheSessionAndAnErrorOrHourlyCapNeverRetries(t *te
 		t.Errorf("%d runs %v", len(sums), err)
 	}
 	if waiting.NextRun.IsZero() || waiting.PID == 0 {
-		t.Errorf("the wait must be visible to aja status: %+v", waiting)
+		t.Errorf("the wait must be visible to ajai status: %+v", waiting)
 	}
 	if _, err := ReadState(r.StatePath); !errors.Is(err, ErrNoState) {
 		t.Error("the waiting state must be removed when the session ends")

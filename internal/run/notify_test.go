@@ -13,9 +13,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/apply"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/apply"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // recorder is a Notifier that keeps every message and the context it was sent with.
@@ -56,8 +56,8 @@ func TestAFinishedRunSendsExactlyOneSummaryMessage(t *testing.T) {
 		t.Fatalf("%d messages: %q", len(rec.messages), rec.messages)
 	}
 	msg := rec.messages[0]
-	for _, want := range []string{"aja: run finished.", "Run: #1 (internacional, live)", "Applied: 1", "External: 0", "Failed: 0",
-		"Skipped: 1", "Pending answers: 1 to review", "Ended: all search terms visited", "aja answers review"} {
+	for _, want := range []string{"ajai: run finished.", "Run: #1 (internacional, live)", "Applied: 1", "External: 0", "Failed: 0",
+		"Skipped: 1", "Pending answers: 1 to review", "Ended: all search terms visited", "ajai answers review"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message lacks %q:\n%s", want, msg)
 		}
@@ -77,7 +77,7 @@ func TestAFatalErrorSendsExactlyOneMessageWithTheErrorAndTheCounts(t *testing.T)
 		t.Fatalf("%d messages: %q", len(rec.messages), rec.messages)
 	}
 	msg := rec.messages[0]
-	if !strings.HasPrefix(msg, "aja stopped with an error.") || !strings.Contains(msg, "the browser window was closed") ||
+	if !strings.HasPrefix(msg, "ajai stopped with an error.") || !strings.Contains(msg, "the browser window was closed") ||
 		!strings.Contains(msg, "Would apply: 0") || strings.Contains(msg, "run finished") || strings.Contains(msg, "Ended:") {
 		t.Errorf("%s", msg)
 	}
@@ -109,7 +109,7 @@ func TestMessagesForADryRunAndAStartFailure(t *testing.T) {
 			t.Errorf("lacks %q:\n%s", want, msg)
 		}
 	}
-	if strings.Contains(msg, "Applied:") || strings.Contains(msg, "aja answers review") {
+	if strings.Contains(msg, "Applied:") || strings.Contains(msg, "ajai answers review") {
 		t.Errorf("%s", msg)
 	}
 	if got := StartFailureMessage(errors.New("your Chrome profile is in use")); !strings.Contains(got, "could not start") || !strings.Contains(got, "profile is in use") {
@@ -145,7 +145,7 @@ func TestRunEndAndFatalErrorEachSendOneMessageOverTheBotAPI(t *testing.T) {
 	if _, err := r.Run(context.Background(), Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(*got) != 1 || !strings.HasPrefix((*got)[0], "aja: run finished.") || !strings.Contains((*got)[0], "Applied: 1") {
+	if len(*got) != 1 || !strings.HasPrefix((*got)[0], "ajai: run finished.") || !strings.Contains((*got)[0], "Applied: 1") {
 		t.Errorf("%q", *got)
 	}
 	failing := &failingSite{fakeSite{jobs: map[string]fakeJob{}, pages: [][]string{{}}}}
@@ -154,7 +154,7 @@ func TestRunEndAndFatalErrorEachSendOneMessageOverTheBotAPI(t *testing.T) {
 	if _, err := r2.Run(context.Background(), Options{DryRun: true}); err == nil {
 		t.Fatal("expected a failure")
 	}
-	if len(*got) != 2 || !strings.HasPrefix((*got)[1], "aja stopped with an error.") {
+	if len(*got) != 2 || !strings.HasPrefix((*got)[1], "ajai stopped with an error.") {
 		t.Errorf("%q", *got)
 	}
 	if strings.Count((*got)[1], "the browser window was closed") != 1 {
@@ -197,7 +197,7 @@ func TestARunThatCannotBeRecordedOrCrashesStillSaysSo(t *testing.T) {
 		}()
 		_, _ = r2.Run(context.Background(), Options{})
 	}()
-	if len(rec2.messages) != 1 || !strings.Contains(rec2.messages[0], "aja crashed: index out of range") {
+	if len(rec2.messages) != 1 || !strings.Contains(rec2.messages[0], "ajai crashed: index out of range") {
 		t.Errorf("%q", rec2.messages)
 	}
 	// Recorded before crashing on: no run left "in progress", no live state left.

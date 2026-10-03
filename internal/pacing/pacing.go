@@ -9,7 +9,7 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 // ErrLimit is returned by Allow when a cap is reached; the message says which.

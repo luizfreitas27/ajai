@@ -15,9 +15,9 @@ var update = flag.Bool("update", false, "rewrite the golden unit files")
 
 func TestTheUnitMatchesItsGoldenFile(t *testing.T) {
 	cases := map[string]Options{
-		"aja.service": {Binary: "/home/u/.local/bin/aja"},
-		"aja-home-config.service": {Binary: "/opt/my apps/aja", ConfigFile: "/home/u/aja 100%/config.yaml",
-			Env: map[string]string{"AJA_HOME": "/home/u/aja 100%", "XDG_DATA_HOME": "/data/u"}},
+		"ajai.service": {Binary: "/home/u/.local/bin/ajai"},
+		"ajai-home-config.service": {Binary: "/opt/my apps/ajai", ConfigFile: "/home/u/ajai 100%/config.yaml",
+			Env: map[string]string{"AJAI_HOME": "/home/u/ajai 100%", "XDG_DATA_HOME": "/data/u"}},
 	}
 	for name, o := range cases {
 		got := Unit(o)
@@ -39,8 +39,8 @@ func TestTheUnitMatchesItsGoldenFile(t *testing.T) {
 
 func TestQuoteForUnitFiles(t *testing.T) {
 	cases := []struct{ in, value, exec string }{
-		{"/usr/bin/aja", "/usr/bin/aja", "/usr/bin/aja"},
-		{"/opt/my apps/aja", `"/opt/my apps/aja"`, `"/opt/my apps/aja"`},
+		{"/usr/bin/ajai", "/usr/bin/ajai", "/usr/bin/ajai"},
+		{"/opt/my apps/ajai", `"/opt/my apps/ajai"`, `"/opt/my apps/ajai"`},
 		{"/a/50%", "/a/50%%", "/a/50%%"},
 		{`/a/"b" c`, `"/a/\"b\" c"`, `"/a/\"b\" c"`},
 		{"/a/$HOME", "/a/$HOME", "/a/$$HOME"},
@@ -85,30 +85,30 @@ func (f *fakeSystemctl) run(args ...string) (string, error) {
 
 func desktop() map[string]string {
 	return map[string]string{"is-active graphical-session.target": "active", "show-environment": "HOME=/home/u\nWAYLAND_DISPLAY=wayland-1",
-		"is-active aja.service": "active", "is-enabled aja.service": "enabled"}
+		"is-active ajai.service": "active", "is-enabled ajai.service": "enabled"}
 }
 
 func TestInstallWritesEnablesStartsAndChecksTheDaemonStaysUp(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "systemd", "user")
 	f := &fakeSystemctl{answers: desktop()}
 	m := Manager{UnitDir: dir, Systemctl: f.run, Settle: time.Millisecond}
-	result, err := m.Install(Options{Binary: "/usr/bin/aja"})
+	result, err := m.Install(Options{Binary: "/usr/bin/ajai"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, "aja.service"))
-	if string(data) != result.Unit || !strings.Contains(result.Unit, "ExecStart=/usr/bin/aja daemon") || !strings.Contains(result.Unit, "KillMode=mixed") {
+	data, _ := os.ReadFile(filepath.Join(dir, "ajai.service"))
+	if string(data) != result.Unit || !strings.Contains(result.Unit, "ExecStart=/usr/bin/ajai daemon") || !strings.Contains(result.Unit, "KillMode=mixed") {
 		t.Errorf("%s", data)
 	}
-	want := []string{"systemctl --user daemon-reload", "systemctl --user enable aja.service", "systemctl --user restart aja.service"}
+	want := []string{"systemctl --user daemon-reload", "systemctl --user enable ajai.service", "systemctl --user restart ajai.service"}
 	if !slices.Equal(result.Commands, want) || !result.Started || len(result.Warnings) != 0 {
 		t.Errorf("%+v", result)
 	}
 	// Again, after the binary moved: the unit is replaced, nothing fails.
-	if _, err := m.Install(Options{Binary: "/home/u/bin/aja"}); err != nil {
+	if _, err := m.Install(Options{Binary: "/home/u/bin/ajai"}); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(dir, "aja.service")); !strings.Contains(string(data), "ExecStart=/home/u/bin/aja daemon") {
+	if data, _ := os.ReadFile(filepath.Join(dir, "ajai.service")); !strings.Contains(string(data), "ExecStart=/home/u/bin/ajai daemon") {
 		t.Errorf("%s", data)
 	}
 }
@@ -119,15 +119,15 @@ func TestInstallOutsideADesktopSessionEnablesButDoesNotStart(t *testing.T) {
 	answers["show-environment"] = "HOME=/home/u"
 	f := &fakeSystemctl{answers: answers}
 	m := Manager{UnitDir: t.TempDir(), Systemctl: f.run, Settle: time.Millisecond}
-	result, err := m.Install(Options{Binary: "/tmp/go-build123/b001/exe/aja"})
+	result, err := m.Install(Options{Binary: "/tmp/go-build123/b001/exe/ajai"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Started || slices.Contains(f.calls, "restart aja.service") {
+	if result.Started || slices.Contains(f.calls, "restart ajai.service") {
 		t.Errorf("not started outside a desktop session: %+v", result)
 	}
 	joined := strings.Join(result.Warnings, "\n")
-	for _, want := range []string{"temporary build", "graphical-session.target", "exec-once = systemctl --user start aja.service", "import-environment WAYLAND_DISPLAY DISPLAY"} {
+	for _, want := range []string{"temporary build", "graphical-session.target", "exec-once = systemctl --user start ajai.service", "import-environment WAYLAND_DISPLAY DISPLAY"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in %q", want, result.Warnings)
 		}
@@ -135,20 +135,20 @@ func TestInstallOutsideADesktopSessionEnablesButDoesNotStart(t *testing.T) {
 }
 
 func TestInstallReportsAFailingCommandOrADaemonThatDoesNotStayUp(t *testing.T) {
-	f := &fakeSystemctl{answers: desktop(), fail: "enable aja.service"}
+	f := &fakeSystemctl{answers: desktop(), fail: "enable ajai.service"}
 	m := Manager{UnitDir: t.TempDir(), Systemctl: f.run, Settle: time.Millisecond}
-	if _, err := m.Install(Options{Binary: "/usr/bin/aja"}); err == nil || !strings.Contains(err.Error(), "systemctl --user enable aja.service: exit status 1: Failed to connect to bus") {
+	if _, err := m.Install(Options{Binary: "/usr/bin/ajai"}); err == nil || !strings.Contains(err.Error(), "systemctl --user enable ajai.service: exit status 1: Failed to connect to bus") {
 		t.Errorf("%v", err)
 	}
-	if slices.Contains(f.calls, "restart aja.service") {
+	if slices.Contains(f.calls, "restart ajai.service") {
 		t.Error("no restart after a failed enable")
 	}
 
 	answers := desktop()
-	answers["is-active aja.service"] = "failed"
+	answers["is-active ajai.service"] = "failed"
 	f = &fakeSystemctl{answers: answers}
 	m.Systemctl = f.run
-	if _, err := m.Install(Options{Binary: "/usr/bin/aja"}); err == nil || !strings.Contains(err.Error(), "journalctl --user -u aja.service") {
+	if _, err := m.Install(Options{Binary: "/usr/bin/ajai"}); err == nil || !strings.Contains(err.Error(), "journalctl --user -u ajai.service") {
 		t.Errorf("%v", err)
 	}
 }
@@ -162,19 +162,19 @@ func TestUninstallAndStatus(t *testing.T) {
 	if _, err := m.Uninstall(); !errors.Is(err, ErrNotInstalled) {
 		t.Errorf("%v", err)
 	}
-	if _, err := m.Install(Options{Binary: "/usr/bin/aja"}); err != nil {
+	if _, err := m.Install(Options{Binary: "/usr/bin/ajai"}); err != nil {
 		t.Fatal(err)
 	}
 	if st := m.Status(); !st.Installed || st.Enabled != "enabled" || st.Active != "active" {
 		t.Errorf("%+v", st)
 	}
-	f.fail = "is-enabled aja.service" // no user bus (ssh, sudo): say so, not stderr as a state
+	f.fail = "is-enabled ajai.service" // no user bus (ssh, sudo): say so, not stderr as a state
 	if st := m.Status(); !strings.HasPrefix(st.Enabled, "unknown (exit status 1: Failed to connect to bus") {
 		t.Errorf("%+v", st)
 	}
 	f.fail, f.calls = "", nil
 	commands, err := m.Uninstall()
-	if err != nil || !slices.Equal(f.calls, []string{"disable --now aja.service", "daemon-reload"}) || len(commands) != 2 {
+	if err != nil || !slices.Equal(f.calls, []string{"disable --now ajai.service", "daemon-reload"}) || len(commands) != 2 {
 		t.Errorf("%v %q %q", err, f.calls, commands)
 	}
 	if _, err := os.Stat(m.UnitPath()); !errors.Is(err, os.ErrNotExist) {
@@ -188,21 +188,21 @@ func TestStartAndStopTheInstalledUnit(t *testing.T) {
 	if _, err := m.Start(); !errors.Is(err, ErrNotInstalled) {
 		t.Errorf("nothing to start: %v", err)
 	}
-	if _, err := m.Install(Options{Binary: "/usr/bin/aja"}); err != nil {
+	if _, err := m.Install(Options{Binary: "/usr/bin/ajai"}); err != nil {
 		t.Fatal(err)
 	}
 	f.calls = nil
-	if ran, err := m.Stop(); err != nil || !slices.Equal(ran, []string{"systemctl --user stop aja.service"}) {
+	if ran, err := m.Stop(); err != nil || !slices.Equal(ran, []string{"systemctl --user stop ajai.service"}) {
 		t.Errorf("%q %v", ran, err)
 	}
-	f.fail = "start aja.service"
-	if _, err := m.Start(); err == nil || !strings.Contains(err.Error(), "systemctl --user start aja.service") {
+	f.fail = "start ajai.service"
+	if _, err := m.Start(); err == nil || !strings.Contains(err.Error(), "systemctl --user start ajai.service") {
 		t.Errorf("the failing command is named: %v", err)
 	}
-	if !slices.Equal(f.calls, []string{"stop aja.service", "start aja.service"}) {
+	if !slices.Equal(f.calls, []string{"stop ajai.service", "start ajai.service"}) {
 		t.Errorf("%q", f.calls)
 	}
-	f.fail, f.answers["is-active aja.service"] = "", "failed" // it starts, then exits
+	f.fail, f.answers["is-active ajai.service"] = "", "failed" // it starts, then exits
 	if _, err := m.Start(); err == nil || !strings.Contains(err.Error(), "did not stay up") {
 		t.Errorf("a daemon that does not stay up is said: %v", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/schedule"
 )
 
 func (h *harness) scheduleTab() { h.t.Helper(); h.press(tabKey(tabSchedule)) }
@@ -38,7 +38,7 @@ func TestAWindowIsAddedInAFormCheckedLikeTheCommand(t *testing.T) {
 		t.Fatalf("%+v", windows)
 	}
 
-	// Refused like `aja schedule add`: a bad time, an overlap.
+	// Refused like `ajai schedule add`: a bad time, an overlap.
 	h.addWindowByForm("9", "10:00")
 	h.shows(`Refused: start: "9" is not a time of day`)
 	h.press("esc")
@@ -113,7 +113,7 @@ func TestTheSelectionStaysOnItsWindowWhenTheListChanges(t *testing.T) {
 	h.open(100, 30)
 	h.scheduleTab()
 	h.selectWindow(2)
-	if _, err := h.st.DeleteWindow(1); err != nil { // `aja schedule rm 1` elsewhere
+	if _, err := h.st.DeleteWindow(1); err != nil { // `ajai schedule rm 1` elsewhere
 		t.Fatal(err)
 	}
 	h.press("1", tabKey(tabSchedule))
@@ -159,7 +159,7 @@ func TestTheListFitsTheSmallestTerminalScrollsAndKeepsUp(t *testing.T) {
 	h.shows("Delete window 20", "y deletes · n keeps") // the last one, in view, its question too
 	h.press("n")
 
-	// `aja schedule add` in another terminal: the tab sees it on the next refresh.
+	// `ajai schedule add` in another terminal: the tab sees it on the next refresh.
 	if _, err := h.st.AddWindow(schedule.Window{Days: []time.Weekday{time.Sunday}, Start: 20 * 60, End: 21 * 60, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}

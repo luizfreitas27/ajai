@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func TestStartOpensAFormAndStartsARunOfItsOwn(t *testing.T) {

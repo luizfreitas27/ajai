@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 // Loaded is the result of building the configuration once for this process.
@@ -29,19 +29,19 @@ type Loaded struct {
 	Warnings []string
 }
 
-// RetiredKeys are settings aja no longer has, with what replaces them. A config
-// file (or an AJA_CFG_ override) that still sets one loads with a warning: an old
-// file must keep working. "aja config set" rewrites the file without them.
+// RetiredKeys are settings ajai no longer has, with what replaces them. A config
+// file (or an AJAI_CFG_ override) that still sets one loads with a warning: an old
+// file must keep working. "ajai config set" rewrites the file without them.
 var RetiredKeys = map[string]string{
 	"settings.click_gap": "the pause between form actions is pacing.between_actions_min_seconds / pacing.between_actions_max_seconds",
 }
 
-// EnvOverridePrefix: AJA_CFG_SEARCH_TERMS sets search.terms. The section is the
+// EnvOverridePrefix: AJAI_CFG_SEARCH_TERMS sets search.terms. The section is the
 // first token; the rest is the key with its underscores kept.
-const EnvOverridePrefix = "AJA_CFG_"
+const EnvOverridePrefix = "AJAI_CFG_"
 
 // Load builds the configuration: defaults, then the YAML file (strict: unknown
-// keys are errors), then AJA_CFG_ environment overrides, then flag overrides,
+// keys are errors), then AJAI_CFG_ environment overrides, then flag overrides,
 // then validation. The .env beside the config is read for secrets and overrides.
 func Load(p paths.Paths, env Env, flags map[string]string) (*Loaded, error) {
 	return load(p, &env, flags)
@@ -65,7 +65,7 @@ func load(p paths.Paths, env *Env, flags map[string]string) (*Loaded, error) {
 			return nil, fmt.Errorf("%s: %w", p.ConfigFile, err)
 		}
 		for _, key := range retired {
-			l.Warnings = append(l.Warnings, fmt.Sprintf("%s is no longer used and was ignored: %s (remove it, or run any `aja config set` to rewrite the file)", key, RetiredKeys[key]))
+			l.Warnings = append(l.Warnings, fmt.Sprintf("%s is no longer used and was ignored: %s (remove it, or run any `ajai config set` to rewrite the file)", key, RetiredKeys[key]))
 		}
 	case errors.Is(err, os.ErrNotExist):
 	default:
@@ -195,8 +195,8 @@ func envOverrides(env Env) map[string]string {
 }
 
 // EnvOverrideName is the variable that overrides key, envKeyToDotted's
-// inverse: search.terms → AJA_CFG_SEARCH_TERMS, markets.brasil.terms →
-// AJA_CFG_MARKETS_BRASIL_TERMS.
+// inverse: search.terms → AJAI_CFG_SEARCH_TERMS, markets.brasil.terms →
+// AJAI_CFG_MARKETS_BRASIL_TERMS.
 func EnvOverrideName(key string) string {
 	return EnvOverridePrefix + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
 }
@@ -207,7 +207,7 @@ func envKeyToDotted(k string) string {
 	if !ok {
 		return ""
 	}
-	// markets has one more level: AJA_CFG_MARKETS_BRASIL_TERMS -> markets.brasil.terms
+	// markets has one more level: AJAI_CFG_MARKETS_BRASIL_TERMS -> markets.brasil.terms
 	if section == "markets" {
 		if sub, k2, ok := strings.Cut(key, "_"); ok && IsValidMarket(sub) {
 			return section + "." + sub + "." + k2

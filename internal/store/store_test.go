@@ -11,7 +11,7 @@ import (
 
 func open(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "sub", "aja.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "sub", "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func open(t *testing.T) *Store {
 }
 
 func TestOpenCreatesTheSchemaAndIsIdempotent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "aja.db")
+	path := filepath.Join(t.TempDir(), "ajai.db")
 	for i := 0; i < 2; i++ {
 		s, err := Open(path)
 		if err != nil {

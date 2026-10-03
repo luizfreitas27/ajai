@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // Bot is the Telegram side: notify.Telegram.
@@ -99,7 +99,7 @@ func sleep(ctx context.Context, d time.Duration) error {
 func (l *Listener) Loop(ctx context.Context) {
 	defer l.wg.Wait()
 	if _, err := strconv.ParseInt(l.bot.ChatID(), 10, 64); err != nil {
-		l.logger.Error("remote commands are off: AJA_TELEGRAM_CHAT_ID must be the numeric id of your chat with the bot")
+		l.logger.Error("remote commands are off: AJAI_TELEGRAM_CHAT_ID must be the numeric id of your chat with the bot")
 		return
 	}
 	offset := l.loadOffset()
@@ -121,8 +121,8 @@ func (l *Listener) Loop(ctx context.Context) {
 				if !conflictSaid {
 					conflictSaid = true
 					l.logger.Error("remote commands: Telegram hands the bot's messages to someone else; retrying", "description", apiErr.Description)
-					l.reply(ctx, "aja cannot read your commands: "+apiErr.Description+
-						". Remove the bot's webhook (deleteWebhook), or stop the other program (another aja daemon?) reading this bot.")
+					l.reply(ctx, "ajai cannot read your commands: "+apiErr.Description+
+						". Remove the bot's webhook (deleteWebhook), or stop the other program (another ajai daemon?) reading this bot.")
 				}
 			case !failing:
 				l.logger.Warn("remote commands: cannot reach Telegram; retrying", "error", err)
@@ -202,7 +202,7 @@ func (l *Listener) guard(ctx context.Context, what string, act func()) {
 	defer func() {
 		if p := recover(); p != nil {
 			l.logger.Error("remote command crashed", "command", what, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
-			l.reply(ctx, "aja hit a bug handling "+what+"; it is in the daemon's log.")
+			l.reply(ctx, "ajai hit a bug handling "+what+"; it is in the daemon's log.")
 		}
 	}()
 	act()
@@ -213,7 +213,7 @@ func (l *Listener) command(ctx context.Context, name string, args []string, sent
 	l.logger.Info("remote command", "command", name)
 	acts := name == "run" || name == "stop"
 	if acts && backlog && l.now().Sub(sent) > MaxAge {
-		l.reply(ctx, "Not acting on /"+name+" sent at "+sent.Local().Format("15:04")+": aja was not listening then. Send it again.")
+		l.reply(ctx, "Not acting on /"+name+" sent at "+sent.Local().Format("15:04")+": ajai was not listening then. Send it again.")
 		return
 	}
 	switch name {
@@ -240,12 +240,12 @@ func (l *Listener) fromChat(chat int64) bool {
 	}
 	if !l.ignored[chat] {
 		l.ignored[chat] = true
-		l.logger.Warn("ignoring Telegram messages from a chat that is not AJA_TELEGRAM_CHAT_ID", "chat", chat)
+		l.logger.Warn("ignoring Telegram messages from a chat that is not AJAI_TELEGRAM_CHAT_ID", "chat", chat)
 	}
 	return false
 }
 
-// parse reads "/run@aja_bot brasil dry" as "run", ["brasil", "dry"]; text that
+// parse reads "/run@ajai_bot brasil dry" as "run", ["brasil", "dry"]; text that
 // is not a command gives "".
 func parse(text string) (string, []string) {
 	fields := strings.Fields(strings.TrimSpace(text))

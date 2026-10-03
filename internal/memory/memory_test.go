@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func fresh(t *testing.T) (*Memory, *bytes.Buffer) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 const pyUserConfig = `{
@@ -65,7 +65,7 @@ func setup(t *testing.T) (paths.Paths, *store.Store) {
 	t.Helper()
 	home := t.TempDir()
 	p := paths.Resolve("", func(k string) string {
-		if k == "AJA_HOME" {
+		if k == "AJAI_HOME" {
 			return home
 		}
 		return ""
@@ -127,7 +127,7 @@ func TestImportMapsTheConfigAndNeverCopiesSecrets(t *testing.T) {
 		{"settings.safe_mode", "chrome_profile_dir"},
 		{"secrets.username", "never logs in"},
 		{"secrets.password", "never logs in"},
-		{"settings.mystery", "no aja counterpart"},
+		{"settings.mystery", "no ajai counterpart"},
 	}
 	for _, tc := range unmappedCases {
 		if why, ok := rep.Unmapped[tc.key]; !ok || !strings.Contains(why, tc.wantWhy) {
@@ -193,14 +193,14 @@ func TestImportBringsAnswersAndJobsAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestAjaSideChangesSurviveAReimport(t *testing.T) {
+func TestAjaiSideChangesSurviveAReimport(t *testing.T) {
 	src := pythonCheckout(t)
 	p, st := setup(t)
 	cfg := config.Defaults()
 	if _, err := Run(src, &cfg, st, p); err != nil {
 		t.Fatal(err)
 	}
-	// The user approves the pending checkbox in aja, later than the Python file.
+	// The user approves the pending checkbox in ajai, later than the Python file.
 	a, _ := st.FindAnswer("checkbox", "i consent to a background check")
 	a.State, a.Source, a.Uses, a.UpdatedAt = "approved", "user", 9, "2026-12-01T00:00:00Z"
 	if err := st.UpsertAnswer(*a); err != nil {
@@ -211,7 +211,7 @@ func TestAjaSideChangesSurviveAReimport(t *testing.T) {
 	}
 	after, _ := st.FindAnswer("checkbox", "i consent to a background check")
 	if after.State != "approved" || after.Uses != 9 {
-		t.Errorf("re-import undid aja's approval: %+v", after)
+		t.Errorf("re-import undid ajai's approval: %+v", after)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 // initAnswers is what the wizard or the flags collect, as text; the config
@@ -33,7 +33,7 @@ func (a *App) initCmd() *cobra.Command {
 		Long: `Writes a commented config.yaml with the essential settings. On a terminal with no
 flags it asks interactively; with flags it writes without asking, which suits scripts
 and tests. Every other setting starts at its documented default; edit the file or use
-"aja config set". Secrets are not asked for: put them in the .env file the command
+"ajai config set". Secrets are not asked for: put them in the .env file the command
 points you to.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,7 +72,7 @@ points you to.`,
 			a.ui.Title("Next steps")
 			a.ui.Hint("1. Put your resume at " + a.paths.ResumeDir + "/" + cfg.Questions.Resume + " (or set questions.resume to an absolute path).")
 			a.ui.Hint("2. Secrets go in " + a.paths.EnvFile + " as " + strings.Join(config.SecretEnvNames, ", ") + " (only the ones you use).")
-			a.ui.Hint("3. Run `aja doctor`, then `aja run --dry-run`.")
+			a.ui.Hint("3. Run `ajai doctor`, then `ajai run --dry-run`.")
 			return nil
 		},
 	}

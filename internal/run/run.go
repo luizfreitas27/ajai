@@ -14,15 +14,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/apply"
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/pacing"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/screening"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/apply"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/screening"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // Site is the slice of the LinkedIn session the loop needs.
@@ -121,7 +121,7 @@ type Summary struct {
 	Failed     int    `json:"failed"`
 	Skipped    int    `json:"skipped"`
 	WouldApply int    `json:"would_apply"`
-	// Captured counts answers the user typed during help pauses and aja remembered.
+	// Captured counts answers the user typed during help pauses and ajai remembered.
 	Captured int `json:"captured"`
 	// PendingAnswers is the review queue's size when the run ended.
 	PendingAnswers int `json:"pending_answers"`
@@ -274,7 +274,7 @@ func (r *Runner) record(sum *Summary) {
 type Crash struct{ Value any }
 
 // Error says the run crashed, with what.
-func (c *Crash) Error() string { return fmt.Sprintf("aja crashed: %v", c.Value) }
+func (c *Crash) Error() string { return fmt.Sprintf("ajai crashed: %v", c.Value) }
 
 func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	r.defaults()
@@ -292,7 +292,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	r.saveState(&sum, "")
 
 	err = r.Site.EnsureLoggedIn(ctx, r.LoginTimeout, func() {
-		r.emit(EventLogin, "Sign in to LinkedIn in the Chrome window; aja continues when the feed appears.", nil)
+		r.emit(EventLogin, "Sign in to LinkedIn in the Chrome window; ajai continues when the feed appears.", nil)
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -525,7 +525,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		row.Outcome, row.Reason = store.Skipped, "unanswered questions: "+strings.Join(outcome.Blocked, " | ")
 		text := row.Reason
 		if outcome.Queued > 0 {
-			text += fmt.Sprintf(" (%d added to the review queue: aja answers review)", outcome.Queued)
+			text += fmt.Sprintf(" (%d added to the review queue: ajai answers review)", outcome.Queued)
 		}
 		r.emit(EventSkip, text, &c)
 	case apply.Stopped:

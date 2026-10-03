@@ -8,9 +8,9 @@ package apply
 import (
 	"strings"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/questions"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/questions"
 )
 
 // Control is one form control with the DOM handles needed to act on it.

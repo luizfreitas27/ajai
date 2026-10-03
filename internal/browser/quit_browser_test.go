@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/chrome"
-	"github.com/luizfreitas27/aja/internal/procs"
+	"github.com/luizfreitas27/ajai/internal/chrome"
+	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
-// TestCloseQuitsChromeOnAjasOwnProfileAndKeepsTheProfile drives a real headless
+// TestCloseQuitsChromeOnTheAjaiProfileAndKeepsTheProfile drives a real headless
 // Chrome: with QuitOnClose, Close ends the Chrome process, the profile survives
 // (with what the page stored) and is free for the next run at once.
-func TestCloseQuitsChromeOnAjasOwnProfileAndKeepsTheProfile(t *testing.T) {
+func TestCloseQuitsChromeOnTheAjaiProfileAndKeepsTheProfile(t *testing.T) {
 	bin, err := chrome.Find("")
 	if err != nil {
 		t.Skip("no Chrome on this machine:", err)
@@ -41,7 +41,7 @@ func TestCloseQuitsChromeOnAjasOwnProfileAndKeepsTheProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if procs.Alive(pid) {
-		t.Error("Close must end Chrome on the aja profile")
+		t.Error("Close must end Chrome on the ajai profile")
 	}
 	if time.Since(start) > 10*time.Second {
 		t.Errorf("Chrome took %s to quit", time.Since(start))

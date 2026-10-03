@@ -1,4 +1,4 @@
-# aja
+# ajai
 
 A command-line tool that searches LinkedIn for jobs matching the user's criteria and submits Easy Apply applications on their behalf from the user's own Chrome, optionally drafting answers with an AI model. Everything runs on the user's machine with the user's own account.
 
@@ -81,7 +81,7 @@ Whether a remembered answer is **pending** (not yet confirmed by the user) or **
 _Avoid_: status, verified, confirmed
 
 **Review queue**:
-The list of pending remembered answers the user works through, approving, correcting or deleting each one, in the terminal (`aja answers review`) or from Telegram. It also holds the questions nothing could answer, waiting for the user's answer.
+The list of pending remembered answers the user works through, approving, correcting or deleting each one, in the terminal (`ajai answers review`) or from Telegram. It also holds the questions nothing could answer, waiting for the user's answer.
 _Avoid_: inbox, backlog, pending list
 
 **Help pause**:
@@ -119,7 +119,7 @@ The part of the daemon that watches the clock and starts and stops runs for the 
 _Avoid_: cron job, timer, background worker
 
 **Daemon**:
-The long-lived `aja daemon` process, usually started by a systemd user unit with the user's desktop session (`aja daemon install`), that hosts the scheduler and the remote commands and runs their runs itself.
+The long-lived `ajai daemon` process, usually started by a systemd user unit with the user's desktop session (`ajai daemon install`), that hosts the scheduler and the remote commands and runs their runs itself.
 _Avoid_: server, service, agent, background mode
 
 **Remote command**:
@@ -127,11 +127,11 @@ A Telegram message from the configured chat that the daemon acts on: show the st
 _Avoid_: bot command, webhook, chat command
 
 **TUI**:
-The full-screen terminal interface `aja` opens when started with no command in a real terminal. Its tabs: the Dashboard (the run in progress, the last runs, the next opening, the daemon, the log), the review queue and approved answers, the schedule windows and the daemon, the job history and the configuration; and a setup checklist when something needed to run is missing. A run it starts runs in a process of its own, unattended, so closing the TUI never ends it.
+The full-screen terminal interface `ajai` opens when started with no command in a real terminal. Its tabs: the Dashboard (the run in progress, the last runs, the next opening, the daemon, the log), the review queue and approved answers, the schedule windows and the daemon, the job history and the configuration; and a setup checklist when something needed to run is missing. A run it starts runs in a process of its own, unattended, so closing the TUI never ends it.
 _Avoid_: console, panel, control panel; "dashboard" for the TUI as a whole (the Dashboard is its first tab)
 
 **Stop request**:
-A request, from `aja stop`, the TUI, a remote command or a schedule window closing, that the run in progress end cleanly, as if the user had pressed Ctrl-C at its terminal. Honoured by any run on the machine; the run records the request's reason.
+A request, from `ajai stop`, the TUI, a remote command or a schedule window closing, that the run in progress end cleanly, as if the user had pressed Ctrl-C at its terminal. Honoured by any run on the machine; the run records the request's reason.
 _Avoid_: kill, abort, cancel
 
 **Run summary**:
@@ -141,11 +141,11 @@ _Avoid_: report, stats, results
 ### Running the tool
 
 **Chrome profile**:
-The Chrome user-data directory the tool drives, where the LinkedIn session lives. By default the **aja profile**, one the tool owns, so the user's everyday Chrome stays free during runs; it can point at the user's own profile instead. The tool never logs in with a password; the user signs in once in that profile (`aja login`).
+The Chrome user-data directory the tool drives, where the LinkedIn session lives. By default the **ajai profile**, one the tool owns, so the user's everyday Chrome stays free during runs; it can point at the user's own profile instead. The tool never logs in with a password; the user signs in once in that profile (`ajai login`).
 _Avoid_: safe mode, guest mode, incognito, session cookie
 
 **Import**:
-The one-time copy of settings, answer memory and job history from a Python Auto_job_applier_linkedIn checkout into `aja`. Never copies secrets.
+The one-time copy of settings, answer memory and job history from a Python Auto_job_applier_linkedIn checkout into `ajai`. Never copies secrets.
 _Avoid_: migration, sync, upgrade
 
 **Blacklist**:

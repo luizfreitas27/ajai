@@ -10,22 +10,22 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/doctor"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/doctor"
 )
 
 // doctorEvery: the checks run again this often while the TUI is open, so a
-// change made elsewhere (`aja login` in another terminal) shows.
+// change made elsewhere (`ajai login` in another terminal) shows.
 const doctorEvery = 30 // refreshes, one a second
 
-// checklist is the setup checklist: `aja doctor`'s checks, each with what
+// checklist is the setup checklist: `ajai doctor`'s checks, each with what
 // fixes it. It opens by itself when something a run needs is missing, and
 // with s from the Dashboard.
 type checklist struct {
 	loaded       bool
 	report       doctor.Report
 	noConfig     bool // no config file: only the checklist and the Config tab make sense
-	dotenvBroken bool // aja's .env cannot be read
+	dotenvBroken bool // ajai's .env cannot be read
 	cursor       int
 	importing    *textinput.Model // the Python checkout's path being typed
 	notice       notice
@@ -36,8 +36,8 @@ type fix int
 
 const (
 	noFix        fix = iota
-	fixInit          // aja init in the terminal
-	fixLogin         // aja login in the terminal
+	fixInit          // ajai init in the terminal
+	fixLogin         // ajai login in the terminal
 	fixConfigTab     // a setting or a secret, in the Config tab
 )
 
@@ -52,7 +52,7 @@ type checkAgainMsg struct{}
 
 func checkAgain() tea.Msg { return checkAgainMsg{} }
 
-// subcommandDoneMsg: an aja subcommand run in the terminal has ended.
+// subcommandDoneMsg: an ajai subcommand run in the terminal has ended.
 type subcommandDoneMsg struct {
 	args []string
 	err  error
@@ -61,7 +61,7 @@ type subcommandDoneMsg struct {
 // openConfigMsg asks for the Config tab.
 type openConfigMsg struct{}
 
-// runDoctor runs `aja doctor`'s checks, which take a moment (Chrome's version,
+// runDoctor runs `ajai doctor`'s checks, which take a moment (Chrome's version,
 // the profile's cookies), away from the screen. Model.checkAgain keeps them
 // from overlapping.
 func runDoctor(d Deps) tea.Cmd {
@@ -80,7 +80,7 @@ func runDoctor(d Deps) tea.Cmd {
 	}
 }
 
-// runInTerminal runs the aja subcommand args in the terminal.
+// runInTerminal runs the ajai subcommand args in the terminal.
 func runInTerminal(d Deps, args ...string) tea.Cmd {
 	return d.Launcher.InTerminal(args, func(err error) tea.Msg { return subcommandDoneMsg{args: args, err: err} })
 }
@@ -103,13 +103,13 @@ func (v checklist) fixFor(c doctor.Check, d Deps) (fix, string) {
 	}
 	switch {
 	case c.Name == doctor.CheckConfig && v.dotenvBroken:
-		return noFix, "fix " + d.tilde(d.Paths.EnvFile) + " in an editor (aja never shows its content)"
+		return noFix, "fix " + d.tilde(d.Paths.EnvFile) + " in an editor (ajai never shows its content)"
 	case c.Name == doctor.CheckConfig && v.noConfig:
-		return fixInit, "create the config with the init wizard (`aja init`)"
+		return fixInit, "create the config with the init wizard (`ajai init`)"
 	case c.Name == doctor.CheckConfig:
 		return fixConfigTab, "fix it in the Config tab"
 	case c.Name == doctor.CheckChromeProfile:
-		return fixLogin, "sign in to LinkedIn once (`aja login` opens Chrome)"
+		return fixLogin, "sign in to LinkedIn once (`ajai login` opens Chrome)"
 	case c.Name == doctor.CheckAI || c.Name == doctor.CheckTelegram:
 		return fixConfigTab, "set the secrets (or the AI settings) in the Config tab"
 	case doctor.IsResume(c.Name):
@@ -124,9 +124,9 @@ func (v checklist) update(msg tea.Msg, d Deps) (checklist, tea.Cmd) {
 		v.loaded, v.report, v.noConfig, v.dotenvBroken = true, msg.report, msg.noConfig, msg.dotenvBroken
 		v.cursor = max(0, min(v.cursor, len(v.report.Checks)-1))
 	case subcommandDoneMsg:
-		v.notice = notice{text: "`aja " + msg.args[0] + "` ended; checked again."}
+		v.notice = notice{text: "`ajai " + msg.args[0] + "` ended; checked again."}
 		if msg.err != nil {
-			v.notice = notice{text: fmt.Sprintf("`aja %s` ended with an error (%v); checked again.", msg.args[0], msg.err), level: levelWarn}
+			v.notice = notice{text: fmt.Sprintf("`ajai %s` ended with an error (%v); checked again.", msg.args[0], msg.err), level: levelWarn}
 		}
 		return v, checkAgain
 	case tea.KeyMsg:
@@ -224,7 +224,7 @@ func (v checklist) summary() notice {
 }
 
 func (v checklist) view(s styles, d Deps, width int) string {
-	lines := []string{s.section.Render("Setup checklist") + "  " + s.dim.Render("what a run needs, as `aja doctor` checks it")}
+	lines := []string{s.section.Render("Setup checklist") + "  " + s.dim.Render("what a run needs, as `ajai doctor` checks it")}
 	if v.notice.text != "" {
 		lines = append(lines, s.byLevel(v.notice.level).Render(v.notice.text))
 	}

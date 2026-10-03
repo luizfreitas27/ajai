@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 var offered = []string{"visa sponsorship available", "sponsorship available", "sponsorship is available",

@@ -13,17 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
-// harness runs aja with AJA_HOME pointing at a temp dir and a fake environment.
+// harness runs ajai with AJAI_HOME pointing at a temp dir and a fake environment.
 type harness struct {
 	home  string
 	env   map[string]string
 	stdin string    // typed into the next command
 	now   time.Time // the clock commands see; zero: the real one
 	t     *testing.T
-	mu    sync.Mutex // a long-running command (aja daemon) may run beside others
+	mu    sync.Mutex // a long-running command (ajai daemon) may run beside others
 }
 
 func newHarness(t *testing.T) *harness {
@@ -44,7 +44,7 @@ func (h *harness) run(args ...string) (int, string, string) {
 func (h *harness) runCtx(ctx context.Context, args ...string) (int, string, string) {
 	h.t.Helper()
 	h.mu.Lock()
-	env := map[string]string{"AJA_HOME": h.home, "NO_COLOR": "1"}
+	env := map[string]string{"AJAI_HOME": h.home, "NO_COLOR": "1"}
 	for k, v := range h.env {
 		env[k] = v
 	}
@@ -76,7 +76,7 @@ func (h *harness) initValid() {
 
 func TestVersion(t *testing.T) {
 	_, out, _ := newHarness(t).run("version")
-	if !strings.HasPrefix(strings.TrimSpace(out), "aja test "+runtime.GOOS+"/"+runtime.GOARCH) {
+	if !strings.HasPrefix(strings.TrimSpace(out), "ajai test "+runtime.GOOS+"/"+runtime.GOARCH) {
 		t.Errorf("got %q", out)
 	}
 }
@@ -101,7 +101,7 @@ func TestResolveVersionPrefersTheReleaseTagThenTheModuleVersion(t *testing.T) {
 	}
 }
 
-func TestInitWritesACommentedValidFileUnderAJAHome(t *testing.T) {
+func TestInitWritesACommentedValidFileUnderAJAIHome(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
 	text, err := os.ReadFile(filepath.Join(h.home, "config.yaml"))
@@ -162,7 +162,7 @@ func TestConfigSetGetAndRejection(t *testing.T) {
 	}
 	// Comments survive a set.
 	text, _ := os.ReadFile(filepath.Join(h.home, "config.yaml"))
-	if !strings.Contains(string(text), "# aja configuration.") {
+	if !strings.Contains(string(text), "# ajai configuration.") {
 		t.Error("comments lost after set")
 	}
 	// Negative numbers are values, not flags.
@@ -177,7 +177,7 @@ func TestCommandsThatWriteLeaveAStructuredLogLine(t *testing.T) {
 	h.initValid()
 	h.run("config", "set", "search.switch_number", "4")
 	entries, err := os.ReadDir(filepath.Join(h.home, "logs"))
-	if err != nil || len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "aja-") {
+	if err != nil || len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "ajai-") {
 		t.Fatalf("log dir: %v %v", entries, err)
 	}
 	text, _ := os.ReadFile(filepath.Join(h.home, "logs", entries[0].Name()))
@@ -203,12 +203,12 @@ func TestInitPacingFlagsReachTheConfig(t *testing.T) {
 func TestSecretsComeOnlyFromEnvAndAreMaskedInShow(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
-	h.write(".env", "AJA_AI_API_KEY=sk-secret-value\n")
+	h.write(".env", "AJAI_AI_API_KEY=sk-secret-value\n")
 	_, out, _ := h.run("config", "show")
 	if strings.Contains(out, "sk-secret-value") {
 		t.Error("secret leaked in show")
 	}
-	if !strings.Contains(out, "AJA_AI_API_KEY") || !strings.Contains(out, config.Mask+" (set)") || !strings.Contains(out, "AJA_TELEGRAM_BOT_TOKEN") || !strings.Contains(out, "not set") {
+	if !strings.Contains(out, "AJAI_AI_API_KEY") || !strings.Contains(out, config.Mask+" (set)") || !strings.Contains(out, "AJAI_TELEGRAM_BOT_TOKEN") || !strings.Contains(out, "not set") {
 		t.Errorf("show:\n%s", out)
 	}
 	// A secret in the YAML is refused.
@@ -222,7 +222,7 @@ func TestSecretsComeOnlyFromEnvAndAreMaskedInShow(t *testing.T) {
 func TestConfigSetNeverWritesAnOverrideFromDotenv(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
-	h.write(".env", "AJA_CFG_SEARCH_LOCATION=Lisboa\n")
+	h.write(".env", "AJAI_CFG_SEARCH_LOCATION=Lisboa\n")
 	if code, _, errText := h.run("config", "set", "search.terms", "Go"); code != 0 {
 		t.Fatal(errText)
 	}
@@ -250,7 +250,7 @@ func TestConfigValidateListsEveryProblemWithExitCodeOne(t *testing.T) {
 func TestEnvironmentOverridesApplyAtRuntimeButSetWritesTheFile(t *testing.T) {
 	h := newHarness(t)
 	h.initValid()
-	h.env["AJA_CFG_SEARCH_LOCATION"] = "Lisboa"
+	h.env["AJAI_CFG_SEARCH_LOCATION"] = "Lisboa"
 	if _, out, _ := h.run("config", "get", "search.location"); strings.TrimSpace(out) != "Lisboa" {
 		t.Errorf("override not applied: %q", out)
 	}
@@ -265,10 +265,10 @@ func TestEnvironmentOverridesApplyAtRuntimeButSetWritesTheFile(t *testing.T) {
 	}
 }
 
-func TestDoctorFailsWithoutAConfigAndListsPathsUnderAJAHome(t *testing.T) {
+func TestDoctorFailsWithoutAConfigAndListsPathsUnderAJAIHome(t *testing.T) {
 	h := newHarness(t)
 	code, out, _ := h.run("doctor")
-	if code != 1 || !strings.Contains(out, "FAIL  config") || !strings.Contains(out, "run `aja init`") {
+	if code != 1 || !strings.Contains(out, "FAIL  config") || !strings.Contains(out, "run `ajai init`") {
 		t.Errorf("doctor without config: %d\n%s", code, out)
 	}
 	for _, label := range []string{"config", "database", "logs", "screenshots", "resumes"} {
@@ -277,7 +277,7 @@ func TestDoctorFailsWithoutAConfigAndListsPathsUnderAJAHome(t *testing.T) {
 		}
 	}
 	if strings.Count(out, h.home) < 6 {
-		t.Errorf("paths should all be under AJA_HOME:\n%s", out)
+		t.Errorf("paths should all be under AJAI_HOME:\n%s", out)
 	}
 	for _, name := range config.SecretEnvNames {
 		if !strings.Contains(out, name) {
@@ -288,8 +288,8 @@ func TestDoctorFailsWithoutAConfigAndListsPathsUnderAJAHome(t *testing.T) {
 
 func TestConfigPathHonoursTheFlag(t *testing.T) {
 	h := newHarness(t)
-	_, out, _ := h.run("--config", "/etc/aja/x.yaml", "config", "path")
-	if strings.TrimSpace(out) != "/etc/aja/x.yaml" {
+	_, out, _ := h.run("--config", "/etc/ajai/x.yaml", "config", "path")
+	if strings.TrimSpace(out) != "/etc/ajai/x.yaml" {
 		t.Errorf("got %q", out)
 	}
 }

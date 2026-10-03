@@ -1,6 +1,6 @@
-// Package service installs `aja daemon` as a systemd user unit tied to the
+// Package service installs `ajai daemon` as a systemd user unit tied to the
 // desktop session, so it starts at login and the Chrome it opens is visible.
-// aja targets Linux only for now; systemd is the only service manager.
+// ajai targets Linux only for now; systemd is the only service manager.
 package service
 
 import (
@@ -15,17 +15,17 @@ import (
 )
 
 // UnitName is the unit's name.
-const UnitName = "aja.service"
+const UnitName = "ajai.service"
 
-// ExitAlreadyRunning is the exit status of `aja daemon` when another daemon
+// ExitAlreadyRunning is the exit status of `ajai daemon` when another daemon
 // runs; the unit does not restart on it (RestartPreventExitStatus).
 const ExitAlreadyRunning = 3
 
 // Options are what the unit runs.
 type Options struct {
-	Binary     string            // absolute path of the aja binary
+	Binary     string            // absolute path of the ajai binary
 	ConfigFile string            // --config, "" for the default location
-	Env        map[string]string // AJA_HOME, XDG_CONFIG_HOME, XDG_DATA_HOME as the installing shell has them
+	Env        map[string]string // AJAI_HOME, XDG_CONFIG_HOME, XDG_DATA_HOME as the installing shell has them
 }
 
 // Unit is the systemd unit for o.
@@ -43,10 +43,10 @@ func Unit(o Options) string {
 	for _, k := range keys {
 		env.WriteString("Environment=" + quote(k+"="+o.Env[k]) + "\n")
 	}
-	return `# Written by aja daemon install; aja daemon uninstall removes it.
+	return `# Written by ajai daemon install; ajai daemon uninstall removes it.
 [Unit]
-Description=aja: applies to LinkedIn jobs on your schedule windows
-Documentation=https://github.com/luizfreitas27/aja
+Description=ajai: applies to LinkedIn jobs on your schedule windows
+Documentation=https://github.com/luizfreitas27/ajai
 # The Chrome window the runs open needs the desktop session.
 PartOf=graphical-session.target
 After=graphical-session.target
@@ -61,7 +61,7 @@ KillMode=mixed
 TimeoutStopSec=3min
 Restart=on-failure
 RestartSec=30
-# Another aja daemon already runs: retrying would not help.
+# Another ajai daemon already runs: retrying would not help.
 RestartPreventExitStatus=` + fmt.Sprint(ExitAlreadyRunning) + `
 
 [Install]
@@ -148,7 +148,7 @@ type Installed struct {
 func (m Manager) Install(o Options) (Installed, error) {
 	result := Installed{Path: m.UnitPath(), Unit: Unit(o)}
 	if strings.Contains(o.Binary, "/go-build") {
-		result.Warnings = append(result.Warnings, o.Binary+" is a temporary build (go run): install aja itself first, or the unit will point at a file that disappears")
+		result.Warnings = append(result.Warnings, o.Binary+" is a temporary build (go run): install ajai itself first, or the unit will point at a file that disappears")
 	}
 	if err := os.MkdirAll(m.UnitDir, 0o755); err != nil {
 		return result, err
@@ -210,7 +210,7 @@ func hasDisplay(env string) bool {
 }
 
 // ErrNotInstalled: there is no unit to remove.
-var ErrNotInstalled = errors.New("the aja unit is not installed")
+var ErrNotInstalled = errors.New("the ajai unit is not installed")
 
 // Uninstall stops and disables the unit and removes it.
 func (m Manager) Uninstall() ([]string, error) {
@@ -233,7 +233,7 @@ func (m Manager) Uninstall() ([]string, error) {
 func (m Manager) Start() ([]string, error) {
 	ran, err := m.installedCommand("start")
 	if err == nil && !m.staysUp() {
-		err = errors.New("the daemon did not stay up; see journalctl --user -u aja.service")
+		err = errors.New("the daemon did not stay up; see journalctl --user -u ajai.service")
 	}
 	return ran, err
 }

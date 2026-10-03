@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/importer"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/importer"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // openStore opens the database in the data directory and arranges for it to be closed.
@@ -67,7 +67,7 @@ func (a *App) printImportReport(rep *importer.Report) {
 	default:
 		a.ui.OK("config", fmt.Sprintf("%d settings mapped into %s", len(rep.Mapped), a.paths.ConfigFile))
 	}
-	a.ui.OK("answers", fmt.Sprintf("%d remembered answers imported, %d kept (aja's copy is newer)", rep.Answers, rep.AnswersKept))
+	a.ui.OK("answers", fmt.Sprintf("%d remembered answers imported, %d kept (ajai's copy is newer)", rep.Answers, rep.AnswersKept))
 	a.ui.OK("jobs", fmt.Sprintf("%d applied, %d external, %d failed imported, %d kept (already recorded)", rep.Applied, rep.External, rep.Failed, rep.JobsKept))
 	switch {
 	case rep.ResumeCopied != "":

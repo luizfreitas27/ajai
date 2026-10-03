@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
 // fakeRuns is a Starter that takes the real run lock, as launch does, and runs

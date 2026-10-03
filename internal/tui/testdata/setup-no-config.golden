@@ -1,14 +1,14 @@
-aja   Setup   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
+ajai   Setup   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-Setup checklist  what a run needs, as `aja doctor` checks it
+Setup checklist  what a run needs, as `ajai doctor` checks it
 
-> ✗ config          no config file at ~/config.yaml; run `aja init`
+> ✗ config          no config file at ~/config.yaml; run `ajai init`
   ✓ chrome          Chromium 152 (/usr/bin/chromium)
-  ✓ chrome profile  ~/chrome-profile (the aja profile), signed in to LinkedIn
+  ✓ chrome profile  ~/chrome-profile (the ajai profile), signed in to LinkedIn
   ✓ data dir        ~
 
-config: no config file at ~/config.yaml; run `aja init`
-Enter: create the config with the init wizard (`aja init`)
+config: no config file at ~/config.yaml; run `ajai init`
+Enter: create the config with the init wizard (`ajai init`)
 
 i  import settings, answers and history from the Python bot
 r  check again

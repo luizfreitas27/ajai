@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // seed puts entries in the harness database.
 func (h *harness) seed(entries ...store.Answer) {
 	h.t.Helper()
 	h.initValid()
-	st, err := store.Open(filepath.Join(h.home, "aja.db"))
+	st, err := store.Open(filepath.Join(h.home, "ajai.db"))
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func (h *harness) seed(entries ...store.Answer) {
 
 func (h *harness) memory() *memory.Memory {
 	h.t.Helper()
-	st, err := store.Open(filepath.Join(h.home, "aja.db"))
+	st, err := store.Open(filepath.Join(h.home, "ajai.db"))
 	if err != nil {
 		h.t.Fatal(err)
 	}

@@ -19,9 +19,9 @@ type Secrets struct {
 
 // Secret environment variable names.
 const (
-	EnvAIAPIKey         = "AJA_AI_API_KEY"
-	EnvTelegramBotToken = "AJA_TELEGRAM_BOT_TOKEN"
-	EnvTelegramChatID   = "AJA_TELEGRAM_CHAT_ID"
+	EnvAIAPIKey         = "AJAI_AI_API_KEY"
+	EnvTelegramBotToken = "AJAI_TELEGRAM_BOT_TOKEN"
+	EnvTelegramChatID   = "AJAI_TELEGRAM_CHAT_ID"
 )
 
 // SecretEnvNames lists every secret variable, for doctor and import to print.
@@ -31,7 +31,7 @@ var SecretEnvNames = []string{EnvAIAPIKey, EnvTelegramBotToken, EnvTelegramChatI
 var SecretDocs = map[string]string{
 	EnvAIAPIKey:         "The AI provider's API key, used when ai.enabled is true and the provider needs one.",
 	EnvTelegramBotToken: "The token @BotFather gave your bot: run summaries, nudges and remote commands.",
-	EnvTelegramChatID:   "The numeric id of your chat with the bot; aja only talks and listens there.",
+	EnvTelegramChatID:   "The numeric id of your chat with the bot; ajai only talks and listens there.",
 }
 
 // secretYAMLKeys are names that look like secrets; finding one in the YAML is an
@@ -83,7 +83,7 @@ func DotenvError(path string, err error) error {
 	if errors.As(err, &pathErr) {
 		return err
 	}
-	return fmt.Errorf("%s cannot be read: fix it in an editor (aja never shows its content)", path)
+	return fmt.Errorf("%s cannot be read: fix it in an editor (ajai never shows its content)", path)
 }
 
 // LoadDotenv reads a .env file into the environment's lower layer. A missing

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/pacing"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/pacing"
 )
 
 // Session drives LinkedIn in one tab: login state, search, filters, job cards,
@@ -57,7 +57,7 @@ func (s *Session) IsLoggedIn() bool {
 var ErrLoginTimeout = errors.New("no LinkedIn login detected in time")
 
 // EnsureLoggedIn opens the feed and, when LinkedIn redirects to a sign-in page,
-// waits for the user to sign in by hand (aja never types a password). onWait is
+// waits for the user to sign in by hand (ajai never types a password). onWait is
 // called once when waiting starts, so the caller can tell the user.
 func (s *Session) EnsureLoggedIn(ctx context.Context, timeout time.Duration, onWait func()) error {
 	if err := s.Page.Navigate(ctx, FeedURL); err != nil {

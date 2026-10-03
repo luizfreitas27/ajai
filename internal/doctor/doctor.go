@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/ai"
-	"github.com/luizfreitas27/aja/internal/chrome"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/markets"
-	"github.com/luizfreitas27/aja/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/ai"
+	"github.com/luizfreitas27/ajai/internal/chrome"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 // Status of one check.
@@ -94,7 +94,7 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 	case loaded == nil:
 		add(CheckConfig, Fail, loadErr.Error())
 	case !loaded.FileExisted:
-		add(CheckConfig, Fail, "no config file at "+p.ConfigFile+"; run `aja init`")
+		add(CheckConfig, Fail, "no config file at "+p.ConfigFile+"; run `ajai init`")
 	case loadErr != nil:
 		add(CheckConfig, Fail, strings.ReplaceAll(loadErr.Error(), "\n", "\n                      "))
 	default:
@@ -125,9 +125,9 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 
 	// Profile, and whether LinkedIn is signed in there
 	profile := p.ChromeProfile(cfg.Settings.ChromeProfileDir)
-	label, hint := profile.Dir, "run `aja login` to sign in once"
+	label, hint := profile.Dir, "run `ajai login` to sign in once"
 	if profile.Own {
-		label += " (the aja profile)"
+		label += " (the ajai profile)"
 		hint += "; or set settings.chrome_profile_dir to your everyday Chrome profile (" + probe.EverydayProfileDir(binary) + ") to use that"
 	}
 	if st, err := os.Stat(profile.Dir); err != nil || !st.IsDir() {

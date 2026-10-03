@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 // legacy is the general config every market falls back to.

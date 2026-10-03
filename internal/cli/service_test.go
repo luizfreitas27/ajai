@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/service"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/service"
 )
 
 // fakeSystemd replaces systemctl, the executable path and the settle wait for
@@ -24,7 +24,7 @@ func fakeSystemd(t *testing.T, configHome string, answers map[string]string, fai
 	savedCtl, savedExe, savedSettle := systemctl, executable, unitSettle
 	t.Cleanup(func() { systemctl, executable, unitSettle = savedCtl, savedExe, savedSettle })
 	all := map[string]string{"show-environment": "HOME=/home/u\nXDG_CONFIG_HOME=" + configHome + "\nWAYLAND_DISPLAY=wayland-1",
-		"is-active graphical-session.target": "active", "is-enabled aja.service": "enabled", "is-active aja.service": "active"}
+		"is-active graphical-session.target": "active", "is-enabled ajai.service": "enabled", "is-active ajai.service": "active"}
 	for k, v := range answers {
 		all[k] = v
 	}
@@ -36,7 +36,7 @@ func fakeSystemd(t *testing.T, configHome string, answers map[string]string, fai
 		}
 		return all[cmd], nil
 	}
-	executable = func() (string, error) { return "/usr/local/bin/aja", nil }
+	executable = func() (string, error) { return "/usr/local/bin/ajai", nil }
 	unitSettle = time.Millisecond
 	return &calls
 }
@@ -45,21 +45,21 @@ func TestDaemonInstallStatusAndUninstall(t *testing.T) {
 	h := newHarness(t)
 	configHome := t.TempDir()
 	h.env["XDG_DATA_HOME"] = "relative/data" // pinned into the unit, made absolute
-	calls := fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
-	unit := filepath.Join(configHome, "systemd", "user", "aja.service")
+	calls := fakeSystemd(t, configHome, map[string]string{"is-active ajai.service": "inactive"}, "")
+	unit := filepath.Join(configHome, "systemd", "user", "ajai.service")
 
-	if _, out, _ := h.run("daemon", "status"); !strings.Contains(out, "not installed (aja daemon install)") || !strings.Contains(out, "not running") {
+	if _, out, _ := h.run("daemon", "status"); !strings.Contains(out, "not installed (ajai daemon install)") || !strings.Contains(out, "not running") {
 		t.Errorf("%s", out)
 	}
 	fakeSystemd(t, configHome, nil, "") // once started, the unit is active
 	code, out, errText := h.run("daemon", "install")
-	if code != 0 || !strings.Contains(out, "wrote") || !strings.Contains(out, unit) || !strings.Contains(out, "ExecStart=/usr/local/bin/aja daemon") ||
-		!strings.Contains(out, "ran: systemctl --user restart aja.service") || !strings.Contains(out, "started") {
+	if code != 0 || !strings.Contains(out, "wrote") || !strings.Contains(out, unit) || !strings.Contains(out, "ExecStart=/usr/local/bin/ajai daemon") ||
+		!strings.Contains(out, "ran: systemctl --user restart ajai.service") || !strings.Contains(out, "started") {
 		t.Fatalf("%d %s %s", code, out, errText)
 	}
 	data, _ := os.ReadFile(unit)
 	abs, _ := filepath.Abs("relative/data")
-	if !strings.Contains(string(data), "Environment=AJA_HOME="+h.home) || !strings.Contains(string(data), "Environment=XDG_DATA_HOME="+abs) {
+	if !strings.Contains(string(data), "Environment=AJAI_HOME="+h.home) || !strings.Contains(string(data), "Environment=XDG_DATA_HOME="+abs) {
 		t.Errorf("the unit finds the same config and data as this shell:\n%s", data)
 	}
 	if _, out, _ := h.run("daemon", "status"); !strings.Contains(out, "enabled, active ("+unit+")") {
@@ -67,7 +67,7 @@ func TestDaemonInstallStatusAndUninstall(t *testing.T) {
 	}
 	_ = calls
 	calls = fakeSystemd(t, configHome, nil, "")
-	if code, out, _ := h.run("daemon", "uninstall"); code != 0 || !strings.Contains(out, "removed") || !strings.Contains(strings.Join(*calls, ","), "disable --now aja.service") {
+	if code, out, _ := h.run("daemon", "uninstall"); code != 0 || !strings.Contains(out, "removed") || !strings.Contains(strings.Join(*calls, ","), "disable --now ajai.service") {
 		t.Errorf("%d %s %q", code, out, *calls)
 	}
 	if _, err := os.Stat(unit); !errors.Is(err, os.ErrNotExist) {
@@ -81,7 +81,7 @@ func TestDaemonInstallStatusAndUninstall(t *testing.T) {
 func TestDaemonInstallRefusesBesideAHandStartedDaemonAndReportsFailures(t *testing.T) {
 	h := newHarness(t)
 	configHome := t.TempDir()
-	fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
+	fakeSystemd(t, configHome, map[string]string{"is-active ajai.service": "inactive"}, "")
 	if err := os.MkdirAll(h.home, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestDaemonInstallRefusesBesideAHandStartedDaemonAndReportsFailures(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "aja daemon is already running outside systemd") {
+	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "ajai daemon is already running outside systemd") {
 		t.Errorf("%d %s", code, errText)
 	}
 	lock.Release()
@@ -99,13 +99,13 @@ func TestDaemonInstallRefusesBesideAHandStartedDaemonAndReportsFailures(t *testi
 	if code, _, errText := h.run("--config", cfg, "daemon", "install"); code != 0 {
 		t.Fatalf("%s", errText)
 	}
-	data, _ := os.ReadFile(filepath.Join(configHome, "systemd", "user", "aja.service"))
+	data, _ := os.ReadFile(filepath.Join(configHome, "systemd", "user", "ajai.service"))
 	if !strings.Contains(string(data), `daemon --config "`+cfg+`"`) {
 		t.Errorf("%s", data)
 	}
 
 	fakeSystemd(t, configHome, nil, "enable "+service.UnitName)
-	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "systemctl --user enable aja.service: exit status 1") {
+	if code, _, errText := h.run("daemon", "install"); code == 0 || !strings.Contains(errText, "systemctl --user enable ajai.service: exit status 1") {
 		t.Errorf("%d %s", code, errText)
 	}
 }
@@ -125,13 +125,13 @@ func TestASecondDaemonExitsWithTheStatusTheUnitDoesNotRetry(t *testing.T) {
 	}
 }
 
-// TestTheTUIInstallsWithTheCommandsChecks: daemonUnit is `aja daemon install`
+// TestTheTUIInstallsWithTheCommandsChecks: daemonUnit is `ajai daemon install`
 // for the TUI, refusing and warning as the command does.
 func TestTheTUIInstallsWithTheCommandsChecks(t *testing.T) {
 	h := newHarness(t)
 	configHome := t.TempDir()
-	fakeSystemd(t, configHome, map[string]string{"is-active aja.service": "inactive"}, "")
-	a := &App{Env: config.MapEnv(map[string]string{"AJA_HOME": h.home}), Stdout: io.Discard, Stderr: io.Discard}
+	fakeSystemd(t, configHome, map[string]string{"is-active ajai.service": "inactive"}, "")
+	a := &App{Env: config.MapEnv(map[string]string{"AJAI_HOME": h.home}), Stdout: io.Discard, Stderr: io.Discard}
 	a.paths = paths.Resolve("", a.Env.Getenv)
 	unit := daemonUnit{app: a}
 
@@ -152,7 +152,7 @@ func TestTheTUIInstallsWithTheCommandsChecks(t *testing.T) {
 
 	fakeSystemd(t, configHome, nil, "") // the unit comes up and stays up
 	result, err := unit.Install()
-	if err != nil || !result.Started || !strings.Contains(result.Unit, "ExecStart=/usr/local/bin/aja daemon") || !strings.Contains(result.Unit, "AJA_HOME="+h.home) {
+	if err != nil || !result.Started || !strings.Contains(result.Unit, "ExecStart=/usr/local/bin/ajai daemon") || !strings.Contains(result.Unit, "AJAI_HOME="+h.home) {
 		t.Fatalf("%+v %v", result, err)
 	}
 

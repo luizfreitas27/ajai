@@ -11,9 +11,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const fileHeader = `aja configuration. Edit by hand or with "aja config set <section.key> <value>".
+const fileHeader = `ajai configuration. Edit by hand or with "ajai config set <section.key> <value>".
 Secrets (API key, Telegram) are NOT here: put them in the .env file next to this one
-or in the environment. See "aja doctor" for the variable names and every path in use.`
+or in the environment. See "ajai doctor" for the variable names and every path in use.`
 
 // Marshal renders the config as YAML with every section and key commented from
 // the struct tags. The same writer serves init and config set, so comments

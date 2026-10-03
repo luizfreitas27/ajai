@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func TestTheDaemonRunsUntilCtrlCAndRecordsAWindowItCouldNotStart(t *testing.T) {
@@ -44,7 +44,7 @@ func TestTheDaemonRunsUntilCtrlCAndRecordsAWindowItCouldNotStart(t *testing.T) {
 		done <- result{code, out, errs}
 	}()
 	// The first tick is immediate: the open window's run is tried and fails (Chrome busy).
-	db := filepath.Join(h.home, "aja.db")
+	db := filepath.Join(h.home, "ajai.db")
 	deadline := time.Now().Add(10 * time.Second)
 	var rec *store.OpeningRecord
 	for rec == nil && time.Now().Before(deadline) {
@@ -60,7 +60,7 @@ func TestTheDaemonRunsUntilCtrlCAndRecordsAWindowItCouldNotStart(t *testing.T) {
 	if _, out, _ := h.run("status"); !strings.Contains(out, "daemon") || !strings.Contains(out, "running (pid") {
 		t.Errorf("status shows the daemon:\n%s", out)
 	}
-	if code, _, errText := h.run("daemon"); code == 0 || !strings.Contains(errText, "aja daemon is already running") {
+	if code, _, errText := h.run("daemon"); code == 0 || !strings.Contains(errText, "ajai daemon is already running") {
 		t.Errorf("a second daemon must refuse: %d %s", code, errText)
 	}
 	cancel()
@@ -80,9 +80,9 @@ func TestTheDaemonRunsUntilCtrlCAndRecordsAWindowItCouldNotStart(t *testing.T) {
 		}
 	}
 	if _, out, _ := h.run("logs", "--daemon", "-n", "0"); !strings.Contains(out, "daemon stopped") {
-		t.Errorf("aja logs --daemon shows it:\n%s", out)
+		t.Errorf("ajai logs --daemon shows it:\n%s", out)
 	}
-	if _, out, _ := h.run("status"); !strings.Contains(out, "not running: schedule windows start runs only while aja daemon runs") {
+	if _, out, _ := h.run("status"); !strings.Contains(out, "not running: schedule windows start runs only while ajai daemon runs") {
 		t.Errorf("%s", out)
 	}
 	if _, running, _ := daemon.ReadLock(h.home); running {
@@ -120,7 +120,7 @@ func TestARunAskedOnTelegramGoesThroughTheRealStarterAndSaysWhyNot(t *testing.T)
 	savedOpen := OpenBrowser
 	t.Cleanup(func() { OpenBrowser = savedOpen })
 	OpenBrowser = func(context.Context, browser.Options) (browser.Browser, error) { return nil, browser.ErrProfileInUse }
-	h.env["AJA_TELEGRAM_BOT_TOKEN"], h.env["AJA_TELEGRAM_CHAT_ID"] = "1:tok", "42"
+	h.env["AJAI_TELEGRAM_BOT_TOKEN"], h.env["AJAI_TELEGRAM_CHAT_ID"] = "1:tok", "42"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int)
@@ -130,7 +130,7 @@ func TestARunAskedOnTelegramGoesThroughTheRealStarterAndSaysWhyNot(t *testing.T)
 		mu.Lock()
 		got := strings.Join(sent, "\n")
 		mu.Unlock()
-		if strings.Contains(got, "Not started: the aja profile is in use") {
+		if strings.Contains(got, "Not started: the ajai profile is in use") {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -155,7 +155,7 @@ func TestTheDaemonListensForTelegramCommandsWhenTheBotIsSet(t *testing.T) {
 	saved := notify.APIBase
 	notify.APIBase = srv.URL
 	defer func() { notify.APIBase = saved }()
-	h.env["AJA_TELEGRAM_BOT_TOKEN"], h.env["AJA_TELEGRAM_CHAT_ID"] = "1:tok", "42"
+	h.env["AJAI_TELEGRAM_BOT_TOKEN"], h.env["AJAI_TELEGRAM_CHAT_ID"] = "1:tok", "42"
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { time.Sleep(300 * time.Millisecond); cancel() }()
 	code, out, errText := h.runCtx(ctx, "daemon")

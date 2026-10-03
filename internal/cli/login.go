@@ -7,20 +7,20 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/launch"
-	"github.com/luizfreitas27/aja/internal/linkedin"
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/launch"
+	"github.com/luizfreitas27/ajai/internal/linkedin"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
 func (a *App) loginCmd() *cobra.Command {
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Sign in to LinkedIn once, in the Chrome profile aja uses",
-		Long: `Opens Chrome on the profile aja uses (the aja profile, unless settings.chrome_profile_dir
+		Short: "Sign in to LinkedIn once, in the Chrome profile ajai uses",
+		Long: `Opens Chrome on the profile ajai uses (the ajai profile, unless settings.chrome_profile_dir
 names another) at LinkedIn and waits until you have signed in, then closes it. Do this once before
-the first run: aja never types your password, and runs started by the scheduler have nobody
+the first run: ajai never types your password, and runs started by the scheduler have nobody
 to sign in for them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,7 +38,7 @@ to sign in for them.`,
 			if holder, held, err := run.ReadLock(a.paths.DataDir); err != nil {
 				return err
 			} else if held {
-				return fmt.Errorf("%s is using Chrome; sign in after it ends, or stop it with `aja stop`", holder)
+				return fmt.Errorf("%s is using Chrome; sign in after it ends, or stop it with `ajai stop`", holder)
 			}
 			if err := a.paths.EnsureDataDirs(); err != nil {
 				return err
@@ -52,11 +52,11 @@ to sign in for them.`,
 			waited := false
 			err = linkedin.NewSession(br.Main(), br, nil, a.logger).EnsureLoggedIn(ctx, timeout, func() {
 				waited = true
-				a.ui.Warn("login", fmt.Sprintf("Sign in to LinkedIn in the Chrome window (up to %s); aja continues when the feed appears.", timeout))
+				a.ui.Warn("login", fmt.Sprintf("Sign in to LinkedIn in the Chrome window (up to %s); ajai continues when the feed appears.", timeout))
 			})
 			switch {
 			case errors.Is(err, linkedin.ErrLoginTimeout):
-				return fmt.Errorf("no LinkedIn sign-in within %s; run `aja login` again when you have time to sign in", timeout)
+				return fmt.Errorf("no LinkedIn sign-in within %s; run `ajai login` again when you have time to sign in", timeout)
 			case err != nil:
 				return err
 			case waited:

@@ -25,11 +25,11 @@ import (
 	"modernc.org/sqlite" // the database/sql driver
 )
 
-// aja_contains(text, needle) is 1 when text holds needle, ignoring case in
+// ajai_contains(text, needle) is 1 when text holds needle, ignoring case in
 // every alphabet (SQLite's LIKE folds ASCII only: "SÃO" would miss "São");
 // needle comes lowered.
 func init() {
-	sqlite.MustRegisterDeterministicScalarFunction("aja_contains", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+	sqlite.MustRegisterDeterministicScalarFunction("ajai_contains", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
 		text := func(v driver.Value) string {
 			switch v := v.(type) {
 			case string:
@@ -244,7 +244,7 @@ func (s *Store) ListJobs(f JobFilter) ([]Job, error) {
 		args = append(args, f.Since.Format(time.RFC3339))
 	}
 	if text := strings.ToLower(strings.TrimSpace(f.Text)); text != "" {
-		where = append(where, `(aja_contains(title, ?) OR aja_contains(company, ?) OR aja_contains(work_location, ?))`)
+		where = append(where, `(ajai_contains(title, ?) OR ajai_contains(company, ?) OR ajai_contains(work_location, ?))`)
 		args = append(args, text, text, text)
 	}
 	return s.listJobs(strings.Join(where, " AND "), args, f.Limit, f.Offset)

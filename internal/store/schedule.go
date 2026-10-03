@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/luizfreitas27/aja/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/schedule"
 )
 
 // AddWindow stores a schedule window (already validated) and returns its id.
@@ -86,7 +86,7 @@ func (s *Store) SetWindowEnabled(id int64, enabled bool) (bool, error) {
 }
 
 // AddValidWindow adds w once it passes schedule.Validate against the windows
-// there are (markets are the valid market names): what `aja schedule add` and
+// there are (markets are the valid market names): what `ajai schedule add` and
 // the TUI both do.
 func (s *Store) AddValidWindow(w schedule.Window, markets []string) (int64, error) {
 	others, err := s.ListWindows()

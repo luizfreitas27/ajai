@@ -1,4 +1,4 @@
-module github.com/luizfreitas27/aja
+module github.com/luizfreitas27/ajai
 
 go 1.26.0
 

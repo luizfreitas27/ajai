@@ -1,4 +1,4 @@
-// Package importer brings a Python Auto_job_applier_linkedIn checkout into aja:
+// Package importer brings a Python Auto_job_applier_linkedIn checkout into ajai:
 // user_config.json into the YAML config, answers_memory.json into the answers
 // table, the two spreadsheets into the jobs table, and the resume file into the
 // resumes directory. It never copies a secret; it reports which environment
@@ -17,22 +17,22 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/store"
-	"github.com/luizfreitas27/aja/internal/textmatch"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/store"
+	"github.com/luizfreitas27/ajai/internal/textmatch"
 )
 
 // Report says what the import did and what it could not do.
 type Report struct {
-	Mapped         []string          // "python.key -> aja.key"
+	Mapped         []string          // "python.key -> ajai.key"
 	Unmapped       map[string]string // python.key -> why
-	SecretsSeen    []string          // aja environment variables the user must set by hand
+	SecretsSeen    []string          // ajai environment variables the user must set by hand
 	ResumeCopied   string            // destination path, "" when not copied
 	ResumeMissing  string            // the Python path that could not be found
 	ResumeError    string            // the copy failed: why
 	Answers        int               // answers imported
-	AnswersKept    int               // answers skipped because aja's copy is newer
+	AnswersKept    int               // answers skipped because ajai's copy is newer
 	Applied        int
 	External       int
 	Failed         int
@@ -49,8 +49,8 @@ const (
 	excelsDir      = "all excels"
 )
 
-// pythonEnvNames maps the Python .env variables to aja's. LinkedIn credentials
-// have no counterpart: aja never logs in with a password.
+// pythonEnvNames maps the Python .env variables to ajai's. LinkedIn credentials
+// have no counterpart: ajai never logs in with a password.
 var pythonEnvNames = map[string]string{
 	"LLM_API_KEY":        config.EnvAIAPIKey,
 	"TELEGRAM_BOT_TOKEN": config.EnvTelegramBotToken,
@@ -63,32 +63,32 @@ type mapping struct {
 	convert func(any) any
 }
 
-// superseded explains Python keys that have no aja counterpart on purpose.
+// superseded explains Python keys that have no ajai counterpart on purpose.
 var superseded = map[string]string{
-	"questions.pause_before_submit":      "replaced by `aja run --dry-run` and the help pause",
+	"questions.pause_before_submit":      "replaced by `ajai run --dry-run` and the help pause",
 	"questions.pause_at_failed_question": "replaced by the help pause and `--unattended`",
-	"settings.stop_before_submit":        "replaced by `aja run --dry-run`",
-	"settings.run_in_background":         "aja never runs headless (ADR 0001)",
-	"settings.safe_mode":                 "aja uses its own Chrome profile (sign in once with aja login); set settings.chrome_profile_dir to use another",
+	"settings.stop_before_submit":        "replaced by `ajai run --dry-run`",
+	"settings.run_in_background":         "ajai never runs headless (ADR 0001)",
+	"settings.safe_mode":                 "ajai uses its own Chrome profile (sign in once with ajai login); set settings.chrome_profile_dir to use another",
 	"settings.keep_screen_awake":         "not needed: no desktop dialogs",
-	"settings.auto_manage_driver":        "no WebDriver in aja",
+	"settings.auto_manage_driver":        "no WebDriver in ajai",
 	"settings.showAiErrorAlerts":         "no desktop dialogs; errors go to the log",
-	"settings.generated_resume_path":     "resumes live in the aja resumes directory",
-	"settings.file_name":                 "history lives in the SQLite database; `aja export --csv` writes the spreadsheet",
-	"settings.failed_file_name":          "history lives in the SQLite database; `aja export --csv` writes the spreadsheet",
-	"settings.logs_folder_path":          "logs live in the aja data directory",
-	"settings.stealth_mode":              "no stealth library in aja (ADR 0001)",
+	"settings.generated_resume_path":     "resumes live in the ajai resumes directory",
+	"settings.file_name":                 "history lives in the SQLite database; `ajai export --csv` writes the spreadsheet",
+	"settings.failed_file_name":          "history lives in the SQLite database; `ajai export --csv` writes the spreadsheet",
+	"settings.logs_folder_path":          "logs live in the ajai data directory",
+	"settings.stealth_mode":              "no stealth library in ajai (ADR 0001)",
 	"settings.click_gap":                 config.RetiredKeys["settings.click_gap"],
 	"settings.stop_date_cycle_at_24hr":   "a non-stop session always narrows the date filter to \"Past 24 hours\" and stays there, the Python default",
 	"secrets.username":                   noPassword,
 	"secrets.password":                   noPassword,
-	"secrets.llm_temperature":            "not configurable in aja",
+	"secrets.llm_temperature":            "not configurable in ajai",
 	"secrets.ai_provider":                "folded into ai.provider together with llm_api_url",
 	"secrets.llm_api_url":                "folded into ai.provider / ai.base_url",
 }
 
 // noPassword is why the Python bot's LinkedIn credentials are not imported.
-const noPassword = "aja never logs in with a password; sign in once with aja login"
+const noPassword = "ajai never logs in with a password; sign in once with ajai login"
 
 // secrets are Python keys whose VALUE must never be copied; the user sets the variable.
 var secrets = map[string]string{
@@ -188,7 +188,7 @@ var mappings = map[string]mapping{
 	"markets.intl_search_terms":          {key: "markets.internacional.terms"},
 }
 
-// providerFromPython maps the Python ai_provider / llm_api_url pair to aja's
+// providerFromPython maps the Python ai_provider / llm_api_url pair to ajai's
 // provider and (when non-default) base_url.
 func providerFromPython(provider, url string) (string, string) {
 	p := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(provider), " ", ""))
@@ -209,7 +209,7 @@ func providerFromPython(provider, url string) (string, string) {
 	return p, url
 }
 
-// Import brings the checkout at src into aja: the config file (existing one or
+// Import brings the checkout at src into ajai: the config file (existing one or
 // defaults, then written back when user_config.json was found), the store and
 // the resumes directory. The config is written even when it still fails
 // validation; Report.ConfigProblems says what to fix.
@@ -261,7 +261,7 @@ func Run(src string, cfg *config.Config, st *store.Store, p paths.Paths) (*Repor
 }
 
 // noteDotenv reads only the KEYS of the Python .env (never the values) and
-// records which aja variables the user has to set.
+// records which ajai variables the user has to set.
 func noteDotenv(path string, rep *Report) error {
 	values, err := godotenv.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -274,8 +274,8 @@ func noteDotenv(path string, rep *Report) error {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
-		if ajaName, ok := pythonEnvNames[pyName]; ok {
-			rep.SecretsSeen = append(rep.SecretsSeen, ajaName)
+		if ajaiName, ok := pythonEnvNames[pyName]; ok {
+			rep.SecretsSeen = append(rep.SecretsSeen, ajaiName)
 		} else if strings.HasPrefix(pyName, "LINKEDIN_") {
 			rep.Unmapped[".env "+pyName] = noPassword
 		}
@@ -299,7 +299,7 @@ func uniqueSorted(items []string) []string {
 func importConfig(path string, cfg *config.Config, rep *Report) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		rep.Unmapped[userConfigFile] = "not found; the Python defaults were in use, so aja's defaults apply"
+		rep.Unmapped[userConfigFile] = "not found; the Python defaults were in use, so ajai's defaults apply"
 		return nil
 	}
 	if err != nil {
@@ -333,7 +333,7 @@ func importConfig(path string, cfg *config.Config, rep *Report) error {
 			}
 			m, ok := mappings[full]
 			if !ok {
-				rep.Unmapped[full] = "no aja counterpart"
+				rep.Unmapped[full] = "no ajai counterpart"
 				continue
 			}
 			if m.convert != nil {
@@ -440,7 +440,7 @@ func importAnswers(path string, st *store.Store, rep *Report) error {
 		if a.Normalised == "" {
 			a.Normalised = textmatch.Normalise(a.Label)
 		}
-		// aja's own copy of the same question wins when it is newer: a later
+		// ajai's own copy of the same question wins when it is newer: a later
 		// re-import must not undo approvals or use counts made here.
 		existing, err := st.FindAnswer(a.Kind, a.Normalised)
 		if err != nil {

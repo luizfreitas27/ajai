@@ -14,7 +14,7 @@ var friday = time.Date(2026, 10, 2, 12, 0, 0, 0, time.Local)
 func TestScheduleAddListAndTheNextOpening(t *testing.T) {
 	h := newHarness(t)
 	h.now = friday
-	if _, out, _ := h.run("schedule", "list"); !strings.Contains(out, "No schedule windows") || !strings.Contains(out, "aja schedule add") {
+	if _, out, _ := h.run("schedule", "list"); !strings.Contains(out, "No schedule windows") || !strings.Contains(out, "ajai schedule add") {
 		t.Errorf("%s", out)
 	}
 	code, out, errText := h.run("schedule", "add", "--days", "mon-fri", "--start", "09:00", "--end", "11:00", "--market", "brasil")
@@ -92,7 +92,7 @@ func TestScheduleRmEnableAndDisable(t *testing.T) {
 		t.Errorf("%d %s", code, out)
 	}
 	for _, args := range [][]string{{"schedule", "rm", "7"}, {"schedule", "enable", "7"}, {"schedule", "disable", "x"}} {
-		if code, _, errText := h.run(args...); code == 0 || !strings.Contains(errText, "aja schedule list") {
+		if code, _, errText := h.run(args...); code == 0 || !strings.Contains(errText, "ajai schedule list") {
 			t.Errorf("%v: %d %s", args, code, errText)
 		}
 	}

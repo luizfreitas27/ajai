@@ -57,7 +57,7 @@ func (p *Printer) Color() bool { return p.color }
 
 // Banner prints the tool name and version once per command.
 func (p *Printer) Banner(version string) {
-	fmt.Fprintln(p.Out, p.styles.banner.Render("aja")+" "+p.styles.dim.Render(version))
+	fmt.Fprintln(p.Out, p.styles.banner.Render("ajai")+" "+p.styles.dim.Render(version))
 }
 
 // Title prints a section heading.

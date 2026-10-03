@@ -7,11 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/service"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/service"
 )
 
-// Unit is the daemon's systemd user unit, as `aja daemon install` and
+// Unit is the daemon's systemd user unit, as `ajai daemon install` and
 // `uninstall` handle it.
 type Unit interface {
 	// Status is the unit as systemd sees it.
@@ -176,7 +176,7 @@ func (s daemonSection) question(a daemonAction) string {
 	switch a {
 	case installUnit:
 		if s.unit.Installed {
-			return "Reinstall the daemon's unit for this aja and restart it? A run it is running ends cleanly, and its window resumes."
+			return "Reinstall the daemon's unit for this ajai and restart it? A run it is running ends cleanly, and its window resumes."
 		}
 		return "Install the daemon as a systemd user unit? It starts now and with your desktop session."
 	case uninstallUnit:

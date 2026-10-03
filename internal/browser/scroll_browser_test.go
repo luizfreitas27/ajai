@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/chrome"
+	"github.com/luizfreitas27/ajai/internal/chrome"
 )
 
 // scrollPage has a target 5000 px down the page and a button 3000 px down a

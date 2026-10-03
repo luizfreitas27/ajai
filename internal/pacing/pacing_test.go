@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 func testPacer(t *testing.T, cfg config.Pacing) (*Pacer, *time.Time, *[]time.Duration) {

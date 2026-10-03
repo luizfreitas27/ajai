@@ -10,14 +10,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // scheduleTab is the Schedule tab: the schedule windows with their next
 // opening (or the opening under way); a window is added in a form (checked
-// like `aja schedule add`), turned on or off, or deleted.
+// like `ajai schedule add`), turned on or off, or deleted.
 type scheduleTab struct {
 	loaded   bool
 	windows  []schedule.Window

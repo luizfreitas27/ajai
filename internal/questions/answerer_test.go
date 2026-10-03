@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 const (
@@ -36,7 +36,7 @@ func pinned() config.Config {
 
 func answerer(t *testing.T, cfg config.Config) (*Answerer, *memory.Memory) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +486,7 @@ func TestAnUnrelatedQuestionBelowTheThresholdGoesToTheAIAndIsRemembered(t *testi
 
 func TestAnApproximateMemoryHitIsLoggedThroughTheFormPath(t *testing.T) {
 	var log bytes.Buffer
-	st, err := store.Open(filepath.Join(t.TempDir(), "aja.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

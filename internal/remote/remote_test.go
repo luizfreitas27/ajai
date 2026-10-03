@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 const (
@@ -263,7 +263,7 @@ type world struct {
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "aja.db"))
+	st, err := store.Open(filepath.Join(dir, "ajai.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,9 +337,9 @@ func TestRunStartsThroughTheSupervisorAndSaysWhyNot(t *testing.T) {
 		t.Errorf("%q", m[1])
 	}
 	w.runs.mu.Lock()
-	w.runs.startErr = errors.New("fix the configuration first (`aja config validate`): search.terms is empty")
+	w.runs.startErr = errors.New("fix the configuration first (`ajai config validate`): search.terms is empty")
 	w.runs.mu.Unlock()
-	w.tg.say(chat, "/run@aja_bot internacional", w.now)
+	w.tg.say(chat, "/run@ajai_bot internacional", w.now)
 	if m := w.tg.waitFor(t, 3); !strings.Contains(m[2], "Not started: fix the configuration first") {
 		t.Errorf("%q", m[2])
 	}
@@ -461,7 +461,7 @@ func TestCommandsThatWaitedWhileNobodyListenedAreCheckedLiveOnesAreNot(t *testin
 	w.tg.say(chat, "/start", hourAgo) // tapping Start while setting the bot up
 	w.listen()
 	m := w.tg.waitFor(t, 3)
-	if !strings.Contains(m[0], "Not acting on /run sent at") || !strings.Contains(m[1], "No run in progress") || !strings.Contains(m[2], "aja listens to") {
+	if !strings.Contains(m[0], "Not acting on /run sent at") || !strings.Contains(m[1], "No run in progress") || !strings.Contains(m[2], "ajai listens to") {
 		t.Errorf("%q", m)
 	}
 	if starts, _ := w.runs.seen(); len(starts) != 0 {
@@ -510,7 +510,7 @@ func TestTwoStopsGiveOneStoppedAndAPanickingCommandIsReported(t *testing.T) {
 	w.tg.say(chat, "/run", w.now)
 	w.tg.say(chat, "/help", w.now) // still listening afterwards
 	m := w.tg.waitFor(t, 5)
-	if !strings.Contains(m[3], "aja hit a bug handling /run") || !strings.Contains(m[4], "aja listens to") {
+	if !strings.Contains(m[3], "ajai hit a bug handling /run") || !strings.Contains(m[4], "ajai listens to") {
 		t.Errorf("%q", m[3:])
 	}
 }
@@ -521,8 +521,8 @@ func TestARefusedTokenStopsListeningAndAConflictIsSaidOnce(t *testing.T) {
 	w.listen()
 	w.tg.say(chat, "/help", w.now)
 	m := w.tg.waitFor(t, 2)
-	if !strings.Contains(m[0], "aja cannot read your commands: Conflict: can't use getUpdates method while webhook is active") ||
-		!strings.Contains(m[1], "aja listens to") {
+	if !strings.Contains(m[0], "ajai cannot read your commands: Conflict: can't use getUpdates method while webhook is active") ||
+		!strings.Contains(m[1], "ajai listens to") {
 		t.Errorf("%q", m)
 	}
 	if n := strings.Count(w.log(), "hands the bot's messages to someone else"); n != 1 {
@@ -571,7 +571,7 @@ func TestParseAndRunArguments(t *testing.T) {
 		args []string
 	}{
 		{"/status", "status", nil},
-		{"  /Run@aja_bot  brasil DRY ", "run", []string{"brasil", "DRY"}},
+		{"  /Run@ajai_bot  brasil DRY ", "run", []string{"brasil", "DRY"}},
 		{"/start", "start", nil},
 		{"hello /status", "", nil},
 		{"", "", nil},

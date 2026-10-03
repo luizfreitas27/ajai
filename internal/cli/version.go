@@ -4,7 +4,7 @@ import (
 	"runtime/debug"
 )
 
-// ResolveVersion is the version aja reports: the one goreleaser set through
+// ResolveVersion is the version ajai reports: the one goreleaser set through
 // -ldflags (the release tag), else the module version a `go install
 // …@vX.Y.Z` build records, else "dev".
 func ResolveVersion(ldflag string, info *debug.BuildInfo) string {

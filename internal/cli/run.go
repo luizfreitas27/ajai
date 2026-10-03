@@ -11,16 +11,16 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/browser"
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/launch"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/notify"
-	"github.com/luizfreitas27/aja/internal/run"
+	"github.com/luizfreitas27/ajai/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/launch"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/notify"
+	"github.com/luizfreitas27/ajai/internal/run"
 )
 
-// OpenBrowser is how aja run and aja login open Chrome; tests replace it.
+// OpenBrowser is how ajai run and ajai login open Chrome; tests replace it.
 var OpenBrowser browser.Opener = browser.Open
 
 func (a *App) runCmd() *cobra.Command {
@@ -29,21 +29,21 @@ func (a *App) runCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Search LinkedIn and apply to Easy Apply jobs in your own Chrome",
-		Long: `Opens Chrome on the aja profile (or settings.chrome_profile_dir), waits for you to sign
-in when needed (sign in once beforehand with aja login), then walks every search term with
-the configured filters, screens each job and applies. Pacing is on by default. On the aja
+		Long: `Opens Chrome on the ajai profile (or settings.chrome_profile_dir), waits for you to sign
+in when needed (sign in once beforehand with ajai login), then walks every search term with
+the configured filters, screens each job and applies. Pacing is on by default. On the ajai
 profile, Chrome is closed when the run ends.
 
 --dry-run fills every form and discards it at the Review step instead of submitting, so you
 can check the answers before applying for real.
 
-With you at the terminal, a question nothing can answer pauses the job: aja shows it (and
+With you at the terminal, a question nothing can answer pauses the job: ajai shows it (and
 sends a Telegram message when configured), you fill it in Chrome and press Enter, and what
 you typed is remembered as an approved answer. The pause waits up to 15 minutes. With
-search.pause_after_filters, aja also stops after applying each term's filters so you can
+search.pause_after_filters, ajai also stops after applying each term's filters so you can
 check them; type "off" there to stop pausing. With --unattended, --json, or when stdin or
-stdout is not a terminal, aja never pauses: the job is skipped and the question waits for
-you in "aja answers review".
+stdout is not a terminal, ajai never pauses: the job is skipped and the question waits for
+you in "ajai answers review".
 
 With settings.run_non_stop, a run that visited every search term (or hit the per-run cap)
 is followed, ten minutes later, by another, with the sort order and the date-posted filter
@@ -147,9 +147,9 @@ func (a *App) configProblem(l *config.Loaded, err error) error {
 	case l == nil:
 		return err
 	case !l.FileExisted:
-		return errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
+		return errors.New("no config file at " + a.paths.ConfigFile + "; run `ajai init` first")
 	case err != nil:
-		return fmt.Errorf("fix the configuration first (`aja config validate`): %w", err)
+		return fmt.Errorf("fix the configuration first (`ajai config validate`): %w", err)
 	}
 	return nil
 }
@@ -204,8 +204,8 @@ func (a *App) stdoutIsTerminal() bool {
 	return ok && term.IsTerminal(f.Fd())
 }
 
-// stopReasonCLI is the ending reason of a run stopped with `aja stop`.
-const stopReasonCLI = "stopped with aja stop"
+// stopReasonCLI is the ending reason of a run stopped with `ajai stop`.
+const stopReasonCLI = "stopped with ajai stop"
 
 func (a *App) stopCmd() *cobra.Command {
 	var wait time.Duration
@@ -244,7 +244,7 @@ started from any terminal.`,
 				case <-time.After(stopWaitPoll):
 				}
 			}
-			a.ui.Warn("still running", "it stops once the job in progress is done; check with `aja status`")
+			a.ui.Warn("still running", "it stops once the job in progress is done; check with `ajai status`")
 			return nil
 		},
 	}
@@ -252,7 +252,7 @@ started from any terminal.`,
 	return cmd
 }
 
-// stopWaitPoll is how often `aja stop` checks whether the run has ended.
+// stopWaitPoll is how often `ajai stop` checks whether the run has ended.
 var stopWaitPoll = 300 * time.Millisecond
 
 // ------------------------------------------------------------------ status / logs
@@ -304,7 +304,7 @@ func (a *App) statusCmd() *cobra.Command {
 			if d, running, _ := daemon.ReadLock(a.paths.DataDir); running {
 				a.ui.KV("daemon", "running ("+d.String()+")")
 			} else if len(windows) > 0 {
-				a.ui.KV("daemon", "not running: schedule windows start runs only while aja daemon runs")
+				a.ui.KV("daemon", "not running: schedule windows start runs only while ajai daemon runs")
 			}
 			if len(windows) > 0 {
 				a.printNextOpening(windows)

@@ -17,11 +17,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/doctor"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/service"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/doctor"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/service"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden screens in testdata")
@@ -29,10 +29,10 @@ var update = flag.Bool("update", false, "rewrite the golden screens in testdata"
 // harness drives the TUI the way Bubble Tea would, synchronously: messages go
 // to Update and the commands it returns run at once, their messages fed back.
 // Ticks never fire by themselves; refresh sends one. Everything lives in a
-// temporary AJA_HOME with a real store and, to start with, a valid config; the
+// temporary AJAI_HOME with a real store and, to start with, a valid config; the
 // clock is h.now, the environment h.env, and the log goes to h.logs. The
 // machine is a fake: Chrome is found, the LinkedIn session is h.session, and
-// the aja subcommands run in the terminal are recorded in h.ran (and acted out
+// the ajai subcommands run in the terminal are recorded in h.ran (and acted out
 // by h.onRun).
 type harness struct {
 	t       *testing.T
@@ -71,11 +71,11 @@ func (f *fakeSystemd) run(args ...string) (string, error) {
 }
 
 // harnessUnit is the daemon's unit over a real service.Manager, in the
-// temporary AJA_HOME, with the fake systemctl.
+// temporary AJAI_HOME, with the fake systemctl.
 type harnessUnit struct{ service.Manager }
 
 func (u harnessUnit) Install() (service.Installed, error) {
-	return u.Manager.Install(service.Options{Binary: "/usr/local/bin/aja"})
+	return u.Manager.Install(service.Options{Binary: "/usr/local/bin/ajai"})
 }
 func (u harnessUnit) Uninstall() error { _, err := u.Manager.Uninstall(); return err }
 func (u harnessUnit) Start() error     { _, err := u.Manager.Start(); return err }
@@ -85,7 +85,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	p := paths.Resolve("", func(k string) string {
-		if k == "AJA_HOME" {
+		if k == "AJAI_HOME" {
 			return dir
 		}
 		return ""
@@ -95,7 +95,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{t: t, p: p, now: time.Date(2026, 10, 5, 9, 30, 0, 0, time.Local), env: map[string]string{}, logs: &bytes.Buffer{}, session: true,
 		systemd: &fakeSystemd{answers: map[string]string{"is-active graphical-session.target": "active", "show-environment": "WAYLAND_DISPLAY=wayland-1",
-			"is-active aja.service": "active", "is-enabled aja.service": "enabled"}}}
+			"is-active ajai.service": "active", "is-enabled ajai.service": "enabled"}}}
 	st, err := store.Open(p.DBFile)
 	if err != nil {
 		t.Fatal(err)
@@ -103,13 +103,13 @@ func newHarness(t *testing.T) *harness {
 	h.st = st.WithClock(func() time.Time { return h.now })
 	t.Cleanup(func() { _ = st.Close() })
 	h.writeConfig()
-	if err := os.MkdirAll(p.ChromeProfileDir, 0o700); err != nil { // as `aja login` leaves it
+	if err := os.MkdirAll(p.ChromeProfileDir, 0o700); err != nil { // as `ajai login` leaves it
 		t.Fatal(err)
 	}
 	return h
 }
 
-// writeConfig writes a valid config file and its resume, as `aja init` would.
+// writeConfig writes a valid config file and its resume, as `ajai init` would.
 func (h *harness) writeConfig() {
 	h.t.Helper()
 	resume := filepath.Join(h.p.ResumeDir, "cv.pdf")
@@ -175,7 +175,7 @@ func (h *harness) open(width, height int) {
 	h.send(tea.WindowSizeMsg{Width: width, Height: height})
 }
 
-// deps are the TUI's Deps over the harness; Home is the temporary AJA_HOME, so
+// deps are the TUI's Deps over the harness; Home is the temporary AJAI_HOME, so
 // paths show as ~/… and the golden screens stay the same from run to run.
 func (h *harness) deps() Deps {
 	return Deps{Paths: h.p, Store: h.st, Env: config.MapEnv(h.env), Logger: slog.New(slog.NewJSONHandler(h.logs, nil)),
@@ -247,7 +247,7 @@ func (h *harness) shows(texts ...string) {
 func (h *harness) golden(name string) {
 	h.t.Helper()
 	path := filepath.Join("testdata", name+".golden")
-	screen := strings.ReplaceAll(h.screen(), h.p.DataDir, "$AJA_HOME") // a new temporary directory each run (most show as ~)
+	screen := strings.ReplaceAll(h.screen(), h.p.DataDir, "$AJAI_HOME") // a new temporary directory each run (most show as ~)
 	screen = strings.ReplaceAll(screen, "pid "+strconv.Itoa(os.Getpid()), "pid $PID")
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {

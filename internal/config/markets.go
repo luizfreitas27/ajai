@@ -51,7 +51,7 @@ func (c *Config) ActiveMarket() Market {
 	return c.Markets.Internacional
 }
 
-// Essentials are the settings `aja init` collects; everything else keeps its default.
+// Essentials are the settings `ajai init` collects; everything else keeps its default.
 type Essentials struct {
 	FirstName, LastName, Phone, City, Country string
 	Terms                                     string // comma-separated

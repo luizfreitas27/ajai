@@ -11,15 +11,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/daemon"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/memory"
-	"github.com/luizfreitas27/aja/internal/run"
-	"github.com/luizfreitas27/aja/internal/schedule"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/daemon"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/schedule"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
-// logAt appends a JSON log line, as aja writes them, to the day's log name gives.
+// logAt appends a JSON log line, as ajai writes them, to the day's log name gives.
 func (h *harness) logAt(name logging.FileNamer, at time.Time, msg string, attrs string) {
 	h.t.Helper()
 	f, err := os.OpenFile(name(h.p.LogDir, at), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -200,7 +200,7 @@ func TestKeysHelpQuitAndATooSmallTerminal(t *testing.T) {
 	h.shows("No run in progress.")
 
 	h.send(tea.WindowSizeMsg{Width: 70, Height: 20})
-	h.shows("aja needs a terminal of at least 80×24; this one is 70×20.")
+	h.shows("ajai needs a terminal of at least 80×24; this one is 70×20.")
 	h.press("q")
 	if !h.quit {
 		t.Error("q quits")

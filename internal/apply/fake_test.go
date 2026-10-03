@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/browser"
+	"github.com/luizfreitas27/ajai/internal/browser"
 )
 
 // node is a tiny fake DOM element: children are looked up by the exact XPath

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/markets"
 )
 
 // CandidateProfile is the description of the applicant the model is given:

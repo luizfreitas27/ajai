@@ -1,4 +1,4 @@
-// Package tui is the TUI: the full-screen terminal interface `aja` opens with
+// Package tui is the TUI: the full-screen terminal interface `ajai` opens with
 // no command. It reads the files and the database the subcommands use, every
 // second, and acts through the same packages they do. A Model is built from
 // Deps; New gives one ready for Run, and tests drive it with messages.
@@ -18,21 +18,21 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"github.com/luizfreitas27/aja/internal/config"
-	"github.com/luizfreitas27/aja/internal/doctor"
-	"github.com/luizfreitas27/aja/internal/logging"
-	"github.com/luizfreitas27/aja/internal/paths"
-	"github.com/luizfreitas27/aja/internal/store"
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/doctor"
+	"github.com/luizfreitas27/ajai/internal/logging"
+	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // Deps is what the TUI works on.
 type Deps struct {
 	Paths    paths.Paths
 	Store    *store.Store
-	Env      config.Env // the process environment: secrets and AJA_CFG_ overrides
+	Env      config.Env // the process environment: secrets and AJAI_CFG_ overrides
 	Logger   *slog.Logger
 	Now      func() time.Time
-	Probe    doctor.Probe // the machine, as `aja doctor` looks at it
+	Probe    doctor.Probe // the machine, as `ajai doctor` looks at it
 	Launcher Launcher
 	Unit     Unit               // the daemon's systemd unit; nil: not handled here
 	OpenURL  func(string) error // opens a link in the default browser
@@ -62,12 +62,12 @@ func (d Deps) tilde(text string) string {
 	}
 }
 
-// Launcher runs aja itself.
+// Launcher runs ajai itself.
 type Launcher interface {
-	// InTerminal runs the aja subcommand args in the terminal, the TUI
+	// InTerminal runs the ajai subcommand args in the terminal, the TUI
 	// stepping aside until it ends; done turns its outcome into a message.
 	InTerminal(args []string, done func(error) tea.Msg) tea.Cmd
-	// Start runs aja args in a process of its own, which outlives the TUI;
+	// Start runs ajai args in a process of its own, which outlives the TUI;
 	// exited gets its end if it comes while the TUI runs.
 	Start(args []string) (pid int, exited <-chan error, err error)
 }
@@ -183,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dash = m.dash.apply(msg)
 		m.runs = m.runs.observe(before, m.dash.snap.activity, msg.startExit, m.dash.snap.runs, m.deps.Now())
 		next := m.tickAfter(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
-		switch { // what other processes change: runs and Telegram the answers, `aja schedule` the windows
+		switch { // what other processes change: runs and Telegram the answers, `ajai schedule` the windows
 		case m.setupShown:
 		case m.tab == tabAnswers && !m.ans.editing():
 			next = tea.Batch(next, loadAnswers(m.deps, m.ans.shownState()))
@@ -390,7 +390,7 @@ func (m Model) View() string {
 		return "" // the size is not known yet
 	}
 	if m.width < minWidth || m.height < minHeight {
-		return fmt.Sprintf("aja needs a terminal of at least %d×%d; this one is %d×%d.\nMake it larger, or press q to quit.",
+		return fmt.Sprintf("ajai needs a terminal of at least %d×%d; this one is %d×%d.\nMake it larger, or press q to quit.",
 			minWidth, minHeight, m.width, m.height)
 	}
 	rule := m.styles.dim.Render(strings.Repeat("─", m.width))
@@ -417,7 +417,7 @@ func (m Model) View() string {
 }
 
 func (m Model) tabBar() string {
-	parts := []string{m.styles.brand.Render("aja")}
+	parts := []string{m.styles.brand.Render("ajai")}
 	if m.setupShown {
 		parts = append(parts, m.styles.activeTab.Render("Setup"))
 	}
@@ -508,7 +508,7 @@ func (m Model) helpView() string {
 		row("Tab", "pending (the review queue) or approved")
 		row("a", "approve the answer as shown")
 		row("e, Enter", "correct it: pick or type an option, or type the answer")
-		row("d", "delete it: aja asks the question again")
+		row("d", "delete it: ajai asks the question again")
 	case m.tab == tabSchedule:
 		section("Schedule")
 		row("a", "add a window: weekdays, hours, market, dry run or live")

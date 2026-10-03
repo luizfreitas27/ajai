@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 func (a *App) configCmd() *cobra.Command {
@@ -23,7 +23,7 @@ func (a *App) configShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
 		Short: "Print the effective configuration as YAML, secrets masked",
-		Long: `Prints the configuration after every layer (defaults, file, AJA_CFG_ environment
+		Long: `Prints the configuration after every layer (defaults, file, AJAI_CFG_ environment
 overrides, .env) and lists which keys were overridden. Secrets are shown only as
 present or absent.`,
 		Args: cobra.NoArgs,
@@ -106,7 +106,7 @@ Environment overrides are not consulted: the file is what changes.`,
 				return err
 			}
 			if !l.FileExisted {
-				return errors.New("no config file at " + a.paths.ConfigFile + "; run `aja init` first")
+				return errors.New("no config file at " + a.paths.ConfigFile + "; run `ajai init` first")
 			}
 			key, value := args[0], args[1]
 			other, err := l.Config.SetChecked(key, value)
@@ -114,7 +114,7 @@ Environment overrides are not consulted: the file is what changes.`,
 				return fmt.Errorf("refusing to write: %w", err)
 			}
 			if other != nil {
-				a.ui.Warn("config", fmt.Sprintf("the file still has %d other problem(s); run `aja config validate`", len(other.Errors)))
+				a.ui.Warn("config", fmt.Sprintf("the file still has %d other problem(s); run `ajai config validate`", len(other.Errors)))
 			}
 			if err := config.Write(a.paths.ConfigFile, l.Config); err != nil {
 				return err

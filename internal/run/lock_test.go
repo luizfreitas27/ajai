@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luizfreitas27/aja/internal/filelock"
+	"github.com/luizfreitas27/ajai/internal/filelock"
 )
 
 func fastStopPoll(t *testing.T) {
@@ -37,7 +37,7 @@ func TestOneRunHoldsTheLockAndTheRefusalNamesIt(t *testing.T) {
 	if !errors.As(err, &he) || he.Holder.Origin != OriginTerminal {
 		t.Fatalf("a second run must be refused, naming the first: %v", err)
 	}
-	want := "another run is in progress: a run started from the terminal (pid " + strconv.Itoa(os.Getpid()) + ") at 09:30; stop it with `aja stop` or wait for it to end"
+	want := "another run is in progress: a run started from the terminal (pid " + strconv.Itoa(os.Getpid()) + ") at 09:30; stop it with `ajai stop` or wait for it to end"
 	if err.Error() != want {
 		t.Errorf("%q", err)
 	}
@@ -66,7 +66,7 @@ func TestALockACrashedRunLeftNeverBlocksTheNext(t *testing.T) {
 	}
 	l.Release()
 
-	// `aja status` probing the lock at that very moment must not make the new run
+	// `ajai status` probing the lock at that very moment must not make the new run
 	// refuse in the dead run's name.
 	if err := os.WriteFile(lockPath(dir), []byte(stale), 0o600); err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestAStopRequestNeedsARunAndOnlyOneMadeDuringTheRunCounts(t *testing.T) {
 	if _, err := os.Stat(StopPath(dir)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("the old request is discarded")
 	}
-	if _, err := RequestStop(dir, "stopped with aja stop"); err != nil {
+	if _, err := RequestStop(dir, "stopped with ajai stop"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -124,7 +124,7 @@ func TestAStopRequestNeedsARunAndOnlyOneMadeDuringTheRunCounts(t *testing.T) {
 		t.Fatal("a request made during the run must stop it")
 	}
 	var sr *StopRequested
-	if !errors.As(context.Cause(ctx), &sr) || sr.Reason != "stopped with aja stop" {
+	if !errors.As(context.Cause(ctx), &sr) || sr.Reason != "stopped with ajai stop" {
 		t.Errorf("%v", context.Cause(ctx))
 	}
 }
@@ -144,7 +144,7 @@ func TestAStopRequestEndsTheRunLikeCtrlCWithItsReason(t *testing.T) {
 	}
 	defer l.Release()
 	r.AfterFilters = func(ctx context.Context, term string) bool {
-		if h, err := RequestStop(dir, "stopped with aja stop"); err != nil || h.Origin != OriginTerminal {
+		if h, err := RequestStop(dir, "stopped with ajai stop"); err != nil || h.Origin != OriginTerminal {
 			t.Errorf("%+v %v", h, err)
 		}
 		<-ctx.Done()
@@ -154,16 +154,16 @@ func TestAStopRequestEndsTheRunLikeCtrlCWithItsReason(t *testing.T) {
 	defer cancel(nil)
 	go l.WatchStops(ctx, cancel)
 	sums, err := r.Session(ctx, Options{DryRun: true})
-	if err != nil || len(sums) != 1 || sums[0].End != EndStopped || sums[0].Reason != "stopped with aja stop" {
+	if err != nil || len(sums) != 1 || sums[0].End != EndStopped || sums[0].Reason != "stopped with ajai stop" {
 		t.Fatalf("%+v %v", sums, err)
 	}
-	if ends := kinds(*events, EventRunEnd); len(ends) != 1 || ends[0].Summary.Reason != "stopped with aja stop" {
+	if ends := kinds(*events, EventRunEnd); len(ends) != 1 || ends[0].Summary.Reason != "stopped with ajai stop" {
 		t.Errorf("the summary must say why: %+v", ends)
 	}
-	if runs, _ := st.ListRuns(1); len(runs) != 1 || runs[0].Reason != "stopped with aja stop" {
+	if runs, _ := st.ListRuns(1); len(runs) != 1 || runs[0].Reason != "stopped with ajai stop" {
 		t.Errorf("recorded: %+v", runs)
 	}
-	if len(rec.messages) != 1 || !strings.Contains(rec.messages[0], "stopped with aja stop") {
+	if len(rec.messages) != 1 || !strings.Contains(rec.messages[0], "stopped with ajai stop") {
 		t.Errorf("the Telegram summary must say why: %q", rec.messages)
 	}
 	if _, err := os.Stat(StopPath(dir)); !errors.Is(err, os.ErrNotExist) {

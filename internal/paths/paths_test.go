@@ -8,21 +8,30 @@ import (
 
 func env(m map[string]string) Getenv { return func(k string) string { return m[k] } }
 
-func TestAJAHomePutsEverythingUnderOneDirectory(t *testing.T) {
-	p := Resolve("", env(map[string]string{"AJA_HOME": "/tmp/x"}))
+func TestAJAIHomePutsEverythingUnderOneDirectory(t *testing.T) {
+	p := Resolve("", env(map[string]string{"AJAI_HOME": "/tmp/x"}))
 	for _, pair := range p.All() {
 		if !strings.HasPrefix(pair[1], "/tmp/x/") && pair[1] != "/tmp/x" {
 			t.Errorf("%s = %s, want under /tmp/x", pair[0], pair[1])
 		}
 	}
-	if p.EnvFile != "/tmp/x/.env" || p.DBFile != "/tmp/x/aja.db" {
+	if p.EnvFile != "/tmp/x/.env" || p.DBFile != "/tmp/x/ajai.db" {
 		t.Errorf("env %s db %s", p.EnvFile, p.DBFile)
 	}
 }
 
+func TestTheOldAJAHomeIsNotRead(t *testing.T) {
+	p := Resolve("", env(map[string]string{"AJA_HOME": "/tmp/old"})) // the tool was called aja before its first release
+	for _, pair := range p.All() {
+		if strings.HasPrefix(pair[1], "/tmp/old") {
+			t.Errorf("%s = %s: AJA_HOME moved it", pair[0], pair[1])
+		}
+	}
+}
+
 func TestConfigFlagMovesOnlyTheConfigAndItsEnv(t *testing.T) {
-	p := Resolve("/etc/aja/prod.yaml", env(map[string]string{"AJA_HOME": "/tmp/x"}))
-	if p.ConfigFile != "/etc/aja/prod.yaml" || p.EnvFile != "/etc/aja/.env" {
+	p := Resolve("/etc/ajai/prod.yaml", env(map[string]string{"AJAI_HOME": "/tmp/x"}))
+	if p.ConfigFile != "/etc/ajai/prod.yaml" || p.EnvFile != "/etc/ajai/.env" {
 		t.Errorf("config %s env %s", p.ConfigFile, p.EnvFile)
 	}
 	if p.DataDir != "/tmp/x" {
@@ -32,15 +41,15 @@ func TestConfigFlagMovesOnlyTheConfigAndItsEnv(t *testing.T) {
 
 func TestDefaultsFollowTheOSConventions(t *testing.T) {
 	p := Resolve("", env(nil))
-	if filepath.Base(filepath.Dir(p.ConfigFile)) != "aja" || filepath.Base(p.DataDir) != "aja" {
+	if filepath.Base(filepath.Dir(p.ConfigFile)) != "ajai" || filepath.Base(p.DataDir) != "ajai" {
 		t.Errorf("config %s data %s", p.ConfigFile, p.DataDir)
 	}
 }
 
-func TestTheChromeProfileIsAjasOwnUnlessTheSettingNamesAnother(t *testing.T) {
+func TestTheChromeProfileIsTheAjaiProfileUnlessTheSettingNamesAnother(t *testing.T) {
 	p := Resolve("", func(k string) string {
-		if k == "AJA_HOME" {
-			return "/data/aja"
+		if k == "AJAI_HOME" {
+			return "/data/ajai"
 		}
 		return ""
 	})
@@ -49,9 +58,9 @@ func TestTheChromeProfileIsAjasOwnUnlessTheSettingNamesAnother(t *testing.T) {
 		dir     string
 		own     bool
 	}{
-		{"", "/data/aja/chrome-profile", true},
+		{"", "/data/ajai/chrome-profile", true},
 		{"/home/u/.config/google-chrome", "/home/u/.config/google-chrome", false},
-		{"/data/aja/chrome-profile/", "/data/aja/chrome-profile/", true}, // the aja profile, named explicitly
+		{"/data/ajai/chrome-profile/", "/data/ajai/chrome-profile/", true}, // the ajai profile, named explicitly
 	}
 	for _, tc := range cases {
 		if got := p.ChromeProfile(tc.setting); got.Dir != tc.dir || got.Own != tc.own {

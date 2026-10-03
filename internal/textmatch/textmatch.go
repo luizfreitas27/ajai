@@ -1,5 +1,5 @@
 // Package textmatch is the whole-word matching every label and option test in
-// aja uses, ported from the Python find_bad_word. A plain substring scan made
+// ajai uses, ported from the Python find_bad_word. A plain substring scan made
 // "java" skip every JavaScript role, matched "state" inside "United States" and
 // "no" inside "Non-citizen"; boundaries fix all three, but only on the
 // alphanumeric edges of the phrase, so ".NET" still matches "ASP.NET" while not

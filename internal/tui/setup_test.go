@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/luizfreitas27/aja/internal/config"
+	"github.com/luizfreitas27/ajai/internal/config"
 )
 
 // selectCheck moves the checklist's selection to the check named name.
@@ -38,7 +38,7 @@ func TestWithoutAConfigTheTUIOpensOnTheChecklistAndTheInitWizardFixesIt(t *testi
 		}
 	}
 	h.open(100, 30)
-	h.shows("aja   Setup", "Setup checklist", "> ✗ config", "no config file at", "Enter: create the config with the init wizard (`aja init`)",
+	h.shows("ajai   Setup", "Setup checklist", "> ✗ config", "no config file at", "Enter: create the config with the init wizard (`ajai init`)",
 		"✓ chrome ", "i  import settings, answers and history from the Python bot", "r  check again",
 		"The other tabs open once there is a config file")
 	h.golden("setup-no-config")
@@ -56,7 +56,7 @@ func TestWithoutAConfigTheTUIOpensOnTheChecklistAndTheInitWizardFixesIt(t *testi
 	if !reflect.DeepEqual(h.ran, [][]string{{"init"}}) {
 		t.Fatalf("ran %v", h.ran)
 	}
-	h.shows("`aja init` ended; checked again.", "✓ config ")
+	h.shows("`ajai init` ended; checked again.", "✓ config ")
 	h.press("esc")
 	h.shows("No run in progress.", "Setup", "every check passes")
 }
@@ -73,23 +73,23 @@ func TestNoLinkedInSessionOpensTheChecklistWhichOffersTheSignInAndTheConfigTab(t
 	h.open(100, 30)
 	h.shows("Setup checklist") // a run would stop at LinkedIn's sign-in
 	h.selectCheck("chrome profile")
-	h.shows("! chrome profile", "has no LinkedIn session", "Enter: sign in to LinkedIn once (`aja login` opens Chrome)")
+	h.shows("! chrome profile", "has no LinkedIn session", "Enter: sign in to LinkedIn once (`ajai login` opens Chrome)")
 	h.press("enter")
 	if !reflect.DeepEqual(h.ran, [][]string{{"login"}}) {
 		t.Fatalf("ran %v", h.ran)
 	}
-	h.shows("`aja login` ended; checked again.", "✓ chrome profile")
+	h.shows("`ajai login` ended; checked again.", "✓ chrome profile")
 
 	h.selectCheck("telegram")
 	h.shows("Enter: set the secrets (or the AI settings) in the Config tab")
 	h.press("enter")
-	h.shows(tabKey(tabConfig)+" Config", "AJA_TELEGRAM_BOT_TOKEN", "set (your environment)")
+	h.shows(tabKey(tabConfig)+" Config", "AJAI_TELEGRAM_BOT_TOKEN", "set (your environment)")
 	if strings.Contains(h.screen(), "Setup checklist") {
 		t.Errorf("the Config tab is shown:\n%s", h.screen())
 	}
 
 	// Saving the chat id runs the checks again: the Dashboard sees it at once.
-	h.moveTo("AJA_TELEGRAM_CHAT_ID")
+	h.moveTo("AJAI_TELEGRAM_CHAT_ID")
 	h.press("enter", "42", "enter")
 	h.press("1")
 	h.shows("every check passes")
@@ -113,12 +113,12 @@ func TestTheChecklistNeverOpensOverASecretBeingTyped(t *testing.T) {
 	h := newHarness(t)
 	h.open(100, 30)
 	h.press(tabKey(tabConfig))
-	h.moveTo("AJA_AI_API_KEY")
+	h.moveTo("AJAI_AI_API_KEY")
 	h.press("enter", "sk-")
 	h.session = false
 	h.send(runDoctor(h.deps())()) // a report saying LinkedIn is not signed in, mid-typing
 	h.press("i")                  // still the secret
-	h.shows("Edit AJA_AI_API_KEY (hidden as you type)", "•••")
+	h.shows("Edit AJAI_AI_API_KEY (hidden as you type)", "•••")
 	if strings.Contains(h.screen(), "Setup checklist") || strings.Contains(h.screen(), "sk-i") {
 		t.Fatalf("the checklist took the keys, or the secret shows:\n%s", h.screen())
 	}
@@ -140,11 +140,11 @@ func TestTheSelectionNeverGoesBelowZeroBeforeTheFirstReport(t *testing.T) {
 
 func TestABrokenDotenvIsFixedInAnEditor(t *testing.T) {
 	h := newHarness(t)
-	if err := os.WriteFile(h.p.EnvFile, []byte("AJA_AI_API_KEY='unterminated\n"), 0o600); err != nil {
+	if err := os.WriteFile(h.p.EnvFile, []byte("AJAI_AI_API_KEY='unterminated\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.open(100, 30)
-	h.shows("Setup checklist", "✗ config", "Enter: fix ~/.env in an editor (aja never shows its content)")
+	h.shows("Setup checklist", "✗ config", "Enter: fix ~/.env in an editor (ajai never shows its content)")
 	h.press("enter")
 	if len(h.ran) != 0 || strings.Contains(h.screen(), "unterminated") {
 		t.Errorf("ran %v:\n%s", h.ran, h.screen())
@@ -167,7 +167,7 @@ func TestImportAsksForTheCheckoutAndRunsInTheTerminal(t *testing.T) {
 	if !reflect.DeepEqual(h.ran, [][]string{{"import", "--", filepath.Join(h.p.DataDir, "old-bot")}}) {
 		t.Fatalf("ran %v", h.ran)
 	}
-	h.shows("`aja import` ended; checked again.")
+	h.shows("`ajai import` ended; checked again.")
 }
 
 func TestCheckAgainSeesWhatChanged(t *testing.T) {
