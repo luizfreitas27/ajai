@@ -135,6 +135,16 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		if _, err := modal.Element(linkedin.SubmitButtonXPath); err == nil {
 			return a.review(ctx, job, modal, &out, opts)
 		}
+		if controls, err := ReadForm(modal); err == nil {
+			if page := pageSignature(modal, controls); page == st.page && pages > 0 {
+				st.samePage++
+			} else {
+				st.page, st.samePage = page, 0
+			}
+		}
+		if st.samePage >= stuckAfter && len(blocked) == 0 { // LinkedIn will not take the page and says nothing: no question to name
+			return a.giveUp(st, &out, []string{"the form stayed on the same page after Next, with no question flagged"}, nil), nil
+		}
 		if pages == MaxPages {
 			if len(blocked) > 0 {
 				return a.giveUp(st, &out, blocked, stuck), nil
@@ -157,6 +167,36 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 	}
 }
 
+// refusedReason starts the reason of a question LinkedIn refused.
+const refusedReason = "LinkedIn refused it: "
+
+// refused is the decision for a question LinkedIn refused, with its message:
+// blocked, and queued for review unless the config gave the answer (which is
+// then fixed in the config, not in the queue).
+func refused(d questions.Decision, message string) questions.Decision {
+	d.Action, d.Reason, d.Remember = questions.Blocked, refusedReason+message, d.Source != "config"
+	return d
+}
+
+// pageSignature tells one page of the form from another: how far the
+// application is, and the questions on it.
+func pageSignature(modal browser.Element, controls []Control) string {
+	var parts []string
+	if p, err := modal.Element(linkedin.FormProgressXPath); err == nil {
+		label, _ := p.Attr("aria-label")
+		parts = append(parts, label)
+	}
+	for _, c := range controls {
+		parts = append(parts, c.Question.Label)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// stuckAfter: Next pressed this many times without the page changing means
+// LinkedIn will not take the page, even when it says nothing; one press is
+// allowed for a page slow to change.
+const stuckAfter = 2
+
 // MaxHelpPauses bounds the help pauses in one application: a user who fills one
 // question per pause still gets a few rounds, but the job cannot loop forever.
 const MaxHelpPauses = 5
@@ -171,6 +211,8 @@ type formState struct {
 	userFilled      map[string]bool // controls the user filled during a pause: never touched again
 	previousBlocked []string
 	stuck           []stuckControl
+	page            string // the page shown last (pageSignature): a page that stays after Next did not advance
+	samePage        int    // Next pressed that many times without the page changing
 }
 
 // pass answers every control on the current page once and returns what stayed
@@ -181,12 +223,16 @@ func (a *Applier) pass(ctx context.Context, st *formState, out *Outcome) (blocke
 		return nil, nil, "reading the form", err
 	}
 	for _, c := range controls {
-		if c.FollowCompany || st.userFilled[snapshotKey(c.Question)] {
+		key := snapshotKey(c.Question)
+		if c.FollowCompany || (st.userFilled[key] && c.Refusal == "") {
 			continue
 		}
-		d := a.Answerer.AnswerContext(ctx, c.Question, st.qjob)
-		if c.Refusal != "" && d.Action != questions.Blocked { // LinkedIn refused what is there: it will not take it as is
-			d.Action, d.Reason = questions.Blocked, "LinkedIn refused it: "+c.Refusal
+		var d questions.Decision
+		if !st.userFilled[key] { // what the user put in is never answered over
+			d = a.Answerer.AnswerContext(ctx, c.Question, st.qjob)
+		}
+		if c.Refusal != "" { // LinkedIn refused what is there, whoever put it: it will not take it as is
+			d = refused(d, c.Refusal)
 		}
 		if d.Action == questions.Blocked {
 			blocked = append(blocked, describe(c.Question, d))
@@ -436,20 +482,21 @@ func (a *Applier) askForHelp(ctx context.Context, st *formState, blocked []strin
 		a.Logger.Warn("could not re-read the form after the help pause; nothing captured", "error", err)
 		return 0, nil
 	}
-	empty := map[string]bool{}
+	open := map[string]string{} // what the user is asked to fill: empty fields, and fields LinkedIn refused, with what they held
 	for _, c := range before {
-		if !c.FollowCompany && filled(c.Question) == "" {
-			empty[snapshotKey(c.Question)] = true
+		if !c.FollowCompany && (filled(c.Question) == "" || c.Refusal != "") {
+			open[snapshotKey(c.Question)] = filled(c.Question)
 		}
 	}
 	captured := 0
 	for _, c := range after {
 		key := snapshotKey(c.Question)
-		if c.FollowCompany || !empty[key] {
+		held, asked := open[key]
+		if c.FollowCompany || !asked {
 			continue
 		}
 		value := filled(c.Question)
-		if value == "" {
+		if value == "" || value == held { // left empty, or the refused value left as it was
 			continue
 		}
 		// What the user put in stays as they left it, captured or not (a sensitive
@@ -512,7 +559,9 @@ func describe(q questions.Question, d questions.Decision) string {
 	switch {
 	case strings.HasPrefix(d.Reason, "no option matched the configured answer"):
 		text += " (" + d.Reason + "; fix it in the config)"
-	case strings.HasPrefix(d.Reason, "LinkedIn refused it"):
+	case strings.HasPrefix(d.Reason, refusedReason) && d.Source == "config":
+		text += " (" + d.Reason + "; fix it in the config)"
+	case strings.HasPrefix(d.Reason, refusedReason):
 		text += " (" + d.Reason + ")"
 	}
 	return text
