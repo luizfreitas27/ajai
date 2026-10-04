@@ -72,12 +72,12 @@ func TestTheHeaderListsEveryFilterAndMarksTheOneShown(t *testing.T) {
 	h.open(100, 30)
 	h.jobsTab()
 	h.shows("Jobs  [all]  applied   external   failed   skipped ")
-	h.press("tab")
+	h.press("right")
 	h.shows("Jobs   all  [applied]  external   failed   skipped ")
 	h.remembered()
 	h.answersTab()
 	h.shows("Answers  [pending]  approved   3 pending")
-	h.press("tab")
+	h.press("right")
 	h.shows("Answers   pending  [approved]   1 approved")
 }
 
@@ -89,7 +89,7 @@ func TestAnAnswerIsCorrectedInThePanelBesideTheList(t *testing.T) {
 	h.selectAnswer("Are you willing")
 	h.shows("│ kind: radio", "│ answer: none yet: e gives it one", "│ from: the form", "│ options", "│   Yes", "│   No, not now")
 	h.golden("answers-beside")
-	h.press("e")
+	h.press("enter")
 	h.shows("│ Answer: Are you willing to relocate?", "│ "+selected+"Yes")
 	for _, when := range []string{"opened", "resized"} {
 		if when == "resized" {
@@ -322,6 +322,6 @@ func TestALongNoticeWrapsUnderTheHeader(t *testing.T) {
 	h.recordJob(1, store.Job{JobID: "1", Outcome: store.External, Title: "Odd", JobLink: "https://www.linkedin.com/jobs/view/1/", ExternalLink: long})
 	h.open(80, 24)
 	h.jobsTab()
-	h.press("o")
+	h.press("enter")
 	h.shows("Not opened:", "screen/and/beyond.html", "is not a web link.") // the link broken where it must be, nothing cut
 }

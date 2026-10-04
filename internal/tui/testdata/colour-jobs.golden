@@ -27,4 +27,4 @@ skipped Mon 05 Oct 08:03 · the description asks for 10 years
 
 
 \e[2m\e[0m\e[38;2;234;88;12m\e[0m\e[2m────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m
-\e[38;2;234;88;12m↑↓\e[0m\e[2m move\e[0m\e[2m · \e[0m\e[38;2;234;88;12mtab\e[0m\e[2m outcome\e[0m\e[2m · \e[0m\e[38;2;234;88;12m/\e[0m\e[2m search\e[0m\e[2m · \e[0m\e[38;2;234;88;12mo\e[0m\e[2m open\e[0m\e[2m · \e[0m\e[38;2;234;88;12m?\e[0m\e[2m keys\e[0m\e[2m · \e[0m\e[38;2;234;88;12mq\e[0m\e[2m quit\e[0m
+\e[38;2;234;88;12m↑↓\e[0m\e[2m move\e[0m\e[2m · \e[0m\e[38;2;234;88;12m←→\e[0m\e[2m filter\e[0m\e[2m · \e[0m\e[38;2;234;88;12m/\e[0m\e[2m search\e[0m\e[2m · \e[0m\e[38;2;234;88;12menter\e[0m\e[2m open\e[0m\e[2m · \e[0m\e[38;2;234;88;12m?\e[0m\e[2m keys\e[0m\e[2m · \e[0m\e[38;2;234;88;12mq\e[0m\e[2m quit\e[0m

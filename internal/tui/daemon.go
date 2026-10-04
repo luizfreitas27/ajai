@@ -38,10 +38,11 @@ const (
 	uninstallUnit
 	startDaemon
 	stopDaemon
+	startOrStop // the daemon's key: start when the unit is not active, stop when it is
 )
 
-// daemonKeys are the Schedule tab's keys for the daemon section.
-var daemonKeys = map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "s": startDaemon, "t": stopDaemon}
+// daemonKeys are the Schedule tab's keys for the daemon.
+var daemonKeys = map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "t": startOrStop}
 
 // daemonSection is the Schedule tab's daemon part: whether the daemon runs
 // and how its systemd unit stands, with install, uninstall, start and stop,
@@ -71,6 +72,16 @@ type daemonDoneMsg struct{ notice notice }
 
 func (s daemonSection) editing() bool { return s.asking != noDaemonAction }
 
+// unitActive says whether systemd has the daemon's unit running (or on its
+// way): t then stops it.
+func (s daemonSection) unitActive() bool {
+	switch s.unit.Active {
+	case "active", "activating", "reloading":
+		return true
+	}
+	return false
+}
+
 // readUnit reads the unit's state, unless a read or an action is under way.
 func (s daemonSection) readUnit(d Deps) (daemonSection, tea.Cmd) {
 	if s.reading || s.busy != noDaemonAction {
@@ -85,6 +96,12 @@ func (s daemonSection) readUnit(d Deps) (daemonSection, tea.Cmd) {
 
 // ask starts the question for a, or says why a cannot be done.
 func (s daemonSection) ask(a daemonAction) daemonSection {
+	if a == startOrStop {
+		a = startDaemon
+		if s.unitActive() {
+			a = stopDaemon
+		}
+	}
 	switch {
 	case s.unhandled:
 		s.notice = notice{"The daemon's systemd unit cannot be handled from here.", levelWarn}
@@ -214,7 +231,11 @@ func (s daemonSection) strip(st styles, width int, proc daemonProc) []string {
 	case s.busy != noDaemonAction:
 		return append(out, st.dim.Render("Working…"))
 	}
-	out = append(out, st.hints("i install · u uninstall · s start · t stop"))
+	keys := "i install · u uninstall · t start"
+	if s.unitActive() {
+		keys = "i install · u uninstall · t stop"
+	}
+	out = append(out, st.hints(keys))
 	if s.notice.text != "" {
 		out = append(out, wrapStyled(st.byLevel(s.notice.level), s.notice.text, width)...)
 	}

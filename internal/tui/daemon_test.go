@@ -27,9 +27,9 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 	h := newHarness(t)
 	h.open(100, 30)
 	h.scheduleTab()
-	h.shows("Daemon  not running · systemd unit: not installed", "i install · u uninstall · s start · t stop")
+	h.shows("Daemon  not running · systemd unit: not installed", "i install · u uninstall · t start")
 
-	h.press("s")
+	h.press("t")
 	h.shows("The daemon's unit is not installed: i installs it.")
 	h.press("i")
 	h.shows("Install the daemon as a systemd user unit? It starts now and with your desktop session.", "y does it · n leaves it")
@@ -54,9 +54,16 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 	h.press("esc")
 
 	before = len(h.systemd.calls)
-	h.press("t", "y")
-	h.shows("Stopped the daemon.")
-	h.press("s", "y")
+	h.shows("i install · u uninstall · t stop") // the unit is active: t stops it
+	h.press("t")
+	h.shows("Stop the daemon?")
+	h.systemd.answers["is-active ajai.service"] = "inactive" // what the stop leaves
+	h.press("y")
+	h.shows("Stopped the daemon.", "i install · u uninstall · t start")
+	h.press("t")
+	h.shows("Start the daemon now?")
+	h.systemd.answers["is-active ajai.service"] = "active" // it starts and stays up
+	h.press("y")
 	h.shows("Started the daemon.")
 	if got := h.systemctlSince(before); !slices.Equal(got, []string{"stop ajai.service", "start ajai.service"}) {
 		t.Errorf("ran %q", got)
@@ -75,6 +82,7 @@ func TestTheDaemonIsInstalledStoppedStartedAndUninstalledAfterAsking(t *testing.
 func TestDaemonFailuresAndWarningsAreSaid(t *testing.T) {
 	h := newHarness(t)
 	h.systemd.answers["is-active graphical-session.target"] = "inactive" // no desktop session: enabled, not started
+	h.systemd.answers["is-active ajai.service"] = "inactive"
 	h.open(100, 30)
 	h.scheduleTab()
 	h.press("i", "y")
@@ -82,14 +90,14 @@ func TestDaemonFailuresAndWarningsAreSaid(t *testing.T) {
 		"graphical-session.target")
 
 	h.systemd.fail = "start ajai.service"
-	h.press("s", "y")
+	h.press("t", "y")
 	h.shows("Could not start the daemon: systemctl --user start ajai.service: exit status 1")
 	if !strings.Contains(h.logs.String(), `"msg":"could not start the daemon from the TUI"`) {
 		t.Errorf("a failure is logged too: %s", h.logs)
 	}
 
 	h.systemd.fail, h.systemd.answers["is-active ajai.service"] = "", "failed" // it starts, then exits
-	h.press("s", "y")
+	h.press("t", "y")
 	h.shows("Could not start the daemon: the daemon did not stay up")
 }
 

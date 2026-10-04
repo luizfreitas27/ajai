@@ -84,7 +84,7 @@ func TestTheFlameThemeInColour(t *testing.T) {
 	h.jobsTab()
 	h.golden("colour-jobs") // the selection's bar, the filter shown, the keys in the hints
 	for what, drawn := range map[string]string{"the stroke": st.stroke.Render("━━━━━━"), "the bar": st.stroke.Render("▌"),
-		"a key": st.key.Render("tab"), "the filter": st.filter.Render("all")} {
+		"a key": st.key.Render("/"), "the filter": st.filter.Render("all")} {
 		if !strings.Contains(h.screen(), drawn) {
 			t.Errorf("%s is not drawn in the accent:\n%q", what, h.screen())
 		}

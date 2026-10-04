@@ -27,4 +27,4 @@ config: no config file at ~/config.yaml; run `ajai init`
 
 
 \e[2m\e[0m\e[38;2;234;88;12m\e[0m\e[2m────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m
-\e[38;2;234;88;12m↑↓\e[0m\e[2m move\e[0m\e[2m · \e[0m\e[38;2;234;88;12menter\e[0m\e[2m fix\e[0m\e[2m · \e[0m\e[38;2;234;88;12mi\e[0m\e[2m import\e[0m\e[2m · \e[0m\e[38;2;234;88;12mr\e[0m\e[2m check again\e[0m\e[2m · \e[0m\e[38;2;234;88;12m5\e[0m\e[2m config\e[0m\e[2m · \e[0m\e[38;2;234;88;12mq\e[0m\e[2m quit\e[0m
+\e[38;2;234;88;12m↑↓\e[0m\e[2m move\e[0m\e[2m · \e[0m\e[38;2;234;88;12menter\e[0m\e[2m fix\e[0m\e[2m · \e[0m\e[38;2;234;88;12mi\e[0m\e[2m import\e[0m\e[2m · \e[0m\e[38;2;234;88;12mr\e[0m\e[2m check again\e[0m\e[2m · \e[0m\e[38;2;234;88;12m5\e[0m\e[2m config\e[0m\e[2m · \e[0m\e[38;2;234;88;12m?\e[0m\e[2m keys\e[0m\e[2m · \e[0m\e[38;2;234;88;12mq\e[0m\e[2m quit\e[0m

@@ -182,12 +182,12 @@ func (t scheduleTab) update(msg tea.Msg, d Deps) (scheduleTab, tea.Cmd) {
 }
 
 func (t scheduleTab) browseKey(msg tea.KeyMsg, d Deps) (scheduleTab, tea.Cmd) {
+	if cursor, ok := moved(msg.String(), t.cursor, len(t.windows)); ok {
+		t.cursor = cursor
+		return t.settled(), nil
+	}
 	switch msg.String() {
-	case "up", "k":
-		t.cursor--
-	case "down", "j":
-		t.cursor++
-	case "a":
+	case "n":
 		t.forms++
 		t.form, t.notice = newWindowForm(t.forms), notice{}
 	case " ":
@@ -387,7 +387,7 @@ func (t scheduleTab) frame(s styles, now time.Time, proc daemonProc) listFrame {
 	}
 	return listFrame{title: "Schedule", summary: summary,
 		notes:   append(t.daemon.strip(s, t.width, proc), listNotes(s, t.problem, t.notice, t.width)...),
-		waiting: waitText(t.loaded, "Reading…"), empty: "No schedule windows: a adds one. Runs start in them only while the daemon runs.",
+		waiting: waitText(t.loaded, "Reading…"), empty: "No schedule windows: n adds one. Runs start in them only while the daemon runs.",
 		rows: len(t.windows), minDetails: scheduleDetailLines,
 		heading: func(width int) string {
 			return windowRow(width, "#", "days", "hours", "market", "mode", "state", "next opening")

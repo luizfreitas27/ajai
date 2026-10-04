@@ -2,7 +2,7 @@ ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ─────────────────────────────────━━━━━━━━━━─────────────────────────────────────
 Schedule
 Daemon  not running · systemd unit: not installed
-i install · u uninstall · s start · t stop
+i install · u uninstall · t start
 
 Add a schedule window  local time; 24:00 ends one at midnight
 ▌ Days      [x] Mon [x] Tue [x] Wed [x] Thu [x] Fri [ ] Sat [ ] Sun

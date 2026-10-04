@@ -165,16 +165,17 @@ func (a answersTab) browseKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 		a.cursor = cursor
 		return a.settled(), nil
 	}
-	switch msg.String() {
-	case "tab":
+	if filterStep(msg.String()) != 0 { // two filters: either way is the other
 		a.state = otherState(a.shownState())
 		a.loaded, a.answers, a.cursor, a.top, a.notice = false, nil, 0, 0, notice{}
 		return a, loadAnswers(d, a.state)
+	}
+	switch msg.String() {
 	case "a":
 		if r, ok := a.current(); ok {
 			return a, approveAnswer(d, r)
 		}
-	case "e", "enter":
+	case "enter":
 		if r, ok := a.current(); ok {
 			if isCheckbox(r) {
 				a.notice = notice{"A checkbox takes only Approve (a) or Delete (d).", levelWarn}
@@ -446,6 +447,18 @@ func clip(text string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return text
+}
+
+// filterStep is how far a key moves a tab's filter: -1 left, 1 right, 0 for
+// any other key.
+func filterStep(key string) int {
+	switch key {
+	case "left", "h":
+		return -1
+	case "right", "l":
+		return 1
+	}
+	return 0
 }
 
 // moved is where a list's selection goes for key, the list being n long; ok

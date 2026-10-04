@@ -104,6 +104,12 @@ to the tag before tagging and the workflow publishes that section as the release
   Colours live in `styles.go`: `accent` (flame orange, the state colours' mid tone so it
   reads on light and dark backgrounds) for the active tab, titles, the filter shown and
   key names (`styles.hints` draws the footer); `label` is a value's name, bold only.
+  Keys come from one table per screen (`Model.screenKeys`: `binding`s of a key, a word or
+  two for the footer, a sentence for the help screen) on top of `globalKeys` (tabs, r, x,
+  s, ?, q); `hints` and `helpView` are both made from them, so they cannot disagree. The
+  model handles the global keys before a tab sees a key; Esc reaches a tab unless it
+  closes the help or leaves the checklist. Lists move with `moved` and change their filter
+  with `filterStep` (←→, h l).
   `styles.mark` starts every selectable list row (the `▌` bar on the selection), and
   `Model.divider` draws the `━` stroke under the active tab's label, which marks it
   without colour too. While a tab edits a value or asks a
