@@ -151,13 +151,22 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 			}
 			return a.fail(job, &out, "walking the form", fmt.Errorf("still not at Review after %d pages", MaxPages))
 		}
-		next, err := modal.Element(linkedin.ReviewButtonXPath)
+		next, err := nextButton(modal)
 		if err != nil {
-			if next, err = modal.Element(linkedin.NextButtonXPath); err != nil {
-				return a.fail(job, &out, "finding Next, Review or Submit", err)
+			return a.fail(job, &out, "finding Next, Review or Submit", err)
+		}
+		err = next.Click()
+		if notReady := (*browser.NotReadyError)(nil); errors.As(err, &notReady) && notReady.Reason == browser.LeftThePage {
+			// LinkedIn drew the button anew while it was waited for (as while it takes
+			// an uploaded resume): the one it drew is pressed instead.
+			if next, err = nextButton(modal); err == nil {
+				err = next.Click()
 			}
 		}
-		if err := next.Click(); err != nil {
+		if err != nil {
+			if ctx.Err() != nil {
+				return a.stopped(&out), ctx.Err()
+			}
 			return a.fail(job, &out, "clicking Next", err)
 		}
 		pages++
@@ -165,6 +174,15 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 			return a.stopped(&out), err
 		}
 	}
+}
+
+// nextButton is the button that moves the form on: Review when the page has
+// it, Next otherwise.
+func nextButton(modal browser.Element) (browser.Element, error) {
+	if next, err := modal.Element(linkedin.ReviewButtonXPath); err == nil {
+		return next, nil
+	}
+	return modal.Element(linkedin.NextButtonXPath)
 }
 
 // refusedReason starts the reason of a question LinkedIn refused.

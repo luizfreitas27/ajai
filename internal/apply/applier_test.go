@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/luizfreitas27/ajai/internal/browser"
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
 	"github.com/luizfreitas27/ajai/internal/memory"
@@ -554,16 +555,59 @@ func TestAFormThatKeepsAdvancingWithoutReachingReviewStillFails(t *testing.T) {
 	}
 }
 
+// notReady is the error of a button that was not ready within the wait.
+func notReady(reason browser.NotReadyReason) error {
+	return &browser.NotReadyError{Wait: 10 * time.Second, Reason: reason}
+}
+
 func TestANextButtonThatNeverBecomesClickableFailsTheJob(t *testing.T) {
+	for reason, presses := range map[browser.NotReadyReason]int{browser.StayedDisabled: 1, browser.LeftThePage: 2} { // a redrawn one is looked for again, once
+		phone, _ := textBlock("Phone", "")
+		modal := modalWith(phone)
+		next := el("Next")
+		next.clickErr = notReady(reason) // redrawn, the button found again is the same one, still not ready
+		modal.with(linkedin.NextButtonXPath, next)
+		pg, button := pageWith(modal)
+		a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
+		out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+		if err == nil || !strings.Contains(err.Error(), string(reason)) || out.Kind != Failed || out.Stage != "clicking Next" || len(pg.shots) != 1 || next.clicks != presses {
+			t.Errorf("%s: %+v %v shots=%v, Next pressed %d times", reason, out, err, pg.shots, next.clicks)
+		}
+	}
+}
+
+func TestANextButtonLinkedInRedrawsIsPressedAnew(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	stale, fresh := el("Next"), el("Next")
+	stale.clickErr = notReady(browser.LeftThePage)
+	stale.onClick = func() { modal.children[linkedin.NextButtonXPath] = []*node{fresh} } // drawn anew while it was waited for
+	fresh.onClick = func() {
+		modal.children[linkedin.FormQuestionXPath] = nil
+		delete(modal.children, linkedin.NextButtonXPath)
+		modal.with(linkedin.SubmitButtonXPath, el("Submit application"))
+	}
+	modal.with(linkedin.NextButtonXPath, stale)
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != DryRun || fresh.clicks != 1 {
+		t.Errorf("%+v %v (the new Next pressed %d times)", out, err, fresh.clicks)
+	}
+}
+
+func TestAStopWhileNextIsWaitedForIsAStopNotAFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	phone, _ := textBlock("Phone", "")
 	modal := modalWith(phone)
 	next := el("Next")
-	next.clickErr = errors.New("gave up after 10s: it stayed disabled")
+	next.clickErr, next.onClick = notReady(browser.StayedDisabled), cancel // ajai stop during the wait
 	modal.with(linkedin.NextButtonXPath, next)
 	pg, button := pageWith(modal)
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
-	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
-	if err == nil || !strings.Contains(err.Error(), "it stayed disabled") || out.Kind != Failed || out.Stage != "clicking Next" || len(pg.shots) != 1 {
+	out, err := a.Apply(ctx, job, button, Options{DryRun: true})
+	if !errors.Is(err, context.Canceled) || out.Kind == Failed || len(pg.shots) != 0 {
 		t.Errorf("%+v %v shots=%v", out, err, pg.shots)
 	}
 }
