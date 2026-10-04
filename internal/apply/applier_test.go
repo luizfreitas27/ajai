@@ -570,7 +570,9 @@ func TestANextButtonThatNeverBecomesClickableFailsTheJob(t *testing.T) {
 		pg, button := pageWith(modal)
 		a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
 		out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
-		if err == nil || !strings.Contains(err.Error(), string(reason)) || out.Kind != Failed || out.Stage != "clicking Next" || len(pg.shots) != 1 || next.clicks != presses {
+		again := reason == browser.LeftThePage // the second try says so
+		if err == nil || !strings.Contains(err.Error(), string(reason)) || strings.Contains(err.Error(), "in the modal found again") != again ||
+			out.Kind != Failed || out.Stage != "clicking Next" || len(pg.shots) != 1 || next.clicks != presses {
 			t.Errorf("%s: %+v %v shots=%v, Next pressed %d times", reason, out, err, pg.shots, next.clicks)
 		}
 	}
@@ -593,6 +595,72 @@ func TestANextButtonLinkedInRedrawsIsPressedAnew(t *testing.T) {
 	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
 	if err != nil || out.Kind != DryRun || fresh.clicks != 1 {
 		t.Errorf("%+v %v (the new Next pressed %d times)", out, err, fresh.clicks)
+	}
+}
+
+func TestAModalLinkedInRedrawsIsFoundAgain(t *testing.T) {
+	for _, dry := range []bool{true, false} {
+		phone, _ := textBlock("Phone", "")
+		old := modalWith(phone)
+		stale := el("Next")
+		stale.clickErr = notReady(browser.LeftThePage)
+		old.with(linkedin.NextButtonXPath, stale)
+		pg, button := pageWith(old)
+		again, _ := textBlock("Phone", "")
+		redrawn := modalWith(again)
+		fresh, submit := el("Next"), el("Submit application")
+		city, cityInput := textBlock("City", "")
+		fresh.onClick = func() { // the last page, in the modal found again: a question, then Submit
+			redrawn.children[linkedin.FormQuestionXPath] = []*node{city}
+			delete(redrawn.children, linkedin.NextButtonXPath)
+			redrawn.with(linkedin.SubmitButtonXPath, submit)
+		}
+		redrawn.with(linkedin.NextButtonXPath, fresh)
+		stale.onClick = func() { // the whole modal drawn anew while Next was waited for: the old one emptied, off the page
+			old.children = map[string][]*node{}
+			pg.root.children[linkedin.ModalXPath] = []*node{redrawn}
+		}
+		a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+		a.Answerer.Cfg.Personals.City = "Lisbon"
+		out, err := a.Apply(context.Background(), job, button, Options{DryRun: dry}) // the form, Review and Submit are in the modal found again
+		want, submitted := Applied, 1
+		if dry {
+			want, submitted = DryRun, 0
+		}
+		if err != nil || out.Kind != want || fresh.clicks != 1 || submit.clicks != submitted || cityInput.typed.String() != "Lisbon" {
+			t.Errorf("dry %v: %+v %v (the new modal's Next pressed %d times, Submit %d, its City %q)", dry, out, err, fresh.clicks, submit.clicks, cityInput.typed.String())
+		}
+	}
+}
+
+func TestAModalThatClosedWhileNextWasWaitedForFailsTheJob(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	next := el("Next")
+	next.clickErr = notReady(browser.LeftThePage)
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	next.onClick = func() { delete(pg.root.children, linkedin.ModalXPath) }
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "the Easy Apply modal is gone") || out.Kind != Failed || out.Stage != "clicking Next" {
+		t.Errorf("%+v %v", out, err)
+	}
+}
+
+func TestAStopWhileTheModalIsLookedForAgainIsAStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	next := el("Next")
+	next.clickErr, next.onClick = notReady(browser.LeftThePage), cancel // ajai stop as the button left the page
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
+	out, err := a.Apply(ctx, job, button, Options{DryRun: true})
+	if !errors.Is(err, context.Canceled) || out.Kind == Failed || len(pg.shots) != 0 || next.clicks != 1 {
+		t.Errorf("%+v %v shots=%v, Next pressed %d times", out, err, pg.shots, next.clicks)
 	}
 }
 

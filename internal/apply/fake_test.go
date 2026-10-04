@@ -83,7 +83,10 @@ type page struct {
 }
 
 func (p *page) Navigate(context.Context, string) error { return nil }
-func (p *page) WaitElement(_ context.Context, xpath string, _ time.Duration) (browser.Element, error) {
+func (p *page) WaitElement(ctx context.Context, xpath string, _ time.Duration) (browser.Element, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	return p.root.Element(xpath)
 }
 func (p *page) URL() (string, error)                             { return "https://www.linkedin.com/jobs/view/1", nil }
