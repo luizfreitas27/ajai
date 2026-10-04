@@ -136,12 +136,19 @@ func TestTheDashboardShowsAWaitingSessionAStartAndADeadRun(t *testing.T) {
 	if err := gone.Run(); err != nil {
 		t.Skip("no true(1):", err)
 	}
-	state.PID, state.NextRun = gone.Process.Pid, time.Time{}
+	killed, err := h.st.StartRun(context.Background(), "internacional", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.PID, state.NextRun, state.RunID = gone.Process.Pid, time.Time{}, killed
 	if err := run.WriteState(run.StatePath(h.p.DataDir), state); err != nil {
 		t.Fatal(err)
 	}
 	h.refresh()
 	h.shows("the last run did not exit cleanly (it started at Mon 05 Oct 08:30)")
+	if r, _ := h.st.GetRun(killed); r.Reason != run.StaleReason {
+		t.Errorf("the TUI ends the run its dead process left in progress: %+v", r)
+	}
 }
 
 func TestARunTheDaemonStartedIsFollowedInTheDaemonLog(t *testing.T) {

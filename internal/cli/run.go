@@ -297,6 +297,11 @@ func (a *App) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if ended, err := run.SettleStale(cmd.Context(), st, act, run.StatePath(a.paths.DataDir)); err != nil {
+				a.ui.Warn("runs", err.Error())
+			} else if ended {
+				a.ui.KV("ended", fmt.Sprintf("run #%d, in Last runs", state.RunID))
+			}
 			windows, err := st.ListWindows()
 			if err != nil {
 				return err

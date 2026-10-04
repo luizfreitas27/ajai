@@ -598,6 +598,20 @@ func TestANextButtonLinkedInRedrawsIsPressedAnew(t *testing.T) {
 	}
 }
 
+func TestASkipNamesEachQuestionOnce(t *testing.T) {
+	first, _ := selectBlock("Você tem disponibilidade para o modelo híbrido?", "Selecionar opção", "Selecionar opção", "Yes", "No")
+	again, _ := selectBlock("Você tem disponibilidade para o modelo híbrido?", "Selecionar opção", "Selecionar opção", "Yes", "No") // LinkedIn drew it twice
+	other, _ := selectBlock("Possui experiência com Kafka?", "Selecionar opção", "Selecionar opção", "Yes", "No")
+	modal := modalWith(first, again, other)
+	modal.with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if joined := strings.Join(out.Blocked, " | "); err != nil || out.Kind != Unanswered || len(out.Blocked) != 2 || !strings.Contains(joined, "híbrido") || !strings.Contains(joined, "Kafka") {
+		t.Errorf("%+v %v", out, err)
+	}
+}
+
 func TestAModalLinkedInRedrawsIsFoundAgain(t *testing.T) {
 	for _, dry := range []bool{true, false} {
 		phone, _ := textBlock("Phone", "")

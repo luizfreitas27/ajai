@@ -326,9 +326,23 @@ func (a *Applier) giveUp(st *formState, out *Outcome, blocked []string, stuck []
 			out.Queued++
 		}
 	}
-	out.Blocked, out.Kind = blocked, Unanswered
+	out.Blocked, out.Kind = distinct(blocked), Unanswered
 	a.discard()
 	return *out
+}
+
+// distinct is items without repeats, in order: LinkedIn can draw one question
+// twice, and a skip names it once.
+func distinct(items []string) []string {
+	seen := make(map[string]bool, len(items))
+	var out []string
+	for _, it := range items {
+		if !seen[it] {
+			seen[it] = true
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // uploadResume sets the resume file once per application, when the page has the input.

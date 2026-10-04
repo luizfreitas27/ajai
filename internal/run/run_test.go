@@ -402,6 +402,21 @@ func TestAClosedOrExternalPostingDoesNotSettleTheRole(t *testing.T) {
 	}
 }
 
+func TestARunStartingEndsTheOneThatDiedBeforeIt(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
+	r, st, _ := runner(t, site, cfg())
+	killed, _ := st.StartRun(context.Background(), "brasil", true)
+	if err := WriteState(r.StatePath, State{PID: deadPID(t), RunID: killed, Applied: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(context.Background(), Options{DryRun: true, Fast: true}); err != nil {
+		t.Fatal(err)
+	}
+	if old, _ := st.GetRun(killed); old.Reason != StaleReason || old.EndedAt == "" || old.Applied != 3 {
+		t.Errorf("the killed run: %+v", old)
+	}
+}
+
 func TestTheLiveStateFileShowsProgressWhileRunning(t *testing.T) {
 	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
 	r, _, _ := runner(t, site, cfg())

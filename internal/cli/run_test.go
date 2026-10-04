@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/browser"
 	"github.com/luizfreitas27/ajai/internal/notify"
 	"github.com/luizfreitas27/ajai/internal/run"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 func TestRunRefusesBeforeAValidConfigAndWithoutDryRun(t *testing.T) {
@@ -86,12 +88,21 @@ func TestStatusAndLogsWithoutAnyRun(t *testing.T) {
 	if !strings.Contains(out, `"msg":"config created"`) {
 		t.Errorf("logs should print the init line:\n%s", out)
 	}
-	if err := os.WriteFile(filepath.Join(h.home, "run.pid"), []byte(`{"pid": 999999999, "started": "2026-10-01T10:00:00Z", "dry_run": true}`), 0o600); err != nil {
+	st, err := store.Open(filepath.Join(h.home, "ajai.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	killed, _ := st.StartRun(context.Background(), "brasil", true)
+	_ = st.Close()
+	if err := os.WriteFile(filepath.Join(h.home, "run.pid"), []byte(fmt.Sprintf(`{"pid": 999999999, "run_id": %d, "started": "2026-10-01T10:00:00Z", "dry_run": true}`, killed)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, out, _ = h.run("status")
-	if !strings.Contains(out, "stale") {
-		t.Errorf("a dead pid is reported as stale:\n%s", out)
+	if !strings.Contains(out, "stale") || !strings.Contains(out, fmt.Sprintf("run #%d, in Last runs", killed)) || !strings.Contains(out, run.StaleReason) {
+		t.Errorf("a dead pid is reported as stale, and its run ended:\n%s", out)
+	}
+	if _, out, _ = h.run("status"); strings.Contains(out, "stale") || !strings.Contains(out, "No run in progress") || !strings.Contains(out, run.StaleReason) {
+		t.Errorf("once ended, the run is no longer stale, and Last runs says why it ended:\n%s", out)
 	}
 	if err := os.WriteFile(filepath.Join(h.home, "run.pid"), []byte(`{not json`), 0o600); err != nil {
 		t.Fatal(err)

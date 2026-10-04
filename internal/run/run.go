@@ -299,6 +299,10 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	r.started = r.Now()
 	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
 	r.inProgress = &sum
+	if old, err := ReadState(r.StatePath); r.StatePath != "" && err == nil && !old.Alive() {
+		// The run before died without ending (killed, crashed): it ends now, and this run writes its own state next.
+		_, _ = SettleStale(context.Background(), r.Store, Activity{Kind: Stale, Held: true, State: old}, r.StatePath)
+	}
 	id, err := r.Store.StartRun(context.Background(), sum.Market, opts.DryRun) // the record must exist even when ctx is already cancelled
 	if err != nil {
 		return sum, err

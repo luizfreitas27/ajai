@@ -513,6 +513,20 @@ func (s *Store) FinishRun(ctx context.Context, r Run) error {
 	return err
 }
 
+// EndAbandonedRun ends a run its process never ended (killed, crashed) with
+// the counts it last saved and r.Reason, unless it has ended already: false
+// then, and the run stays as it is.
+func (s *Store) EndAbandonedRun(ctx context.Context, r Run) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE runs SET ended_at = ?, applied = ?, external = ?, failed = ?, skipped = ?,
+		reason = ? WHERE id = ? AND ended_at IS NULL`,
+		Timestamp(s.now()), r.Applied, r.External, r.Failed, r.Skipped, r.Reason, r.ID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // ListRuns returns runs newest first; limit 0 means all.
 func (s *Store) ListRuns(limit int) ([]Run, error) {
 	if limit <= 0 {
