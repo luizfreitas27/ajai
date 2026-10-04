@@ -72,17 +72,17 @@ var (
 
 // OptionPlaceholders are dropdown texts that mean "nothing chosen yet": never
 // offered to the AI, and a dropdown sitting on one counts as unanswered. An
-// employer's own questions come in the language of the job, so LinkedIn's
-// Portuguese placeholders are here too.
-var OptionPlaceholders = []string{"Select an option", "Select", "Please select", "Choose an option",
-	"Selecionar opção", "Selecione uma opção", "Selecione", "Escolha uma opção", ""}
+// employer's own questions come in the language of the job: "Selecionar opção"
+// is LinkedIn's placeholder for those in Portuguese.
+var OptionPlaceholders = []string{"Select an option", "Select", "Please select", "Choose an option", "Selecionar opção", ""}
 
 // IsPlaceholder reports whether an option text is one of OptionPlaceholders,
-// ignoring case and the surrounding whitespace.
+// whatever its spacing (a non-breaking or a doubled space). The case counts:
+// "SELECT" is a real answer to an SQL question, not the placeholder "Select".
 func IsPlaceholder(text string) bool {
-	text = strings.TrimSpace(text)
+	text = strings.Join(strings.Fields(text), " ")
 	for _, p := range OptionPlaceholders {
-		if strings.EqualFold(text, p) {
+		if text == p {
 			return true
 		}
 	}

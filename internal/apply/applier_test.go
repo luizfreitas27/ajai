@@ -488,9 +488,21 @@ func TestADropdownOnThePortuguesePlaceholderIsUnansweredNotFailed(t *testing.T) 
 	modal := modalWith(sel)
 	modal.with(linkedin.NextButtonXPath, el("Next"))
 	pg, button := pageWith(modal)
-	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	mem := memory.New(st, nil)
+	cfg := config.Defaults()
+	cfg.Search.Terms = []string{"x"}
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: questions.New(cfg, mem, nil, nil)}
 	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
-	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "parentesco") {
-		t.Fatalf("the job is not unanswered: %+v %v", out, err)
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "parentesco") || out.Queued != 1 {
+		t.Fatalf("the job is not unanswered with its question queued: %+v %v", out, err)
+	}
+	pending, _ := mem.List("pending")
+	if len(pending) != 1 || strings.Join(pending[0].Options, "|") != "Sim|Não" {
+		t.Errorf("the queued question, its options without the placeholder: %+v", pending)
 	}
 }

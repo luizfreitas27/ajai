@@ -35,10 +35,10 @@ no such section the notes are the commit list.
 
 ### Fixed
 
-- A dropdown still on LinkedIn's Portuguese placeholder ("Selecionar opção", "Selecione
-  uma opção"…), common in employers' own questions, counts as unanswered: it is answered
-  from the config or the answer memory, or the job is skipped with the question in the
-  review queue. It used to pass for an answer, and the job failed after 15 pages.
+- A dropdown still on LinkedIn's Portuguese placeholder ("Selecionar opção"), common in
+  employers' own questions, counts as unanswered: it is answered from the config or the
+  answer memory, or the job is skipped with the question in the review queue. It used to
+  pass for an answer, and the job failed after 15 pages.
 
 ### New
 

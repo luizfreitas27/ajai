@@ -297,7 +297,7 @@ func (a *Answerer) optionFromMemoryOrAI(ctx context.Context, label string, kind 
 	if IsSensitive(label) {
 		return -1, ""
 	}
-	if found, approx := a.lookup(label, string(kind), true); found != nil {
+	if found, approx := a.lookup(label, string(kind), true); found != nil && !IsPlaceholder(found.Answer) { // a placeholder is no answer, remembered or not
 		matched := indexOf(options, found.Answer)
 		if matched < 0 {
 			matched = MatchAnswerToOption(found.Answer, options)

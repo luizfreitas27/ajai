@@ -954,14 +954,31 @@ func TestGenderAndEthnicityAreAnsweredFromTheConfigInDropdownsAndRadios(t *testi
 }
 
 func TestPlaceholdersInEitherLanguageMeanNothingChosen(t *testing.T) {
-	for _, text := range []string{"Select an option", "Selecionar opção", "Selecione uma opção", "Selecione", "Escolha uma opção", "  selecionar OPÇÃO ", ""} {
+	for _, text := range []string{"Select an option", "Selecionar opção", "Selecionar\u00a0opção", " Selecionar  opção ", ""} {
 		if !IsPlaceholder(text) {
 			t.Errorf("%q is a placeholder", text)
 		}
 	}
-	for _, text := range []string{"Sim", "Não", "Selecionado", "Select all that apply"} {
+	for _, text := range []string{"Sim", "Não", "Selecionado", "Select all that apply", "SELECT"} { // SELECT: an SQL answer
 		if IsPlaceholder(text) {
 			t.Errorf("%q is an answer, not a placeholder", text)
 		}
+	}
+}
+
+func TestADropdownOnThePortuguesePlaceholderIsAnsweredFromMemory(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	label := "Você tem grau de parentesco com algum colaborador da empresa?"
+	if _, err := mem.Remember(label, "select", "Não", "user", "", []string{"Sim", "Não"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.Remember("Possui CNH?", "select", "Selecionar opção", "ai", "", nil); err != nil { // as one could have been remembered before
+		t.Fatal(err)
+	}
+	if d := a.Answer(dropdown(label, "Selecionar opção", "Sim", "Não"), job); d.Action != Choose || d.Value != "Não" || d.Source != "memory" {
+		t.Errorf("not answered from memory: %+v", d)
+	}
+	if d := a.Answer(dropdown("Possui CNH?", "Selecionar opção", "Sim", "Não"), job); d.Action != Blocked {
+		t.Errorf("a remembered placeholder answered: %+v", d)
 	}
 }
