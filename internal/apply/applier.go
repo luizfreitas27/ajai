@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -295,7 +296,7 @@ func (a *Applier) pass(ctx context.Context, st *formState, out *Outcome) (blocke
 		_ = today.Click()
 	}
 	sort.Strings(blocked)
-	return blocked, stuck, "", nil
+	return slices.Compact(blocked), stuck, "", nil // LinkedIn can draw one question twice: it is named once
 }
 
 // tryHelp runs a help pause when one is allowed (an attended run, a set of stuck
@@ -326,23 +327,9 @@ func (a *Applier) giveUp(st *formState, out *Outcome, blocked []string, stuck []
 			out.Queued++
 		}
 	}
-	out.Blocked, out.Kind = distinct(blocked), Unanswered
+	out.Blocked, out.Kind = blocked, Unanswered
 	a.discard()
 	return *out
-}
-
-// distinct is items without repeats, in order: LinkedIn can draw one question
-// twice, and a skip names it once.
-func distinct(items []string) []string {
-	seen := make(map[string]bool, len(items))
-	var out []string
-	for _, it := range items {
-		if !seen[it] {
-			seen[it] = true
-			out = append(out, it)
-		}
-	}
-	return out
 }
 
 // uploadResume sets the resume file once per application, when the page has the input.

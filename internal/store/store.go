@@ -527,6 +527,17 @@ func (s *Store) EndAbandonedRun(ctx context.Context, r Run) (bool, error) {
 	return n > 0, err
 }
 
+// EndAbandonedRuns ends every run with no end, with reason, and says how many.
+// It is only for a run holding the run lock, when no other run can be in
+// progress: any run without an end was left by a process that died.
+func (s *Store) EndAbandonedRuns(ctx context.Context, reason string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE runs SET ended_at = ?, reason = ? WHERE ended_at IS NULL`, Timestamp(s.now()), reason)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ListRuns returns runs newest first; limit 0 means all.
 func (s *Store) ListRuns(limit int) ([]Run, error) {
 	if limit <= 0 {

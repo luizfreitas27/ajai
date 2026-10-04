@@ -38,7 +38,7 @@ func TestARunWhoseProcessDiedIsEndedOnceWithItsLastCounts(t *testing.T) {
 		}
 		act, _ := ReadActivity(dir)
 		act.Held = held
-		ended, err := SettleStale(ctx, st, act, StatePath(dir))
+		ended, err := act.EndIfStale(ctx, st, dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,11 +85,28 @@ func TestARunStillAliveIsNeverEnded(t *testing.T) {
 		t.Fatal(err)
 	}
 	act, _ := ReadActivity(dir)
-	if ended, err := SettleStale(ctx, st, act, StatePath(dir)); ended || err != nil {
+	if ended, err := act.EndIfStale(ctx, st, dir); ended || err != nil {
 		t.Errorf("a live run was ended: %v %v", ended, err)
 	}
 	if r, _ := st.GetRun(id); r.EndedAt != "" || !fileHasState(dir) {
 		t.Errorf("a live run was touched: %+v", r)
+	}
+}
+
+func TestAStoreThatCannotEndTheRunKeepsItsStateFile(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "ajai.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := st.StartRun(context.Background(), "brasil", true)
+	_ = st.Close() // every write fails now
+	dead := State{PID: deadPID(t), RunID: id, Applied: 2}
+	if err := WriteState(StatePath(dir), dead); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EndStale(context.Background(), st, StatePath(dir), dead, false); err == nil || !fileHasState(dir) {
+		t.Errorf("%v: the state file, the only copy of the last counts, must stay for the next try", err)
 	}
 }
 

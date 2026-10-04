@@ -1,11 +1,6 @@
 package run
 
-import (
-	"context"
-	"errors"
-
-	"github.com/luizfreitas27/ajai/internal/store"
-)
+import "errors"
 
 // ActivityKind is what the machine's run is doing.
 type ActivityKind int
@@ -64,24 +59,4 @@ func (a Activity) From() string {
 		return ""
 	}
 	return a.Holder.From()
-}
-
-// StaleReason is what a run its process never ended is ended with.
-const StaleReason = "did not exit cleanly: its process ended without closing the run"
-
-// SettleStale ends, in the store, the run a dead process left in progress (its
-// state file names it, with the counts it last saved), once: a run already
-// ended stays as it is. Unless a run holds the lock (it writes its own), the
-// stale state file goes too. It reports whether it ended a run.
-func SettleStale(ctx context.Context, st *store.Store, act Activity, statePath string) (bool, error) {
-	if act.Kind != Stale {
-		return false, nil
-	}
-	s := act.State
-	ended, err := st.EndAbandonedRun(ctx, store.Run{ID: s.RunID, Applied: s.Applied, External: s.External,
-		Failed: s.Failed, Skipped: s.Skipped, Reason: StaleReason})
-	if again, rerr := ReadState(statePath); !act.Held && rerr == nil && again.PID == s.PID && !again.Alive() {
-		RemoveState(statePath)
-	}
-	return ended, err
 }

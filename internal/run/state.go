@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/luizfreitas27/ajai/internal/procs"
+	"github.com/luizfreitas27/ajai/internal/store"
 )
 
 // State is the run in progress, written to a file in the data directory after
@@ -71,3 +73,35 @@ func ReadState(path string) (State, error) {
 
 // RemoveState deletes the state file.
 func RemoveState(path string) { _ = os.Remove(path) }
+
+// StaleReason is what a run its process never ended (killed, crashed) is ended with.
+const StaleReason = "did not exit cleanly: its process ended without closing the run"
+
+// EndStale ends, in the store, the run a dead process left in progress (s, as
+// its state file last had it), with the counts it last saved, once: a run
+// already ended stays as it is. Once the run is ended its state file goes too,
+// unless keepFile (a run holding the lock writes its own). It reports whether
+// it ended the run.
+func EndStale(ctx context.Context, st *store.Store, statePath string, s State, keepFile bool) (bool, error) {
+	ended, err := st.EndAbandonedRun(ctx, s.row(StaleReason))
+	if err != nil {
+		return false, err // the state file keeps the counts for the next try
+	}
+	if again, rerr := ReadState(statePath); !keepFile && rerr == nil && again.PID == s.PID && !again.Alive() {
+		RemoveState(statePath)
+	}
+	return ended, nil
+}
+
+// EndIfStale is EndStale for the run the activity found stale, if it did.
+func (a Activity) EndIfStale(ctx context.Context, st *store.Store, dataDir string) (bool, error) {
+	if a.Kind != Stale {
+		return false, nil
+	}
+	return EndStale(ctx, st, StatePath(dataDir), a.State, a.Held)
+}
+
+// row is the run the state describes, as far as the state knows it.
+func (s State) row(reason string) store.Run {
+	return store.Run{ID: s.RunID, Applied: s.Applied, External: s.External, Failed: s.Failed, Skipped: s.Skipped, Reason: reason}
+}
