@@ -48,6 +48,7 @@ func (n *node) Click() error {
 	}
 	return nil
 }
+func (n *node) ClickWhereShown() error         { return n.Click() }
 func (n *node) Input(text string) error        { n.typed.WriteString(text); return nil }
 func (n *node) Clear() error                   { n.cleared = true; n.typed.Reset(); return nil }
 func (n *node) Focus() error                   { return nil }

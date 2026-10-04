@@ -185,7 +185,12 @@ func (s *Session) clickSwitch(ctx context.Context, title string) {
 		s.Logger.Warn("filter switch input not found", "title", title)
 		return
 	}
-	if err := sw.Click(); err != nil {
+	if on, _ := sw.Property("checked"); on == "true" { // already on: a click would turn it off
+		return
+	}
+	// The input is drawn over by LinkedIn's toggle (pointer-events none on it):
+	// clicked where it shows, as the Python bot's mouse did.
+	if err := sw.ClickWhereShown(); err != nil {
 		s.Logger.Warn("filter switch click failed", "title", title, "error", err)
 	}
 	_ = s.Pacer.BetweenActions(ctx)

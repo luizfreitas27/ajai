@@ -44,6 +44,10 @@ no such section the notes are the commit list.
   ("Please enter a valid answer") is named with its message and queued for review, or
   pointed to the config when the config gave the answer; a page that stays with nothing
   flagged is said so. A correction typed in a help pause is remembered.
+- The Easy Apply filter (and the other filter switches) is set again: LinkedIn draws its
+  toggle over the switch's input, which refused ajai's click, so searches returned
+  external jobs that were then skipped. The switch is clicked where it shows, as a person
+  would, and one already on is left on.
 
 ### New
 

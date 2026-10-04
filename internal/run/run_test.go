@@ -32,6 +32,7 @@ func (nullElement) Text() (string, error)                      { return "", nil 
 func (nullElement) Attr(string) (string, bool)                 { return "", false }
 func (nullElement) Property(string) (string, error)            { return "", nil }
 func (nullElement) Click() error                               { return nil }
+func (nullElement) ClickWhereShown() error                     { return nil }
 func (nullElement) Input(string) error                         { return nil }
 func (nullElement) Clear() error                               { return nil }
 func (nullElement) Focus() error                               { return nil }

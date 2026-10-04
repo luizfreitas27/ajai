@@ -14,19 +14,29 @@ import (
 // fakeElement records clicks and typed text. The embedded interface value is nil:
 // any method not overridden here would panic, which is what a test wants.
 type fakeElement struct {
-	stub  browser.Element
-	name  string
-	page  *fakePage
-	typed strings.Builder
+	stub    browser.Element
+	name    string
+	page    *fakePage
+	typed   strings.Builder
+	checked string // the "checked" property: "true" for a switch already on
 }
 
-func (e *fakeElement) Property(string) (string, error)            { return e.stub.Property("") }
+func (e *fakeElement) Property(name string) (string, error) {
+	if name == "checked" {
+		return e.checked, nil
+	}
+	return e.stub.Property("")
+}
 func (e *fakeElement) Focus() error                               { return e.stub.Focus() }
 func (e *fakeElement) Elements(string) ([]browser.Element, error) { return e.stub.Elements("") }
 func (e *fakeElement) SelectOption(string) error                  { return e.stub.SelectOption("") }
 func (e *fakeElement) SetFiles([]string) error                    { return e.stub.SetFiles(nil) }
 
-func (e *fakeElement) Click() error               { e.page.clicks = append(e.page.clicks, e.name); return nil }
+func (e *fakeElement) Click() error { e.page.clicks = append(e.page.clicks, e.name); return nil }
+func (e *fakeElement) ClickWhereShown() error {
+	e.page.clicks = append(e.page.clicks, e.name+" (where shown)")
+	return nil
+}
 func (e *fakeElement) Clear() error               { e.typed.Reset(); return nil }
 func (e *fakeElement) Input(text string) error    { e.typed.WriteString(text); return nil }
 func (e *fakeElement) ScrollIntoView() error      { return nil }
@@ -90,7 +100,7 @@ func TestApplyFiltersClicksEveryConfiguredControlInThePythonOrder(t *testing.T) 
 		t.Fatal(err)
 	}
 	got := strings.Join(page.clicks, " > ")
-	want := "City, state, or zip code > All filters > \"most recent\" > \"past week\" > \"mid-senior level\" > \"acme\" > \"add a company\" > placeholder='Add a company' > \"remote\" > switch > apply current filters to show"
+	want := "City, state, or zip code > All filters > \"most recent\" > \"past week\" > \"mid-senior level\" > \"acme\" > \"add a company\" > placeholder='Add a company' > \"remote\" > switch (where shown) > apply current filters to show"
 	if got != want {
 		t.Errorf("clicks:\n got %s\nwant %s", got, want)
 	}
@@ -133,5 +143,21 @@ func TestXPathLiteralHandlesQuotes(t *testing.T) {
 	}
 	if !strings.Contains(TextXPath("span", `Say "Hi"`), `'say "hi"'`) {
 		t.Error(TextXPath("span", `Say "Hi"`))
+	}
+}
+
+func TestASwitchAlreadyOnIsLeftOn(t *testing.T) {
+	page := newFakePage("All filters", `"easy apply"`, "apply current filters to show")
+	page.elements[`role="switch"`] = &fakeElement{name: "switch", page: page, checked: "true"}
+	s := NewSession(page, nil, quick(), nil)
+	f := config.Defaults().Search
+	f.EasyApplyOnly = true
+	if err := s.ApplyFilters(context.Background(), f, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range page.clicks {
+		if strings.HasPrefix(c, "switch") {
+			t.Errorf("a switch already on was clicked (off): %q", page.clicks)
+		}
 	}
 }

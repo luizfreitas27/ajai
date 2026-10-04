@@ -315,6 +315,23 @@ func (e *rodElement) Click() error {
 	return e.el.Click(proto.InputMouseButtonLeft, 1)
 }
 
+func (e *rodElement) ClickWhereShown() error {
+	_ = e.ScrollIntoView()
+	shape, err := e.el.Shape()
+	if err != nil {
+		return err
+	}
+	box := shape.Box()
+	if box == nil {
+		return errors.New("the element is not shown")
+	}
+	mouse := e.el.Page().Mouse
+	if err := mouse.MoveTo(proto.Point{X: box.X + box.Width/2, Y: box.Y + box.Height/2}); err != nil {
+		return err
+	}
+	return mouse.Click(proto.InputMouseButtonLeft, 1)
+}
+
 func (e *rodElement) Input(text string) error { return e.el.Input(text) }
 
 func (e *rodElement) Clear() error {
