@@ -47,7 +47,8 @@ no such section the notes are the commit list.
 - The Easy Apply filter (and the other filter switches) is set again: LinkedIn draws its
   toggle over the switch's input, which refused ajai's click, so searches returned
   external jobs that were then skipped. The switch is clicked where it shows, as a person
-  would, and one already on is left on.
+  would, never through something drawn over it; one already on is left on, and one the
+  click leaves off is logged.
 
 ### New
 

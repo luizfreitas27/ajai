@@ -315,18 +315,36 @@ func (e *rodElement) Click() error {
 	return e.el.Click(proto.InputMouseButtonLeft, 1)
 }
 
-func (e *rodElement) ClickWhereShown() error {
+// drawnOverScript names what the page draws at x, y when it is unrelated to
+// the element: "" for the element, a part of it, what holds it or its label.
+const drawnOverScript = `(x, y) => {
+	const hit = document.elementFromPoint(x, y);
+	if (!hit) return "nothing";
+	const label = hit.closest("label");
+	if (hit.contains(this) || this.contains(hit) || (label && label.control === this)) return "";
+	const cls = typeof hit.className === "string" ? hit.className.trim().split(/\s+/).filter(Boolean) : [];
+	return [hit.tagName.toLowerCase(), ...cls].join(".");
+}`
+
+func (e *rodElement) ClickAtCentre() error {
 	_ = e.ScrollIntoView()
 	shape, err := e.el.Shape()
 	if err != nil {
 		return err
 	}
-	box := shape.Box()
-	if box == nil {
-		return errors.New("the element is not shown")
+	at := shape.OnePointInside()
+	if at == nil {
+		return errors.New("the element takes no room on the page")
+	}
+	over, err := e.el.Eval(drawnOverScript, at.X, at.Y)
+	if err != nil {
+		return err
+	}
+	if what := over.Value.Str(); what != "" {
+		return fmt.Errorf("%s is drawn over the element", what)
 	}
 	mouse := e.el.Page().Mouse
-	if err := mouse.MoveTo(proto.Point{X: box.X + box.Width/2, Y: box.Y + box.Height/2}); err != nil {
+	if err := mouse.MoveTo(*at); err != nil {
 		return err
 	}
 	return mouse.Click(proto.InputMouseButtonLeft, 1)
