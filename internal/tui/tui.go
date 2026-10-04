@@ -533,6 +533,8 @@ func (m Model) screenKeys() (string, []binding) {
 		return "", answer("does it", "leaves it")
 	case m.tab == tabSchedule && m.sched.deleting != nil:
 		return "", answer("deletes", "keeps")
+	case m.tab == tabSchedule && m.sched.form != nil && m.sched.form.askingLive:
+		return "", []binding{{"y", "adds it", "add the live window"}, {"n/esc", "goes back", "back to the form, every choice kept"}}
 	case m.tab == tabSchedule && m.sched.form != nil:
 		return "", []binding{{"↑↓", "field", ""}, {"←→", "day or choice", ""}, {"space", "picks", ""}, {"enter", "adds", ""}, {"esc", "cancels", ""}}
 	case m.tab == tabSchedule:
@@ -554,8 +556,8 @@ func (m Model) screenKeys() (string, []binding) {
 		return "Jobs", []binding{moveKeys, {"←→", "filter", "every job, or only the applied, external, failed or skipped ones (h l too)"},
 			{"/", "search", "search titles, companies and locations"}, {"esc", clears, "clear the search"},
 			{"enter", "open", "open the job in your browser (the application page for an external job)"}}
-	case m.runs.form != nil && m.runs.form.askingLive:
-		return "", answer("starts it", "goes back")
+	case m.runs.askingLive():
+		return "", []binding{{"y", "starts it", "start the live run"}, {"n/esc", "goes back", "back to the form, every choice kept"}}
 	case m.runs.form != nil:
 		return "", []binding{{"↑↓", "field", ""}, {"←→", "change", ""}, {"enter", "starts", ""}, {"esc", "cancels", ""}}
 	case m.runs.confirm != nil:

@@ -59,6 +59,7 @@ type windowForm struct {
 	dry        bool
 	saving     bool
 	refusal    string
+	askingLive bool // Enter on a live window asks first: its runs submit applications for real
 }
 
 type windowsLoadedMsg struct {
@@ -244,6 +245,18 @@ func (t scheduleTab) formKey(msg tea.KeyMsg, d Deps) (scheduleTab, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	switch key := msg.String(); {
+	case f.askingLive: // before Esc: here it goes back to the form
+		switch key {
+		case "y":
+			w, _ := f.window() // checked when the question was asked
+			f.saving, f.askingLive = true, false
+			t.form = &f
+			return t, addWindow(d, w, f.id)
+		case "n", "esc":
+			f.askingLive = false // back to the form, every choice kept
+		}
+		t.form = &f
+		return t, nil
 	case key == "esc":
 		t.form = nil
 		return t.settled(), nil
@@ -251,6 +264,11 @@ func (t scheduleTab) formKey(msg tea.KeyMsg, d Deps) (scheduleTab, tea.Cmd) {
 		w, err := f.window()
 		if err != nil {
 			f.refusal = err.Error()
+			t.form = &f
+			return t, nil
+		}
+		if !f.dry { // a live window's runs submit applications: one more, deliberate step
+			f.askingLive, f.refusal = true, ""
 			t.form = &f
 			return t, nil
 		}
@@ -509,17 +527,21 @@ func (f windowForm) lines(s styles, width int) []string {
 		}
 		days = append(days, day)
 	}
-	mode := "live"
+	mode := s.fail.Render(choice("live")) // stands out from the default dry run
 	if f.dry {
-		mode = "dry run"
+		mode = choice("dry run")
 	}
 	out := []string{
 		s.section.Render("Add a schedule window") + "  " + s.dim.Render("local time; 24:00 ends one at midnight"),
 		field(fieldWindowDays, "Days", strings.Join(days, " ")),
 		field(fieldWindowStart, "Start", f.start.View()),
 		field(fieldWindowEnd, "End", f.end.View()),
-		field(fieldWindowMarket, "Market", "‹ "+marketName(marketChoices[f.market])+" ›"),
-		field(fieldWindowMode, "Mode", "‹ "+mode+" ›"),
+		field(fieldWindowMarket, "Market", choice(marketName(marketChoices[f.market]))),
+		field(fieldWindowMode, "Mode", mode),
+	}
+	if f.askingLive {
+		out = append(out, s.warn.Render("This window starts live runs: they submit applications for real. Add it?"),
+			s.key.Render("y")+" adds it · "+s.key.Render("n")+" goes back")
 	}
 	if f.saving {
 		out = append(out, s.dim.Render("Adding…"))

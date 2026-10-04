@@ -172,7 +172,8 @@ takes only `a` or `d`; `d` deletes after asking, and ajai asks the question agai
 
 The **Schedule** tab lists the schedule windows (weekdays, hours, market, mode, on or off)
 with each one's next opening. `n` adds one in a form: tick the weekdays with Space, type
-the start and end (HH:MM, local time), choose the market and dry run or live. It is checked
+the start and end (HH:MM, local time), choose the market and dry run or live (live shows in
+red, and adding a live window asks once more: its runs submit applications). It is checked
 as `ajai schedule add` checks it (no window crossing midnight, none overlapping another on
 the same weekday) and refused with the reason. Space turns the selected window off or back
 on (on again only if nothing overlaps it now), and `d` deletes it after asking. The selected

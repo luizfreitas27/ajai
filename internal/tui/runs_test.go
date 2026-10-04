@@ -29,7 +29,7 @@ func TestStartOpensAFormAndStartsARunOfItsOwn(t *testing.T) {
 	h.shows("Refused: the maximum is a whole number")
 	h.press("backspace", "7", "enter") // live (space turned it): asked first
 	h.shows("This run submits applications for real (market brasil, at most 7). Start it?")
-	if got := h.footer(); got != "y starts it · n goes back" {
+	if got := h.footer(); got != "y starts it · n/esc goes back" {
 		t.Errorf("the footer while asking: %q", got)
 	}
 	if len(h.started) > 0 {
@@ -237,21 +237,34 @@ func TestARunThatBeganAndEndedBetweenTwoRefreshesIsNoFailure(t *testing.T) {
 	}
 }
 
-func TestADryRunStartsOnEnterAndALiveOneIsRed(t *testing.T) {
+func TestADryRunStartsOnEnterWithoutAQuestion(t *testing.T) {
 	h := newHarness(t)
-	h.color = true
 	h.open(100, 30)
 	h.press("r", "enter") // the default: a dry run
 	if len(h.started) != 1 || !slices.Contains(h.started[0], "--dry-run") {
 		t.Fatalf("a dry run did not start on Enter: %q", h.started)
 	}
+}
 
-	h = newHarness(t) // that run is still starting: a second one is refused
+func TestTheLiveModeIsRedAndTheDryRunIsNot(t *testing.T) {
+	h := newHarness(t)
 	h.color = true
 	h.open(100, 30)
-	h.press("r", "down", "space") // live
-	if !strings.Contains(h.screen(), inColour().fail.Render("‹ live: applies for real ›")) {
+	h.press("r")
+	dry := choice("dry run: fills every form, sends none")
+	if fail := inColour().fail; !strings.Contains(h.screen(), dry) || strings.Contains(h.screen(), fail.Render(dry)) {
+		t.Errorf("the dry run is drawn red:\n%q", h.screen())
+	}
+	h.press("down", "space") // live
+	if !strings.Contains(h.screen(), inColour().fail.Render(choice("live: applies for real"))) {
 		t.Errorf("the live mode is not red:\n%q", h.screen())
 	}
 	h.golden("colour-start-live")
+}
+
+func TestTheQuestionNamesTheConfigsMarketAndCap(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "down", "space", "enter") // the config's market, no maximum: live
+	h.shows("This run submits applications for real (market brasil, at most 50 (the pacing cap)). Start it?")
 }
