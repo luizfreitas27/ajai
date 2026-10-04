@@ -248,3 +248,35 @@ func shares(width int, percents ...int) []int {
 func labelled(s styles, label, value string) string {
 	return s.dim.Render(label+": ") + value
 }
+
+// filterStep is how far a key moves a tab's filter: -1 left, 1 right, 0 for
+// any other key.
+func filterStep(key string) int {
+	switch key {
+	case "left", "h":
+		return -1
+	case "right", "l":
+		return 1
+	}
+	return 0
+}
+
+// moved is where a list's selection goes for key, the list being n long; ok
+// is false for a key that does not move it.
+func moved(key string, cursor, n int) (int, bool) {
+	switch key {
+	case "up", "k":
+		return cursor - 1, true
+	case "down", "j":
+		return cursor + 1, true
+	case "pgup":
+		return cursor - 10, true
+	case "pgdown":
+		return cursor + 10, true
+	case "home", "g":
+		return 0, true
+	case "end", "G":
+		return n - 1, true
+	}
+	return cursor, false
+}

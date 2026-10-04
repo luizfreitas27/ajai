@@ -283,7 +283,7 @@ func approveAnswer(d Deps, r memory.Remembered) tea.Cmd {
 		}
 		if _, err := mem.Approve(r.ID, ""); err != nil {
 			if errors.Is(err, memory.ErrNothingToApprove) {
-				return answerChangedMsg{notice: notice{"This question has no answer yet: e gives it one.", levelWarn}}
+				return answerChangedMsg{notice: notice{"This question has no answer yet: Enter gives it one.", levelWarn}}
 			}
 			return answerChangedMsg{notice: notice{"Could not approve: " + err.Error(), levelFail}}
 		}
@@ -395,7 +395,7 @@ func (a answersTab) detail(s styles, width int, beside bool) []string {
 	lines = append(lines, wrap(r.Label, width)...)
 	answer := r.Answer
 	if unansweredYet(r) {
-		answer = "none yet: e gives it one"
+		answer = "none yet: Enter gives it one"
 	}
 	if beside {
 		lines = append(lines, "", labelled(s, "kind", r.Kind), labelled(s, "answer", answer), labelled(s, "from", sourceName(r.Source)),
@@ -447,36 +447,4 @@ func clip(text string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return text
-}
-
-// filterStep is how far a key moves a tab's filter: -1 left, 1 right, 0 for
-// any other key.
-func filterStep(key string) int {
-	switch key {
-	case "left", "h":
-		return -1
-	case "right", "l":
-		return 1
-	}
-	return 0
-}
-
-// moved is where a list's selection goes for key, the list being n long; ok
-// is false for a key that does not move it.
-func moved(key string, cursor, n int) (int, bool) {
-	switch key {
-	case "up", "k":
-		return cursor - 1, true
-	case "down", "j":
-		return cursor + 1, true
-	case "pgup":
-		return cursor - 10, true
-	case "pgdown":
-		return cursor + 10, true
-	case "home", "g":
-		return 0, true
-	case "end", "G":
-		return n - 1, true
-	}
-	return cursor, false
 }

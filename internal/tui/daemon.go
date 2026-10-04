@@ -38,11 +38,26 @@ const (
 	uninstallUnit
 	startDaemon
 	stopDaemon
-	startOrStop // the daemon's key: start when the unit is not active, stop when it is
 )
 
-// daemonKeys are the Schedule tab's keys for the daemon.
-var daemonKeys = map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "t": startOrStop}
+// daemonKey is one of the Schedule tab's keys for the daemon and what it
+// asks to do.
+type daemonKey struct {
+	binding
+	action daemonAction
+}
+
+// keys are the daemon's keys as its unit stands (t starts the daemon, or
+// stops it while the unit runs): the strip shows them, the help explains
+// them, and the Schedule tab acts on them.
+func (s daemonSection) keys() []daemonKey {
+	t := daemonKey{binding{"t", "start", "start the daemon, or stop it while its unit runs"}, startDaemon}
+	if s.unit.Running() {
+		t.short, t.action = "stop", stopDaemon
+	}
+	return []daemonKey{{binding{"i", "install", "install (or reinstall) the daemon's systemd unit"}, installUnit},
+		{binding{"u", "uninstall", "uninstall it"}, uninstallUnit}, t}
+}
 
 // daemonSection is the Schedule tab's daemon part: whether the daemon runs
 // and how its systemd unit stands, with install, uninstall, start and stop,
@@ -72,16 +87,6 @@ type daemonDoneMsg struct{ notice notice }
 
 func (s daemonSection) editing() bool { return s.asking != noDaemonAction }
 
-// unitActive says whether systemd has the daemon's unit running (or on its
-// way): t then stops it.
-func (s daemonSection) unitActive() bool {
-	switch s.unit.Active {
-	case "active", "activating", "reloading":
-		return true
-	}
-	return false
-}
-
 // readUnit reads the unit's state, unless a read or an action is under way.
 func (s daemonSection) readUnit(d Deps) (daemonSection, tea.Cmd) {
 	if s.reading || s.busy != noDaemonAction {
@@ -96,12 +101,6 @@ func (s daemonSection) readUnit(d Deps) (daemonSection, tea.Cmd) {
 
 // ask starts the question for a, or says why a cannot be done.
 func (s daemonSection) ask(a daemonAction) daemonSection {
-	if a == startOrStop {
-		a = startDaemon
-		if s.unitActive() {
-			a = stopDaemon
-		}
-	}
 	switch {
 	case s.unhandled:
 		s.notice = notice{"The daemon's systemd unit cannot be handled from here.", levelWarn}
@@ -231,11 +230,11 @@ func (s daemonSection) strip(st styles, width int, proc daemonProc) []string {
 	case s.busy != noDaemonAction:
 		return append(out, st.dim.Render("Working…"))
 	}
-	keys := "i install · u uninstall · t start"
-	if s.unitActive() {
-		keys = "i install · u uninstall · t stop"
+	var keys []string
+	for _, k := range s.keys() {
+		keys = append(keys, k.key+" "+k.short)
 	}
-	out = append(out, st.hints(keys))
+	out = append(out, st.hints(strings.Join(keys, " · ")))
 	if s.notice.text != "" {
 		out = append(out, wrapStyled(st.byLevel(s.notice.level), s.notice.text, width)...)
 	}

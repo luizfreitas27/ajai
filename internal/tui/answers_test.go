@@ -46,7 +46,7 @@ func TestTheAnswersTabListsTheReviewQueueAndTheApprovedOnes(t *testing.T) {
 		t.Errorf("an approved answer among the pending ones:\n%s", h.screen())
 	}
 	h.selectAnswer("Are you willing")
-	h.shows("radio · answer: none yet: e gives it one (the form)", "options: Yes | No, not now", "last job: https://www.linkedin.com/jobs/view/2/")
+	h.shows("radio · answer: none yet: Enter gives it one (the form)", "options: Yes | No, not now", "last job: https://www.linkedin.com/jobs/view/2/")
 	h.golden("answers")
 	h.press("right")
 	h.shows("Answers   pending  [approved]", "City", "Recife", "you")

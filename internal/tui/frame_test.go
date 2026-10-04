@@ -87,7 +87,7 @@ func TestAnAnswerIsCorrectedInThePanelBesideTheList(t *testing.T) {
 	h.open(120, 30) // the narrowest panel
 	h.answersTab()
 	h.selectAnswer("Are you willing")
-	h.shows("│ kind: radio", "│ answer: none yet: e gives it one", "│ from: the form", "│ options", "│   Yes", "│   No, not now")
+	h.shows("│ kind: radio", "│ answer: none yet: Enter gives it one", "│ from: the form", "│ options", "│   Yes", "│   No, not now")
 	h.golden("answers-beside")
 	h.press("enter")
 	h.shows("│ Answer: Are you willing to relocate?", "│ "+selected+"Yes")

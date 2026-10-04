@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -330,6 +331,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.checkAgain()
 		}
 	case "r", "x": // a run is started and stopped on the Dashboard, from any tab
+		if m.checks.noConfig { // no run without a config: the checklist says what to do
+			return m.show(tabDashboard)
+		}
 		if !m.setupShown {
 			m.tab, m.help = tabDashboard, false
 			if key == "r" {
@@ -476,39 +480,36 @@ func (m Model) divider(start, width int) string {
 // the help screen only), in a sentence for the help screen.
 type binding struct{ key, short, long string }
 
-// globalKeys work on every screen, unless a value is being typed.
-var globalKeys = []binding{
-	{"1-5, tab", "", "show a tab; shift+tab goes back"},
-	{"r", "run", "start a run, on the Dashboard: market, dry run or live, a maximum"},
-	{"x", "stop", "stop the run in progress, whoever started it"},
-	{"s", "setup", "the setup checklist"},
-	{"?", "keys", "this list; Esc closes it"},
-	{"q", "quit", "quit, as Ctrl-C does (a run in progress keeps running)"},
+// The keys every screen takes, unless a value is being typed.
+var (
+	tabsKey  = binding{fmt.Sprintf("1-%d, tab", len(tabNames)), "", "show a tab; shift+tab goes back"}
+	runKey   = binding{"r", "run", "start a run, on the Dashboard: market, dry run or live, a maximum"}
+	stopKey  = binding{"x", "stop", "stop the run in progress, whoever started it"}
+	setupKey = binding{"s", "setup", "the setup checklist"}
+	helpKey  = binding{"?", "keys", "this list; Esc closes it"}
+	quitKey  = binding{"q", "quit", "quit, as Ctrl-C does (a run in progress keeps running)"}
+)
+
+// globals are the keys that work everywhere on the screen shown: all of them
+// but on the setup checklist, where r is its own and s and x have nothing to do.
+func (m Model) globals() []binding {
+	if m.setupShown {
+		return []binding{tabsKey, helpKey, quitKey}
+	}
+	return []binding{tabsKey, runKey, stopKey, setupKey, helpKey, quitKey}
 }
 
 // moveKeys move the selection on every list.
 var moveKeys = binding{"↑↓", "move", "move the selection (k j too); PgUp PgDn, g G jump"}
 
-// global is the global binding for key.
-func global(key string) binding {
-	for _, b := range globalKeys {
-		if b.key == key {
-			return b
-		}
-	}
-	return binding{key: key}
-}
-
 // screenKeys are the keys of what is shown: its name on the help screen and
 // its bindings, the footer and the help screen both made from them.
 func (m Model) screenKeys() (string, []binding) {
 	answer := func(yes, no string) []binding { return []binding{{"y", yes, ""}, {"n", no, ""}} }
-	editing := []binding{{"enter", "saves", ""}, {"esc", "cancels", ""}}
+	entering := func(does string) []binding { return []binding{{"enter", does, ""}, {"esc", "cancels", ""}} }
 	switch {
-	case m.help:
-		return "", []binding{{"esc", "closes the list", ""}, global("q")}
 	case m.setupShown && m.checks.editing():
-		return "", []binding{{"enter", "imports", ""}, {"esc", "cancels", ""}}
+		return "", entering("imports")
 	case m.setupShown:
 		keys := []binding{moveKeys, {"enter", "fix", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab"},
 			{"i", "import", "import settings, answers and history from the Python bot"}, {"r", "check again", "check again"}}
@@ -517,15 +518,15 @@ func (m Model) screenKeys() (string, []binding) {
 		}
 		return "Setup checklist", append(keys, binding{"esc", "back", "back to the tabs"})
 	case m.tab == tabConfig && m.conf.editing():
-		return "", editing
+		return "", entering("saves")
 	case m.tab == tabConfig:
 		return "Config", []binding{moveKeys, {"enter", "edit", "edit the setting or secret; Enter saves it, Esc cancels"}}
 	case m.tab == tabAnswers && m.ans.deleting != nil:
 		return "", answer("deletes", "keeps")
 	case m.tab == tabAnswers && m.ans.edit != nil:
-		return "", editing
+		return "", entering("saves")
 	case m.tab == tabAnswers:
-		return "Answers", []binding{moveKeys, {"←→", "filter", "pending (the review queue) or approved"},
+		return "Answers", []binding{moveKeys, {"←→", "filter", "pending (the review queue) or approved (h l too)"},
 			{"enter", "edit", "correct the answer: pick or type an option, or type the answer"},
 			{"a", "approve", "approve the answer as shown"}, {"d", "delete", "delete it: ajai asks the question again"}}
 	case m.tab == tabSchedule && m.sched.daemon.editing():
@@ -535,18 +536,22 @@ func (m Model) screenKeys() (string, []binding) {
 	case m.tab == tabSchedule && m.sched.form != nil:
 		return "", []binding{{"↑↓", "field", ""}, {"←→", "day or choice", ""}, {"space", "picks", ""}, {"enter", "adds", ""}, {"esc", "cancels", ""}}
 	case m.tab == tabSchedule:
-		return "Schedule", []binding{moveKeys, {"n", "new", "add a window: weekdays, hours, market, dry run or live"},
-			{"space", "on/off", "turn the window on or off"}, {"d", "delete", "delete it"},
-			{"i", "", "install (or reinstall) the daemon's systemd unit"}, {"u", "", "uninstall it"},
-			{"t", "", "start the daemon, or stop it when its unit runs"}}
+		keys := []binding{moveKeys, {"n", "new", "add a window: weekdays, hours, market, dry run or live"},
+			{"space", "on/off", "turn the window on or off"}, {"d", "delete", "delete it"}}
+		for _, k := range m.sched.daemon.keys() { // in the daemon's strip, not the footer
+			b := k.binding
+			b.short = ""
+			keys = append(keys, b)
+		}
+		return "Schedule", keys
 	case m.tab == tabJobs && m.jobs.editing():
-		return "", []binding{{"enter", "searches", ""}, {"esc", "cancels", ""}}
+		return "", entering("searches")
 	case m.tab == tabJobs:
 		clears := ""
 		if m.jobs.text != "" {
 			clears = "clears"
 		}
-		return "Jobs", []binding{moveKeys, {"←→", "filter", "every job, or only the applied, external, failed or skipped ones"},
+		return "Jobs", []binding{moveKeys, {"←→", "filter", "every job, or only the applied, external, failed or skipped ones (h l too)"},
 			{"/", "search", "search titles, companies and locations"}, {"esc", clears, "clear the search"},
 			{"enter", "open", "open the job in your browser (the application page for an external job)"}}
 	case m.runs.form != nil:
@@ -554,15 +559,18 @@ func (m Model) screenKeys() (string, []binding) {
 	case m.runs.confirm != nil:
 		return "", answer("stops the run", "keeps it")
 	}
-	return "Dashboard", []binding{global("r"), global("x"), global("s")}
+	return "Dashboard", []binding{runKey, stopKey, setupKey}
 }
 
 // hints is the footer: the shown screen's keys, then the help and quit keys
 // unless a value is being typed or a question asked.
 func (m Model) hints() string {
 	_, keys := m.screenKeys()
-	if !m.help && !m.typing() {
-		keys = append(keys, global("?"), global("q"))
+	switch {
+	case m.help:
+		keys = []binding{{"esc", "closes the list", ""}, quitKey}
+	case !m.typing():
+		keys = append(keys, helpKey, quitKey)
 	}
 	var parts []string
 	for _, b := range keys {
@@ -583,12 +591,12 @@ func (m Model) helpView() string {
 			lines = append(lines, "  "+m.styles.key.Render(fmt.Sprintf("%-11s", b.key))+" "+b.long)
 		}
 	}
-	rows("Everywhere", globalKeys)
-	m.help = false // the screen the help is about
+	globals := m.globals()
+	rows("Everywhere", globals)
 	title, keys := m.screenKeys()
 	var own []binding
 	for _, b := range keys {
-		if b.long != "" && b != global(b.key) {
+		if b.long != "" && !slices.Contains(globals, b) {
 			own = append(own, b)
 		}
 	}

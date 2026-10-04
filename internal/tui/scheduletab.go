@@ -199,8 +199,10 @@ func (t scheduleTab) browseKey(msg tea.KeyMsg, d Deps) (scheduleTab, tea.Cmd) {
 			t.deleting = &w
 		}
 	default:
-		if a, ok := daemonKeys[msg.String()]; ok {
-			t.daemon = t.daemon.ask(a)
+		for _, k := range t.daemon.keys() {
+			if k.key == msg.String() {
+				t.daemon = t.daemon.ask(k.action)
+			}
 		}
 	}
 	return t.settled(), nil

@@ -4,7 +4,7 @@ Answers  [pending]  approved   3 pending
   kind      question                     answer              from     │ Are you willing to relocate?
   text      Years of experience with G…  3                   the AI   │
 ▌ radio     Are you willing to relocat…  (none yet)          the form │ kind: radio
-  checkbox  Send me updates              checked             the form │ answer: none yet: e gives it one
+  checkbox  Send me updates              checked             the form │ answer: none yet: Enter gives it one
                                                                       │ from: the form
                                                                       │ used: 0 time(s)
                                                                       │
