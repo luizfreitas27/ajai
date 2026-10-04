@@ -67,6 +67,25 @@ no such section the notes are the commit list.
 
 ### New
 
+- `questions.skill_years`: your years with each technology or role, as "name: years" (for
+  example `java: 3`, `.net: 5`, `computação em nuvem: 3`). They answer questions about one
+  technology, in English and Portuguese, that ajai used to leave unanswered:
+  - "How long have you used X? / Há quanto tempo você usa X? / Quanto tempo de experiência
+    com X?" gets X's years (the fewest of those a question names);
+  - "Do you have experience with X? / Possui experiência (conhecimento, domínio) com X?"
+    gets yes, never no; with a number of years in the question ("at least 5 years", "no
+    mínimo 3 anos") only when your years reach it.
+
+  Only the question itself counts, not its context or links. These are left alone, as
+  before (memory, AI, review queue):
+  - a technology you did not list, or a name inside another word ("java" in "JavaScript",
+    "react" in "React-Native");
+  - notice periods and totals;
+  - options that are ranges of years;
+  - sensitive questions.
+
+  Set it in the TUI's Config tab or with
+  `ajai config set questions.skill_years "java: 3, .net: 5"`.
 - `ajai login`: sign in to LinkedIn once in the profile ajai uses.
 - `ajai stop`: stop the run in progress cleanly, from any terminal.
 - One run at a time on the machine: a second `ajai run` refuses and names the run in

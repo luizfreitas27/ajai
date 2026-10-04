@@ -39,23 +39,24 @@ type Personals struct {
 // Questions mirrors config/questions.py. Salaries here are the general values; a
 // market may override them.
 type Questions struct {
-	Resume            string `yaml:"resume" doc:"Path to the resume to upload when the active market has none. Relative paths resolve against the resumes directory." example:"resume.pdf"`
-	YearsOfExperience string `yaml:"years_of_experience" doc:"Total years of experience, as text, for 'years of experience' questions." example:"5"`
-	RequireVisa       string `yaml:"require_visa" doc:"Do you need visa sponsorship?" opts:"Yes|No"`
-	Website           string `yaml:"website" doc:"Portfolio or GitHub URL."`
-	LinkedIn          string `yaml:"linkedin" doc:"Your LinkedIn profile URL."`
-	LegallyAuthorized string `yaml:"legally_authorized" doc:"Are you legally authorised to work where you apply?" opts:"Yes|No"`
-	Citizenship       string `yaml:"citizenship" doc:"Answer to US work-authorisation status questions." opts:"U.S. Citizen/Permanent Resident|Non-citizen allowed to work for any employer|Non-citizen allowed to work for current employer|Non-citizen seeking work authorization|Canadian Citizen/Permanent Resident|Other"`
-	DesiredSalary     int    `yaml:"desired_salary" doc:"Desired annual salary, a plain number. Overridden by the active market when it sets one." min:"0"`
-	CurrentSalary     int    `yaml:"current_salary" doc:"Current annual salary, a plain number. Overridden by the active market when it sets one." min:"0"`
-	NoticePeriod      int    `yaml:"notice_period" doc:"Notice period in days." min:"0"`
-	Headline          string `yaml:"headline" doc:"One-line headline for 'headline' or 'summary' fields."`
-	Summary           string `yaml:"summary" doc:"Longer summary for textarea questions about you."`
-	CoverLetter       string `yaml:"cover_letter" doc:"Cover letter text for forms that ask for one."`
-	About             string `yaml:"about" doc:"Free text about you that the AI reads to answer questions (skills, experience, preferences). Never include secrets."`
-	RecentEmployer    string `yaml:"recent_employer" doc:"Most recent employer, or 'Not Applicable'."`
-	ConfidenceLevel   string `yaml:"confidence_level" doc:"Answer for 'rate yourself 1-10' questions." example:"8"`
-	OverwritePrevious bool   `yaml:"overwrite_previous_answers" doc:"Overwrite values LinkedIn prefilled from earlier applications."`
+	Resume            string   `yaml:"resume" doc:"Path to the resume to upload when the active market has none. Relative paths resolve against the resumes directory." example:"resume.pdf"`
+	YearsOfExperience string   `yaml:"years_of_experience" doc:"Total years of experience, as text, for 'years of experience' questions." example:"5"`
+	SkillYears        []string `yaml:"skill_years" doc:"Your years with each technology or role, as \"name: years\" (a whole number, 1 or more). They answer questions about one of them, in English or Portuguese: how many years (the smallest when a question names several), and Yes/No questions about experience or knowledge with it (yes, never no). A question naming none of them is left to the answer memory, the AI and the review queue, as before." example:"java: 3,.net: 5,computação em nuvem: 3"`
+	RequireVisa       string   `yaml:"require_visa" doc:"Do you need visa sponsorship?" opts:"Yes|No"`
+	Website           string   `yaml:"website" doc:"Portfolio or GitHub URL."`
+	LinkedIn          string   `yaml:"linkedin" doc:"Your LinkedIn profile URL."`
+	LegallyAuthorized string   `yaml:"legally_authorized" doc:"Are you legally authorised to work where you apply?" opts:"Yes|No"`
+	Citizenship       string   `yaml:"citizenship" doc:"Answer to US work-authorisation status questions." opts:"U.S. Citizen/Permanent Resident|Non-citizen allowed to work for any employer|Non-citizen allowed to work for current employer|Non-citizen seeking work authorization|Canadian Citizen/Permanent Resident|Other"`
+	DesiredSalary     int      `yaml:"desired_salary" doc:"Desired annual salary, a plain number. Overridden by the active market when it sets one." min:"0"`
+	CurrentSalary     int      `yaml:"current_salary" doc:"Current annual salary, a plain number. Overridden by the active market when it sets one." min:"0"`
+	NoticePeriod      int      `yaml:"notice_period" doc:"Notice period in days." min:"0"`
+	Headline          string   `yaml:"headline" doc:"One-line headline for 'headline' or 'summary' fields."`
+	Summary           string   `yaml:"summary" doc:"Longer summary for textarea questions about you."`
+	CoverLetter       string   `yaml:"cover_letter" doc:"Cover letter text for forms that ask for one."`
+	About             string   `yaml:"about" doc:"Free text about you that the AI reads to answer questions (skills, experience, preferences). Never include secrets."`
+	RecentEmployer    string   `yaml:"recent_employer" doc:"Most recent employer, or 'Not Applicable'."`
+	ConfidenceLevel   string   `yaml:"confidence_level" doc:"Answer for 'rate yourself 1-10' questions." example:"8"`
+	OverwritePrevious bool     `yaml:"overwrite_previous_answers" doc:"Overwrite values LinkedIn prefilled from earlier applications."`
 }
 
 // Search mirrors config/search.py.
@@ -152,6 +153,7 @@ func Defaults() Config {
 		Questions: Questions{
 			Resume: "resume.pdf", YearsOfExperience: "5", RequireVisa: "No", LegallyAuthorized: "Yes",
 			Citizenship: "Other", NoticePeriod: 30, RecentEmployer: "Not Applicable", ConfidenceLevel: "8",
+			SkillYears: []string{},
 		},
 		Search: Search{
 			Terms: []string{}, SwitchNumber: 30, DatePosted: "Past week", EasyApplyOnly: true,

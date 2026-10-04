@@ -89,6 +89,11 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Questions.Resume) == "" {
 		add("questions.resume", "must not be blank")
 	}
+	for _, entry := range c.Questions.SkillYears {
+		if _, ok := ParseSkill(entry); !ok {
+			add("questions.skill_years", fmt.Sprintf("%q is not \"name: years\" with a whole number of years, 1 or more", entry))
+		}
+	}
 	if len(c.Search.Terms) == 0 && len(c.ActiveMarket().Terms) == 0 {
 		add("search.terms", "needs at least one search term (or set terms on the active market)")
 	}

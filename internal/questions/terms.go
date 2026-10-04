@@ -68,6 +68,21 @@ var (
 	skillQualifierTerms = []string{"in", "with", "using", "on", "em", "com"}
 	// "...experience in years" names a unit, not a skill: stripped before looking for a qualifier.
 	periodUnitPhrases = []string{"in years", "in months", "em anos", "em meses"}
+
+	// Skill years answer a question asking how long (no bare "year"/"ano": "in what year",
+	// "por ano")...
+	skillDurationTerms = []string{"years", "yrs", "how long", "anos", "quanto tempo", "tempo de experiência"}
+	// ...that is about using or working with the skill ("Há quanto tempo você mora…" is not),
+	skillUseTerms = concat([]string{"use", "uses", "used", "using", "worked", "work with", "working with", "usa", "usou",
+		"utiliza", "utilizou", "atua", "atuou", "trabalha", "trabalhou", "programa", "desenvolve"}, skillExperienceTerms)
+	// ...neither a notice period nor a total, which their own settings answer.
+	skillDurationExclusions = []string{"notice", "aviso prévio", "aviso", "total", "in total", "overall", "no total", "ao todo"}
+	// A Yes/No question about experience or knowledge with a skill...
+	skillExperienceTerms = []string{"experience", "experienced", "familiar", "familiarity", "knowledge", "proficient",
+		"hands-on", "worked with", "have you used", "experiência", "conhecimento", "conhecimentos", "domínio", "vivência",
+		"familiaridade", "já trabalhou", "já utilizou", "já usou", "já desenvolveu"}
+	// ...is answered yes only when the years it asks for are not capped.
+	skillCapTerms = []string{"less than", "fewer than", "at most", "up to", "under", "menos de", "no máximo", "até"}
 )
 
 // OptionPlaceholders are dropdown texts that mean "nothing chosen yet": never

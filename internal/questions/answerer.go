@@ -93,6 +93,7 @@ type Answerer struct {
 	Memory Memory // nil: no memory
 	AI     AI     // nil: AI off
 	Logger *slog.Logger
+	skills []config.Skill // questions.skill_years, parsed
 }
 
 // New builds an answerer; the market is resolved from the config.
@@ -100,7 +101,7 @@ func New(cfg config.Config, mem Memory, ai AI, logger *slog.Logger) *Answerer {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Answerer{Cfg: cfg, Market: markets.Resolve(cfg), Memory: mem, AI: ai, Logger: logger}
+	return &Answerer{Cfg: cfg, Market: markets.Resolve(cfg), Memory: mem, AI: ai, Logger: logger, skills: listedSkills(cfg.Questions.SkillYears)}
 }
 
 // ------------------------------------------------------------------ classification
@@ -358,12 +359,15 @@ func (a *Answerer) answerSelect(ctx context.Context, q Question, job Job) Decisi
 	}
 	answer := ""
 	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
+	skillYes := a.yesFromSkills(label, q.Options)
 	switch {
 	case authMatched:
 		if authAnswer == "" {
 			return blocked("a work-authorization question with no configured answer is never guessed")
 		}
 		answer = authAnswer
+	case skillYes:
+		answer = "Yes"
 	case textmatch.Has(label, "email", "phone") && strings.TrimSpace(q.Current) != "":
 		// Phone country code and the like: LinkedIn's own value stands, even a placeholder.
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
@@ -397,12 +401,15 @@ func (a *Answerer) answerRadio(ctx context.Context, q Question, job Job) Decisio
 	}
 	answer := ""
 	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
+	skillYes := a.yesFromSkills(label, q.Options)
 	switch {
 	case authMatched:
 		if authAnswer == "" {
 			return blocked("a work-authorization question with no configured answer is never guessed")
 		}
 		answer = authAnswer
+	case skillYes:
+		answer = "Yes"
 	case textmatch.Has(label, "veteran", "protected", "veterano"):
 		answer = a.Cfg.Personals.Veteran
 	case textmatch.Has(label, disabilityTerms...):
@@ -450,9 +457,12 @@ func (a *Answerer) answerText(ctx context.Context, q Question, job Job) Decision
 	p, qs := a.Cfg.Personals, a.Cfg.Questions
 	answer, fallbackAllowed, typeahead := "", true, false
 	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
+	years := a.yearsFromSkills(label)
 	switch {
 	case authMatched:
 		answer, fallbackAllowed = authAnswer, false
+	case years != "":
+		answer = years
 	case textmatch.Has(label, "experience", "years", "experiência", "experiencia", "anos"):
 		// Only the total. "years of Kubernetes experience" and "experience with Python" ask about ONE skill.
 		withoutUnit := label

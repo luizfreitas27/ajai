@@ -78,3 +78,19 @@ func TestRatioBehavesLikeDifflib(t *testing.T) {
 		}
 	}
 }
+
+func TestHasFoldedIgnoresAccentsOnBothSides(t *testing.T) {
+	for _, tc := range []struct {
+		text, word string
+		want       bool
+	}{
+		{"Possui EXPERIÊNCIA com Java?", "experiencia", true},
+		{"Possui experiencia com Java?", "experiência", true},
+		{"Computação em nuvem", "computacao", true},
+		{"Experiências", "experiência", false}, // still whole words
+	} {
+		if got := HasFolded(tc.text, tc.word); got != tc.want {
+			t.Errorf("HasFolded(%q, %q) = %v", tc.text, tc.word, got)
+		}
+	}
+}

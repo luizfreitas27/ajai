@@ -64,6 +64,10 @@ _Avoid_: field, input, prompt, control type
 An answer the user set in the config for a known kind of question (years of experience, salary, authorization...).
 _Avoid_: default, preset, static answer
 
+**Skill years**:
+The years the user has with one technology or role, listed in the config. They are configured answers for questions about it: how many years, and whether the user has experience or knowledge with it (yes, never no). A question naming no listed technology is an unrecognised question.
+_Avoid_: skill map, tech years, per-skill experience
+
 **Unrecognised question**:
 A question whose label matches none of the tool's known kinds, so no configured answer applies.
 _Avoid_: unknown, failed question, missing answer
