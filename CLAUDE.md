@@ -83,7 +83,7 @@ to the tag before tagging and the workflow publishes that section as the release
   temporary AJAI_HOME is written as `$AJAI_HOME`). With `h.color` the harness draws in
   24-bit colour and the golden keeps the escape sequences, written `\e[…m` (the
   `colour-*` goldens pin the flame accent and the state colours; the rest stay plain).
-  List tabs (Answers, Jobs, Config, the setup checklist) describe themselves as a
+  List tabs (Answers, Schedule, Jobs, Config, the setup checklist) describe themselves as a
   `listFrame` (`frame.go`: title, filters, summary, notes, a waiting text, optional column
   names, rows for a given width, `isTitle` rows that are section titles — never selected,
   brought into view going up — and details for a width and whether they stand beside the
@@ -152,6 +152,13 @@ to the tag before tagging and the workflow publishes that section as the release
   (`Since`), so none falls off and the selection follows its job id; a failed read keeps the
   list. Links open through `Deps.OpenURL` (`xdg-open` in its own session, not waited for, its
   output on the null device), http and https only.
+- The Schedule tab reads each window's latest opening (`store.LastOpening`) and the run it
+  started (`store.GetRun`) with the windows, and its next openings from
+  `schedule.Upcoming`; the daemon's state, keys and questions are notes under its title
+  (`daemonSection.strip`; a question takes the keys' line). `runCounts` and `runEnding`
+  write a recorded run the same way on the Dashboard, the run notices and the Schedule.
+  `wrapStyled` breaks a word longer than the width (a link) and `detailLines` keeps an
+  indented line's indent when it wraps.
 - Schedule windows are added and turned on through `store.AddValidWindow` and
   `store.SetWindowEnabledValid` (schedule.Validate against the windows there are, in one
   place): `ajai schedule` and the TUI's Schedule tab both use them.

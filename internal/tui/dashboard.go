@@ -237,14 +237,23 @@ func runLine(r store.Run) string {
 	if t, ok := store.ParseTime(r.StartedAt); ok {
 		when = t.Local().Format("02 Jan 15:04")
 	}
-	ended := r.Reason
+	return fmt.Sprintf(runColumns, when, r.Market, run.Mode(r.DryRun), r.Applied, r.External, r.Failed, r.Skipped, runEnding(r))
+}
+
+// runEnding says how a recorded run ended: its reason, if it recorded one.
+func runEnding(r store.Run) string {
 	switch {
-	case r.EndedAt == "" && ended == "":
-		ended = "in progress, or never recorded an end"
-	case ended == "":
-		ended = "ended"
+	case r.Reason != "":
+		return r.Reason
+	case r.EndedAt == "":
+		return "in progress, or never recorded an end"
 	}
-	return fmt.Sprintf(runColumns, when, r.Market, run.Mode(r.DryRun), r.Applied, r.External, r.Failed, r.Skipped, ended)
+	return "ended"
+}
+
+// runCounts are a recorded run's counts.
+func runCounts(r store.Run) string {
+	return fmt.Sprintf("applied %d · external %d · failed %d · skipped %d", r.Applied, r.External, r.Failed, r.Skipped)
 }
 
 // logLines are the last lines of the followed log; partial is a line still

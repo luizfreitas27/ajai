@@ -165,7 +165,7 @@ func DaysString(days []time.Weekday) string {
 
 // String describes the window: "Mon-Fri 09:00-11:00, market brasil, dry run".
 func (w Window) String() string {
-	s := DaysString(w.Days) + " " + w.Start.String() + "-" + w.End.String()
+	s := DaysString(w.Days) + " " + w.Hours()
 	if w.Market != "" {
 		s += ", market " + w.Market
 	}
@@ -174,6 +174,9 @@ func (w Window) String() string {
 	}
 	return s
 }
+
+// Hours is the window's start and end, "14:00-16:00".
+func (w Window) Hours() string { return w.Start.String() + "-" + w.End.String() }
 
 // Validate checks a window on its own and against the other enabled windows (a
 // window overlapping another on the same weekday is refused). markets are the
@@ -282,6 +285,20 @@ func Next(windows []Window, now time.Time) (Opening, bool) {
 		}
 	}
 	return Opening{}, false
+}
+
+// Upcoming returns the next n openings of enabled windows that start after
+// now, in order.
+func Upcoming(windows []Window, now time.Time, n int) []Opening {
+	var out []Opening
+	for len(out) < n {
+		o, ok := Next(windows, now)
+		if !ok {
+			break
+		}
+		out, now = append(out, o), o.Start
+	}
+	return out
 }
 
 // Outcome is what the scheduler did with an opening.

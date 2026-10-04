@@ -143,3 +143,41 @@ func TestWindowsAreValidatedAgainstTheOthersBeforeTheyAreAddedOrTurnedOn(t *test
 		t.Error("an unknown market is refused")
 	}
 }
+
+func TestAWindowsLastOpeningAndItsRun(t *testing.T) {
+	s := open(t)
+	id, _ := s.AddWindow(schedule.Window{Days: []time.Weekday{time.Tuesday}, Start: 14 * 60, End: 16 * 60, Enabled: true})
+	other, _ := s.AddWindow(schedule.Window{Days: []time.Weekday{time.Friday}, Start: 9 * 60, End: 10 * 60, Enabled: true})
+	if last, err := s.LastOpening(id); last != nil || err != nil {
+		t.Fatalf("no opening yet: %+v %v", last, err)
+	}
+	runID, _ := s.StartRun(context.Background(), "brasil", true)
+	if err := s.FinishRun(context.Background(), Run{ID: runID, Applied: 3, Skipped: 4, Reason: "the search ran out of jobs"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range []struct {
+		k       schedule.Key
+		outcome schedule.Outcome
+		detail  string
+		run     int64
+	}{
+		{schedule.Key{WindowID: id, Date: "2026-09-29"}, schedule.OutcomeStarted, "", runID},
+		{schedule.Key{WindowID: id, Date: "2026-09-22"}, schedule.OutcomeSkipped, "another run was in progress", 0},
+		{schedule.Key{WindowID: other, Date: "2026-10-02"}, schedule.OutcomeFailed, "no Chrome", 0},
+	} {
+		if err := s.RecordOpening(o.k, o.outcome, o.detail, o.run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	last, err := s.LastOpening(id)
+	if err != nil || last == nil || last.Date != "2026-09-29" || last.Outcome != schedule.OutcomeStarted || last.RunID != runID {
+		t.Fatalf("the latest of the window's own: %+v %v", last, err)
+	}
+	run, err := s.GetRun(last.RunID)
+	if err != nil || run == nil || run.Applied != 3 || run.Skipped != 4 || run.Reason != "the search ran out of jobs" || !run.DryRun {
+		t.Errorf("%+v %v", run, err)
+	}
+	if none, err := s.GetRun(999); none != nil || err != nil {
+		t.Errorf("no such run: %+v %v", none, err)
+	}
+}

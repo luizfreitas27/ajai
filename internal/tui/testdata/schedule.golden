@@ -1,30 +1,30 @@
 ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ─────────────────────────────────━━━━━━━━━━─────────────────────────────────────────────────────────
-Schedule  next opening Tue 06 Oct 14:00, window 1
-  #   days             hours       market        mode    state next opening
-▌ 1   Tue              14:00-16:00 brasil        dry run on    Tue 06 Oct 14:00
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────────────────────────
+Schedule   next opening Tue 06 Oct 14:00, window 1
 Daemon  not running · systemd unit: not installed
 i install · u uninstall · s start · t stop
+  #    days                             hours        market         mode     state  next opening
+▌ 1    Tue                              14:00-16:00  brasil         dry run  on     Tue 06 Oct 14:00
+────────────────────────────────────────────────────────────────────────────────────────────────────
+Window 1 · Tue 14:00-16:00 · brasil · dry run · on
+next: Tue 06 Oct 14:00 · Tue 13 Oct 14:00 · Tue 20 Oct 14:00
+last opening: none handled yet
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ↑↓ move · a add · space on/off · d delete · ? keys · q quit

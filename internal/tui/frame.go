@@ -84,11 +84,16 @@ func (f listFrame) visible(width, height int) int {
 	return max(1, height-f.above(width)-1-max(f.minDetails, len(f.detailLines(measure, width, false))))
 }
 
-// detailLines are the details wrapped to width.
+// detailLines are the details wrapped to width, a line that starts indented
+// going on at its indent.
 func (f listFrame) detailLines(s styles, width int, beside bool) []string {
 	var lines []string
 	for _, l := range f.details(s, width, beside) {
-		lines = append(lines, strings.Split(ansi.Wrap(l, width, "/-"), "\n")...)
+		text := strings.TrimLeft(l, " ")
+		indent := strings.Repeat(" ", min(len(l)-len(text), width/2))
+		for _, part := range strings.Split(ansi.Wrap(text, width-len(indent), "/-"), "\n") {
+			lines = append(lines, indent+part)
+		}
 	}
 	return lines
 }
@@ -202,13 +207,13 @@ func waitText(done bool, text string) string {
 }
 
 // listNotes are the notes most list tabs show under their header: a problem
-// reading what they list, or else the last notice.
+// reading what they list, or else the last notice, wrapped to the width.
 func listNotes(s styles, problem string, n notice, width int) []string {
 	switch {
 	case problem != "":
-		return []string{s.fail.Render(clip(problem, width))}
+		return wrapStyled(s.fail, problem, max(1, width))
 	case n.text != "":
-		return []string{s.byLevel(n.level).Render(clip(n.text, width))}
+		return wrapStyled(s.byLevel(n.level), n.text, max(1, width))
 	}
 	return nil
 }

@@ -174,9 +174,11 @@ with each one's next opening. `a` adds one in a form: tick the weekdays with Spa
 the start and end (HH:MM, local time), choose the market and dry run or live. It is checked
 as `ajai schedule add` checks it (no window crossing midnight, none overlapping another on
 the same weekday) and refused with the reason. Space turns the selected window off or back
-on (on again only if nothing overlaps it now), and `d` deletes it after asking. Windows open
-runs only while the daemon runs: the bottom of the tab says whether it does and how its
-systemd unit stands, and `i` installs (or reinstalls) the unit as `ajai daemon install` does,
+on (on again only if nothing overlaps it now), and `d` deletes it after asking. The selected
+window's details show its next three openings and what its last opening did: the run it
+started, with that run's counts and why it ended, or why no run started. Windows open
+runs only while the daemon runs: a strip under the tab's title says whether it does and how
+its systemd unit stands, and `i` installs (or reinstalls) the unit as `ajai daemon install` does,
 `u` uninstalls it, `s` starts the daemon and `t` stops it, each after a question that says
 what it does. Installing warns when it could not start the daemon (no desktop session) or
 when reinstalling ends a run in progress.

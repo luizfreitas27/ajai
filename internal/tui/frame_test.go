@@ -315,3 +315,13 @@ func TestASecretTypedInThePanelIsNeverShownOrLogged(t *testing.T) {
 		t.Errorf("the secret reached the screen or the log:\n%s\n%s", h.screen(), h.logs)
 	}
 }
+
+func TestALongNoticeWrapsUnderTheHeader(t *testing.T) {
+	h := newHarness(t)
+	long := "file:///home/someone/a/very/long/path/that/goes/on/and/on/to/the/end/of/the/screen/and/beyond.html"
+	h.recordJob(1, store.Job{JobID: "1", Outcome: store.External, Title: "Odd", JobLink: "https://www.linkedin.com/jobs/view/1/", ExternalLink: long})
+	h.open(80, 24)
+	h.jobsTab()
+	h.press("o")
+	h.shows("Not opened:", "screen/and/beyond.html", "is not a web link.") // the link broken where it must be, nothing cut
+}

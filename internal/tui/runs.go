@@ -29,12 +29,12 @@ const (
 // is the config's own.
 var marketChoices = append([]string{""}, config.MarketNameList()...)
 
-// marketLabel names marketChoices[i].
-func marketLabel(i int) string {
-	if m := marketChoices[i]; m != "" {
-		return m
+// marketName names a market: the config's when it is "".
+func marketName(market string) string {
+	if market == "" {
+		return "the config's"
 	}
-	return "the config's"
+	return market
 }
 
 // formLine is one field of a form: a marker when selected, the label, the value.
@@ -306,8 +306,7 @@ func (c runControl) observe(before, now run.Activity, exit *startExit, runs []st
 		c.seen, c.lastEnd = true, endedID(newest)
 	case newest.EndedAt != "" && newest.ID != c.lastEnd:
 		c.lastEnd = newest.ID
-		c.notice = notice{text: fmt.Sprintf("The run ended (%s): applied %d · external %d · failed %d · skipped %d.",
-			firstOf(newest.Reason, "no reason recorded"), newest.Applied, newest.External, newest.Failed, newest.Skipped)}
+		c.notice = notice{text: fmt.Sprintf("The run ended (%s): %s.", firstOf(newest.Reason, "no reason recorded"), runCounts(newest))}
 	case before.Held && !now.Held && !recordedSince(newest, before.Holder.Started):
 		c.notice = notice{"The run " + strings.TrimPrefix(before.Holder.String(), "a run ") + " ended before it recorded anything; today's log says why.", levelWarn}
 	}
@@ -387,7 +386,7 @@ func (c runControl) lines(s styles, width int) []string {
 
 func (f runForm) lines(s styles) []string {
 	field := func(i int, label, value string) string { return formLine(s, i == f.field, label, value) }
-	market := marketLabel(f.market)
+	market := marketName(marketChoices[f.market])
 	mode := "live: applies for real"
 	if f.dry {
 		mode = "dry run: fills every form, sends none"
