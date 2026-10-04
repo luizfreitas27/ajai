@@ -151,7 +151,8 @@ It refreshes every second. It shows:
 - today's log as it grows. A run the daemon started is followed in the daemon's log.
 
 `r`, from any tab, starts a run on the Dashboard. You choose the market (the config's, brasil or
-internacional), dry run (the default) or live, and a maximum of applications. It runs
+internacional), dry run (the default) or live, and a maximum of applications; live shows in
+red, and Enter on it asks once more, since that run submits applications for real. It runs
 `ajai run --unattended` in a process of its own, so closing the TUI never ends it, and
 questions nothing can answer go to the review queue. If a run is already in progress, Start
 says which one and starts nothing; if the new run cannot start (a config problem, Chrome
@@ -171,7 +172,8 @@ takes only `a` or `d`; `d` deletes after asking, and ajai asks the question agai
 
 The **Schedule** tab lists the schedule windows (weekdays, hours, market, mode, on or off)
 with each one's next opening. `n` adds one in a form: tick the weekdays with Space, type
-the start and end (HH:MM, local time), choose the market and dry run or live. It is checked
+the start and end (HH:MM, local time), choose the market and dry run or live (live shows in
+red, and adding a live window asks once more: its runs submit applications). It is checked
 as `ajai schedule add` checks it (no window crossing midnight, none overlapping another on
 the same weekday) and refused with the reason. Space turns the selected window off or back
 on (on again only if nothing overlaps it now), and `d` deletes it after asking. The selected

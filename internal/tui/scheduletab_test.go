@@ -21,6 +21,9 @@ func (h *harness) addWindowByForm(start, end string, keysOnDays ...string) {
 	h.press("n")
 	h.press(keysOnDays...)
 	h.press("down", "ctrl+u", start, "down", "ctrl+u", end, "enter")
+	if strings.Contains(h.screen(), "This window starts live runs") { // the form's default: live
+		h.press("y")
+	}
 }
 
 func TestAWindowIsAddedInAFormCheckedLikeTheCommand(t *testing.T) {
@@ -126,7 +129,7 @@ func TestTheFormOpensAsAWholeWindowAndARefusalAfterEscIsStillSaid(t *testing.T) 
 	h.scheduleTab()
 	h.press("n")
 	h.golden("schedule-form-smallest")
-	h.press("enter") // as it opens: Monday to Friday, 09:00 to 11:00
+	h.press("enter", "y") // as it opens: Monday to Friday, 09:00 to 11:00, live (asked)
 	h.shows("Added window 1: Mon-Fri 09:00-11:00.")
 
 	// A refusal that comes after its form was closed.
@@ -225,5 +228,44 @@ func TestMovingPastTheTopOfTheWindowsKeepsTheFirst(t *testing.T) {
 	h.press("up", "k", "pgup")
 	if row := h.selectedRow(); !strings.HasPrefix(row, selected+"1 ") {
 		t.Errorf("the first window is not selected: %q", row)
+	}
+}
+
+func TestALiveWindowIsAskedForAndADryOneIsNot(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.scheduleTab()
+	h.press("n", "enter") // the form's default is live
+	h.shows("This window starts live runs: they submit applications for real. Add it?")
+	if got := h.footer(); got != "y adds it · n/esc goes back" {
+		t.Errorf("the footer while asking: %q", got)
+	}
+	h.press("n")
+	h.shows("Add a schedule window", "‹ live ›")
+	if windows, _ := h.st.ListWindows(); len(windows) > 0 || strings.Contains(h.screen(), "Add it?") {
+		t.Fatalf("n added the window or left the question: %+v\n%s", windows, h.screen())
+	}
+	h.press("enter", "esc") // esc is n too
+	if windows, _ := h.st.ListWindows(); len(windows) > 0 {
+		t.Fatalf("esc added the window: %+v", windows)
+	}
+	for range 4 {
+		h.press("down") // to the mode
+	}
+	h.press("right", "enter") // a dry window: added at once
+	h.shows("Added window 1:")
+	if windows, _ := h.st.ListWindows(); len(windows) != 1 || !windows[0].DryRun {
+		t.Errorf("the dry window: %+v", windows)
+	}
+}
+
+func TestALiveWindowIsRedInTheForm(t *testing.T) {
+	h := newHarness(t)
+	h.color = true
+	h.open(100, 30)
+	h.scheduleTab()
+	h.press("n")
+	if !strings.Contains(h.screen(), inColour().fail.Render(choice("live"))) {
+		t.Errorf("the live mode is not red:\n%q", h.screen())
 	}
 }

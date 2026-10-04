@@ -75,11 +75,13 @@ const (
 
 // runForm is the Start form.
 type runForm struct {
-	field   int
-	market  int // index into marketChoices
-	dry     bool
-	max     textinput.Model
-	refusal string
+	field      int
+	market     int // index into marketChoices
+	dry        bool
+	max        textinput.Model
+	refusal    string
+	askingLive bool   // Enter on a live run asks first: it submits applications for real
+	liveRun    string // what the question names: the market and how many at most, as the config makes them
 }
 
 type runStartedMsg struct {
@@ -123,17 +125,53 @@ func (f runForm) args() ([]string, error) {
 	if f.dry {
 		args = append(args, "--dry-run")
 	}
-	if text := strings.TrimSpace(f.max.Value()); text != "" {
-		n, err := strconv.Atoi(text)
-		if err != nil || n < 0 {
-			return nil, errors.New("the maximum is a whole number (0: the pacing cap)")
-		}
-		if n > 0 {
-			args = append(args, "--max", text)
-		}
+	n, err := f.maximum()
+	if err != nil {
+		return nil, err
+	}
+	if n > 0 {
+		args = append(args, "--max", strconv.Itoa(n))
 	}
 	return args, nil
 }
+
+// maximum is the form's maximum of applications, 0 for the pacing cap.
+func (f runForm) maximum() (int, error) {
+	text := strings.TrimSpace(f.max.Value())
+	if text == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(text)
+	if err != nil || n < 0 {
+		return 0, errors.New("the maximum is a whole number (0: the pacing cap)")
+	}
+	return n, nil
+}
+
+// live names the live run the form would start as the config makes it: its
+// market and how many applications at most.
+func (f runForm) live(d Deps) string {
+	market, pacingCap := marketChoices[f.market], 0
+	if l, err := config.Load(d.Paths, d.Env, nil); err == nil && l != nil {
+		if market == "" {
+			market = l.Config.Markets.Active
+		}
+		pacingCap = l.Config.Pacing.MaxPerRun
+	}
+	limit := "up to the pacing cap"
+	if n, _ := f.maximum(); n > 0 {
+		limit = fmt.Sprintf("at most %d", n)
+	} else if pacingCap > 0 {
+		limit = fmt.Sprintf("at most %d (the pacing cap)", pacingCap)
+	}
+	return fmt.Sprintf("market %s, %s", marketName(market), limit)
+}
+
+// choice is a form's choice as it is drawn.
+func choice(text string) string { return "‹ " + text + " ›" }
+
+// askingLive says whether the start form asks before a live run.
+func (c runControl) askingLive() bool { return c.form != nil && c.form.askingLive }
 
 // start opens the Start form, unless a run this TUI started has not begun.
 func (c runControl) start() runControl {
@@ -202,6 +240,18 @@ func (c runControl) confirmKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 
 func (c runControl) formKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 	f := *c.form
+	if f.askingLive {
+		switch msg.String() {
+		case "y":
+			args, _ := f.args() // checked when the question was asked
+			c.form = nil
+			return c, startRun(d, args)
+		case "n", "esc":
+			f.askingLive = false // back to the form, every choice kept
+		}
+		c.form = &f
+		return c, nil
+	}
 	var cmd tea.Cmd
 	switch key := msg.String(); {
 	case key == "esc":
@@ -211,6 +261,11 @@ func (c runControl) formKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 		args, err := f.args()
 		if err != nil {
 			f.refusal = err.Error()
+			c.form = &f
+			return c, nil
+		}
+		if !f.dry { // a live run submits applications: one more, deliberate step
+			f.askingLive, f.refusal, f.liveRun = true, "", f.live(d)
 			c.form = &f
 			return c, nil
 		}
@@ -387,17 +442,21 @@ func (c runControl) lines(s styles, width int) []string {
 func (f runForm) lines(s styles) []string {
 	field := func(i int, label, value string) string { return formLine(s, i == f.field, label, value) }
 	market := marketName(marketChoices[f.market])
-	mode := "live: applies for real"
+	mode := s.fail.Render(choice("live: applies for real")) // stands out from the default dry run
 	if f.dry {
-		mode = "dry run: fills every form, sends none"
+		mode = choice("dry run: fills every form, sends none")
 	}
 	out := []string{
 		s.section.Render("Start a run") + "  " + s.dim.Render("unattended, in a process of its own: closing the TUI never ends it"),
-		field(fieldMarket, "Market", "‹ "+market+" ›"),
-		field(fieldMode, "Mode", "‹ "+mode+" ›"),
+		field(fieldMarket, "Market", choice(market)),
+		field(fieldMode, "Mode", mode),
 		field(fieldMax, "Maximum", f.max.View()+s.dim.Render("  applications; 0 or blank: the pacing cap")),
 	}
-	if f.refusal != "" {
+	switch {
+	case f.askingLive:
+		out = append(out, s.warn.Render("This run submits applications for real ("+f.liveRun+"). Start it?"),
+			s.key.Render("y")+" starts it · "+s.key.Render("n")+" goes back")
+	case f.refusal != "":
 		out = append(out, s.fail.Render("Refused: "+f.refusal))
 	}
 	return append(out, "")

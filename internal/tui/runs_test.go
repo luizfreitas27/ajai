@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +27,24 @@ func TestStartOpensAFormAndStartsARunOfItsOwn(t *testing.T) {
 
 	h.press("right", "down", "space", "down", "q", "enter") // q is typed into the maximum, not a key
 	h.shows("Refused: the maximum is a whole number")
-	h.press("backspace", "7", "enter")
+	h.press("backspace", "7", "enter") // live (space turned it): asked first
+	h.shows("This run submits applications for real (market brasil, at most 7). Start it?")
+	if got := h.footer(); got != "y starts it · n/esc goes back" {
+		t.Errorf("the footer while asking: %q", got)
+	}
+	if len(h.started) > 0 {
+		t.Fatalf("a live run started without asking: %q", h.started)
+	}
+	h.press("n") // back to the form, every choice kept
+	h.shows("Market    ‹ brasil ›", "Mode      ‹ live: applies for real ›", "Maximum   7")
+	if len(h.started) > 0 || strings.Contains(h.screen(), "Start it?") {
+		t.Fatalf("n started the run or left the question: %q\n%s", h.started, h.screen())
+	}
+	h.press("enter", "esc") // esc is n too
+	if len(h.started) > 0 || !strings.Contains(h.screen(), "Start a run") {
+		t.Fatalf("esc started the run or closed the form: %q\n%s", h.started, h.screen())
+	}
+	h.press("enter", "y")
 	want := []string{"run", "--unattended", "--origin", "tui", "--market", "brasil", "--max", "7"}
 	if len(h.started) != 1 || !reflect.DeepEqual(h.started[0], want) {
 		t.Fatalf("started %q, want %q", h.started, want)
@@ -217,4 +235,36 @@ func TestARunThatBeganAndEndedBetweenTwoRefreshesIsNoFailure(t *testing.T) {
 	if strings.Contains(h.screen(), "did not start") {
 		t.Errorf("a clean end is no failure:\n%s", h.screen())
 	}
+}
+
+func TestADryRunStartsOnEnterWithoutAQuestion(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "enter") // the default: a dry run
+	if len(h.started) != 1 || !slices.Contains(h.started[0], "--dry-run") {
+		t.Fatalf("a dry run did not start on Enter: %q", h.started)
+	}
+}
+
+func TestTheLiveModeIsRedAndTheDryRunIsNot(t *testing.T) {
+	h := newHarness(t)
+	h.color = true
+	h.open(100, 30)
+	h.press("r")
+	dry := choice("dry run: fills every form, sends none")
+	if fail := inColour().fail; !strings.Contains(h.screen(), dry) || strings.Contains(h.screen(), fail.Render(dry)) {
+		t.Errorf("the dry run is drawn red:\n%q", h.screen())
+	}
+	h.press("down", "space") // live
+	if !strings.Contains(h.screen(), inColour().fail.Render(choice("live: applies for real"))) {
+		t.Errorf("the live mode is not red:\n%q", h.screen())
+	}
+	h.golden("colour-start-live")
+}
+
+func TestTheQuestionNamesTheConfigsMarketAndCap(t *testing.T) {
+	h := newHarness(t)
+	h.open(100, 30)
+	h.press("r", "down", "space", "enter") // the config's market, no maximum: live
+	h.shows("This run submits applications for real (market brasil, at most 50 (the pacing cap)). Start it?")
 }
