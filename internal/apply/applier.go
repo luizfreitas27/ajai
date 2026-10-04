@@ -96,15 +96,15 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 	if err := button.Click(); err != nil {
 		return a.fail(job, &out, "clicking the apply button", err)
 	}
-	modal, err := a.Page.WaitElement(ctx, linkedin.ModalXPath, 8*time.Second)
-	if err != nil {
+	st := &formState{job: job, qjob: questions.Job{Link: job.Link, WorkLocation: job.Location, Description: opts.Description},
+		answered: map[string]bool{}, helped: map[string]bool{}, userFilled: map[string]bool{}}
+	var err error
+	if st.modal, err = a.Page.WaitElement(ctx, linkedin.ModalXPath, modalOpenWait); err != nil {
 		if ctx.Err() != nil {
 			return a.stopped(&out), ctx.Err()
 		}
 		return a.fail(job, &out, "waiting for the Easy Apply modal", ErrModalMissing)
 	}
-	st := &formState{job: job, modal: modal, qjob: questions.Job{Link: job.Link, WorkLocation: job.Location, Description: opts.Description},
-		answered: map[string]bool{}, helped: map[string]bool{}, userFilled: map[string]bool{}}
 	// Every turn of this loop either returns, clicks Next (at most MaxPages times) or
 	// follows a help pause (at most MaxHelpPauses times), so it always ends.
 	for pages := 0; ; {
@@ -133,7 +133,7 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		st.previousBlocked, st.stuck = blocked, stuck
 		a.uploadResume(st, &out, opts.ResumePath)
 		if _, err := st.modal.Element(linkedin.SubmitButtonXPath); err == nil {
-			return a.review(ctx, job, st.modal, &out, opts)
+			return a.review(ctx, st, &out, opts)
 		}
 		if controls, err := ReadForm(st.modal); err == nil {
 			if page := pageSignature(st.modal, controls); page == st.page && pages > 0 {
@@ -157,7 +157,16 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		}
 		err = next.Click()
 		if notReady := (*browser.NotReadyError)(nil); errors.As(err, &notReady) && notReady.Reason == browser.LeftThePage {
-			err = a.pressRedrawnNext(ctx, st)
+			// LinkedIn drew the button anew while it was waited for (as while it takes an
+			// uploaded resume), sometimes with the whole modal: the Next it drew is pressed.
+			if err = a.findModalAgain(ctx, st); err == nil {
+				if next, err = nextButton(st.modal); err == nil {
+					err = next.Click()
+				}
+				if err != nil {
+					err = fmt.Errorf("in the modal found again: %w", err)
+				}
+			}
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -172,24 +181,23 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 	}
 }
 
-// modalRedrawWait bounds the look for the modal LinkedIn drew anew.
-const modalRedrawWait = 3 * time.Second
+// modalOpenWait bounds the wait for the modal to open after the apply button;
+// modalRedrawWait the look for it again once LinkedIn drew it anew.
+const (
+	modalOpenWait   = 8 * time.Second
+	modalRedrawWait = 3 * time.Second
+)
 
-// pressRedrawnNext presses the Next LinkedIn drew anew while the one found was
-// waited for (as while it takes an uploaded resume). It sometimes draws the
-// whole modal anew, so the modal is found again from the page first, and the
-// rest of the application goes on with it.
-func (a *Applier) pressRedrawnNext(ctx context.Context, st *formState) error {
+// findModalAgain finds the Easy Apply modal again from the page and makes it
+// the form's: LinkedIn sometimes draws the whole modal anew, and the rest of
+// the application goes on in the one it drew.
+func (a *Applier) findModalAgain(ctx context.Context, st *formState) error {
 	modal, err := a.Page.WaitElement(ctx, linkedin.ModalXPath, modalRedrawWait)
 	if err != nil {
 		return fmt.Errorf("the Easy Apply modal is gone: %w", err)
 	}
 	st.modal = modal
-	next, err := nextButton(modal)
-	if err != nil {
-		return err
-	}
-	return next.Click()
+	return nil
 }
 
 // nextButton is the button that moves the form on: Review when the page has
@@ -341,7 +349,8 @@ func (a *Applier) uploadResume(st *formState, out *Outcome, path string) {
 }
 
 // review is the last page: discard in a dry run, otherwise set the follow box and submit.
-func (a *Applier) review(ctx context.Context, job linkedin.Card, modal browser.Element, out *Outcome, opts Options) (Outcome, error) {
+func (a *Applier) review(ctx context.Context, st *formState, out *Outcome, opts Options) (Outcome, error) {
+	job, modal := st.job, st.modal
 	if opts.DryRun {
 		a.Logger.Info("dry run: reached Review with everything filled in; discarding", "job", job.ID)
 		a.discard()
