@@ -64,7 +64,9 @@ no such section the notes are the commit list.
   allows. The list tabs share one layout, their filters all in view and the selected
   item's details beside the list on a wide terminal; the Config tab shows paths under
   your home as `~/…`; the Schedule tab shows a window's next openings and what its last
-  one did, the daemon in a strip under its title.
+  one did, the daemon in a strip under its title. Keys mean the same on every tab: Tab and
+  Shift-Tab switch tabs, ←→ change the filter, Enter edits or opens, `r` `x` `s` work from
+  any tab, `n` adds a window and `t` starts or stops the daemon.
 - `/pending` on Telegram: review pending answers with Approve/Delete buttons, and answer a
   question by replying to its message (checked against the options a select or radio
   offered). Answers remembered from now on keep those options.

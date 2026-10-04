@@ -18,7 +18,7 @@ func (h *harness) scheduleTab() { h.t.Helper(); h.press(tabKey(tabSchedule)) }
 // addWindowByForm fills the add form: start and end typed, the rest as given.
 func (h *harness) addWindowByForm(start, end string, keysOnDays ...string) {
 	h.t.Helper()
-	h.press("a")
+	h.press("n")
 	h.press(keysOnDays...)
 	h.press("down", "ctrl+u", start, "down", "ctrl+u", end, "enter")
 }
@@ -27,8 +27,8 @@ func TestAWindowIsAddedInAFormCheckedLikeTheCommand(t *testing.T) {
 	h := newHarness(t)
 	h.open(100, 30)
 	h.scheduleTab()
-	h.shows("No schedule windows: a adds one.")
-	h.press("a")
+	h.shows("No schedule windows: n adds one.")
+	h.press("n")
 	h.shows("Add a schedule window", "[x] Mon", "[x] Fri", "[ ] Sat", "‹ the config's ›", "‹ live ›",
 		"↑↓ field · ←→ day or choice · space picks · enter adds · esc cancels")
 	h.golden("schedule-form")
@@ -124,13 +124,13 @@ func TestTheFormOpensAsAWholeWindowAndARefusalAfterEscIsStillSaid(t *testing.T) 
 	h := newHarness(t)
 	h.open(80, 24)
 	h.scheduleTab()
-	h.press("a")
+	h.press("n")
 	h.golden("schedule-form-smallest")
 	h.press("enter") // as it opens: Monday to Friday, 09:00 to 11:00
 	h.shows("Added window 1: Mon-Fri 09:00-11:00.")
 
 	// A refusal that comes after its form was closed.
-	h.press("a")
+	h.press("n")
 	h.send(windowChangedMsg{form: 99, refusal: "overlaps window 1"}) // an older form's
 	h.shows("Add a schedule window")
 	h.press("esc")

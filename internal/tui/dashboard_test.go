@@ -192,7 +192,8 @@ func TestKeysHelpQuitAndATooSmallTerminal(t *testing.T) {
 	h := newHarness(t)
 	h.open(100, 30)
 	h.press("?")
-	h.shows("Keys", "1           Dashboard", "this list; Esc closes it", "quit (a run in progress keeps running)")
+	h.shows("Keys", "Everywhere", "1-5, tab    show a tab; shift+tab goes back", "this list; Esc closes it",
+		"quit, as Ctrl-C does (a run in progress keeps running)")
 	h.golden("help")
 	h.press("esc")
 	h.shows("No run in progress.")

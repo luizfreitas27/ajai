@@ -2,19 +2,19 @@ ajai   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 Keys
 
-  1           Dashboard
-  2           Answers
-  3           Schedule
-  4           Jobs
-  5           Config
-  ?           this list; Esc closes it
-  q, Ctrl-C   quit (a run in progress keeps running)
+Everywhere
 
-Dashboard
-
-  r           start a run: market, dry run or live, a maximum
+  1-5, tab    show a tab; shift+tab goes back
+  r           start a run, on the Dashboard: market, dry run or live, a maximum
   x           stop the run in progress, whoever started it
   s           the setup checklist
+  ?           this list; Esc closes it
+  q           quit, as Ctrl-C does (a run in progress keeps running)
+
+
+
+
+
 
 
 

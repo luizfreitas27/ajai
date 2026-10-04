@@ -150,7 +150,7 @@ It refreshes every second. It shows:
 - whether the daemon runs;
 - today's log as it grows. A run the daemon started is followed in the daemon's log.
 
-`r` on the Dashboard starts a run. You choose the market (the config's, brasil or
+`r`, from any tab, starts a run on the Dashboard. You choose the market (the config's, brasil or
 internacional), dry run (the default) or live, and a maximum of applications. It runs
 `ajai run --unattended` in a process of its own, so closing the TUI never ends it, and
 questions nothing can answer go to the review queue. If a run is already in progress, Start
@@ -161,16 +161,16 @@ is done, recorded as "stopped from the TUI". When a run ends while the TUI is op
 says how it went.
 
 The **Answers** tab is the answer memory, the review queue first (its tab title counts the
-pending answers) and the approved ones a Tab away; it keeps up as runs queue questions and
+pending answers) and the approved ones a ←→ away; it keeps up as runs queue questions and
 Telegram answers them. Each answer shows its question, kind,
 options, who gave it, how often it was used and the last job. `a` approves it as shown (if a
-run answered it again meanwhile, nothing is approved and the new answer is shown), `e`
+run answered it again meanwhile, nothing is approved and the new answer is shown), Enter
 corrects it: a select or radio is picked from its options with ↑↓, or typed (an option, or
 the beginning of just one; the pick follows what you type), anything else typed; a correction is yours and approved. A checkbox
 takes only `a` or `d`; `d` deletes after asking, and ajai asks the question again next time.
 
 The **Schedule** tab lists the schedule windows (weekdays, hours, market, mode, on or off)
-with each one's next opening. `a` adds one in a form: tick the weekdays with Space, type
+with each one's next opening. `n` adds one in a form: tick the weekdays with Space, type
 the start and end (HH:MM, local time), choose the market and dry run or live. It is checked
 as `ajai schedule add` checks it (no window crossing midnight, none overlapping another on
 the same weekday) and refused with the reason. Space turns the selected window off or back
@@ -179,15 +179,15 @@ window's details show its next three openings and what its last opening did: the
 started, with that run's counts and why it ended, or why no run started. Windows open
 runs only while the daemon runs: a strip under the tab's title says whether it does and how
 its systemd unit stands, and `i` installs (or reinstalls) the unit as `ajai daemon install` does,
-`u` uninstalls it, `s` starts the daemon and `t` stops it, each after a question that says
+`u` uninstalls it, and `t` starts the daemon (or stops it while its unit runs), each after a question that says
 what it does. Installing warns when it could not start the daemon (no desktop session) or
 when reinstalling ends a run in progress.
 
-The **Jobs** tab is the job history, newest first, with the counts per outcome. Tab shows
+The **Jobs** tab is the job history, newest first, with the counts per outcome. ←→ show
 every job or only the applied, external, failed or skipped ones; `/` searches titles,
-companies and locations, ignoring case, in accented letters too (`c` clears the search). The
+companies and locations, ignoring case, in accented letters too (Esc clears the search). The
 selected job shows its outcome and why, when it was recorded and posted, a failure's error
-and screenshot, its links and the questions answered. `o` opens it in your default browser:
+and screenshot, its links and the questions answered. Enter opens it in your default browser:
 the company's application page for an external job, LinkedIn's otherwise (only web links
 are opened). The list is read a page at a time as you scroll, and keeps up while a run
 records jobs.
@@ -208,7 +208,7 @@ when it starts, while settings take effect on its next run.
 
 The **setup checklist** lists every check `ajai doctor` makes, with what fixes it. The TUI
 opens on it when something a run needs is missing (a check failed, or LinkedIn is not
-signed in in the ajai profile); `s` on the Dashboard opens it at any time, and the Dashboard
+signed in in the ajai profile); `s` opens it at any time, from any tab, and the Dashboard
 says whether every check passes (they run again every half minute and after every
 change). Enter fixes the selected check:
 - no config file: the init wizard (`ajai init`);
@@ -221,8 +221,12 @@ aside (with the same `--config` and `--no-color`); press Enter at the end to com
 and the checks run again. Without a config file
 only the checklist and the Config tab (for the secrets) open.
 
-Keys: the number keys switch tabs, `?` lists the keys that work on the screen shown, and
-`q` or Ctrl-C quits. Quitting
+Keys mean the same everywhere. The number keys, Tab and Shift-Tab switch tabs; ↑↓ (k j),
+PgUp PgDn and g G move in a list; ←→ (h l) change its filter; Enter does the selected item's
+main thing (edit it, or open the job); `r` starts a run, `x` stops it and `s` opens the setup
+checklist from any tab; each letter means one thing (`n` new, `d` delete, `a` approve, Space
+on or off, `/` search). The footer shows the keys of the screen shown and `?` lists them in
+full; `q` or Ctrl-C quits. Quitting
 never stops a run. The TUI needs a terminal of at least 80×24, honours `--no-color` and
 `NO_COLOR`, and writes paths under your home as `~/…`.
 

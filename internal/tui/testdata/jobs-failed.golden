@@ -21,4 +21,4 @@ applies at: https://hooli.example/apply
 screenshot: ~/screenshots/7-failed-20261005-080100.png
 questions answered (3): Years of Go? 3 · Relocate? Yes · Notice period? 30 days
 ────────────────────────────────────────────────────────────────────────────────
-↑↓ move · tab outcome · / search · o open · ? keys · q quit
+↑↓ move · ←→ filter · / search · enter open · ? keys · q quit

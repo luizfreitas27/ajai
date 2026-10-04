@@ -179,7 +179,7 @@ func (a *App) pinnedEnv() (map[string]string, error) {
 // cannot stop it.
 func (a *App) handStarted(m service.Manager) (daemon.Process, bool) {
 	d, running, _ := daemon.ReadLock(a.paths.DataDir)
-	return d, running && m.Status().Active != "active"
+	return d, running && !m.Status().Running()
 }
 
 // installCheck refuses to install while a daemon runs outside systemd, and says
@@ -188,7 +188,7 @@ func (a *App) installCheck(m service.Manager) (restarting string, err error) {
 	if d, ok := a.handStarted(m); ok {
 		return "", fmt.Errorf("ajai daemon is already running outside systemd (%s): stop it (Ctrl-C in its terminal), then install", d)
 	}
-	if h, held, _ := run.ReadLock(a.paths.DataDir); held && m.Status().Active == "active" {
+	if h, held, _ := run.ReadLock(a.paths.DataDir); held && m.Status().Running() {
 		return "restarting the daemon ends " + h.String() + "; its window resumes once the daemon is back", nil
 	}
 	return "", nil

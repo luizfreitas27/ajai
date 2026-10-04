@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -310,35 +311,41 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.help:
 			m.help = false
-		case m.setupShown && !m.checks.noConfig:
-			m.setupShown = false
-			return m.loadTab() // it may never have loaded, or changed meanwhile
+			return m, nil
+		case m.setupShown:
+			if !m.checks.noConfig {
+				m.setupShown = false
+				return m.loadTab() // it may never have loaded, or changed meanwhile
+			}
+			return m, nil
+		} // otherwise the tab's: Jobs clears its search
+	case "tab", "shift+tab": // the next tab, or the one before, round the bar
+		step := 1
+		if key == "shift+tab" {
+			step = len(tabNames) - 1
 		}
-		return m, nil
+		return m.show(tab((int(m.tab) + step) % len(tabNames)))
 	case "s":
-		if !m.setupShown && m.tab == tabDashboard {
+		if !m.setupShown {
 			m.setupShown, m.help = true, false
 			return m.checkAgain()
 		}
-	case "r":
-		if !m.setupShown && !m.help && m.tab == tabDashboard {
-			m.runs = m.runs.start()
-			return m, nil
+	case "r", "x": // a run is started and stopped on the Dashboard, from any tab
+		if m.checks.noConfig { // no run without a config: the checklist says what to do
+			return m.show(tabDashboard)
 		}
-	case "x":
-		if !m.setupShown && !m.help && m.tab == tabDashboard {
-			m.runs = m.runs.stop(m.dash.snap.activity)
-			return m, nil
+		if !m.setupShown {
+			m.tab, m.help = tabDashboard, false
+			if key == "r" {
+				m.runs = m.runs.start()
+			} else {
+				m.runs = m.runs.stop(m.dash.snap.activity)
+			}
+			return m.loadTab()
 		}
 	}
 	if len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < len(tabNames) {
-		t := tab(key[0] - '1')
-		if m.checks.noConfig && t != tabConfig { // nothing else works without a config
-			m.tab, m.setupShown, m.help = t, true, false // shown once the checklist is left
-			return m, nil
-		}
-		m.tab, m.help, m.setupShown = t, false, false
-		return m.loadTab()
+		return m.show(tab(key[0] - '1'))
 	}
 	switch {
 	case m.help:
@@ -364,6 +371,17 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+// show shows tab t, leaving the help and the checklist; without a config
+// file only the Config tab is there, the checklist in front of the others.
+func (m Model) show(t tab) (Model, tea.Cmd) {
+	if m.checks.noConfig && t != tabConfig { // nothing else works without a config
+		m.tab, m.setupShown, m.help = t, true, false // shown once the checklist is left
+		return m, nil
+	}
+	m.tab, m.help, m.setupShown = t, false, false
+	return m.loadTab()
 }
 
 // loadTab reads what the tab shown displays: it may have changed since it was
@@ -458,97 +476,132 @@ func (m Model) divider(start, width int) string {
 		m.styles.dim.Render(strings.Repeat("─", m.width-start-width))
 }
 
-func (m Model) hints() string {
-	var hint string
-	switch {
-	case m.help:
-		hint = "esc closes the list · q quit"
-	case m.setupShown && m.checks.editing():
-		hint = "enter imports · esc cancels"
-	case m.setupShown && m.checks.noConfig:
-		hint = "↑↓ move · enter fix · i import · r check again · " + tabKey(tabConfig) + " config · q quit"
-	case m.setupShown:
-		hint = "↑↓ move · enter fix · i import · r check again · esc back · q quit"
-	case m.tab == tabConfig && m.conf.editing():
-		hint = "enter saves · esc cancels"
-	case m.tab == tabConfig:
-		hint = "↑↓ move · enter edit · ? keys · q quit"
-	case m.tab == tabAnswers && m.ans.deleting != nil:
-		hint = "y deletes · n keeps"
-	case m.tab == tabAnswers && m.ans.edit != nil:
-		hint = "enter saves · esc cancels"
-	case m.tab == tabAnswers:
-		hint = "↑↓ move · tab pending/approved · a approve · e edit · d delete · ? keys · q quit"
-	case m.tab == tabSchedule && m.sched.daemon.editing():
-		hint = "y does it · n leaves it"
-	case m.tab == tabSchedule && m.sched.deleting != nil:
-		hint = "y deletes · n keeps"
-	case m.tab == tabSchedule && m.sched.form != nil:
-		hint = "↑↓ field · ←→ day or choice · space picks · enter adds · esc cancels"
-	case m.tab == tabSchedule:
-		hint = "↑↓ move · a add · space on/off · d delete · ? keys · q quit"
-	case m.tab == tabJobs && m.jobs.editing():
-		hint = "enter searches · esc cancels"
-	case m.tab == tabJobs:
-		hint = "↑↓ move · tab outcome · / search · o open · ? keys · q quit"
-	case m.runs.form != nil:
-		hint = "↑↓ field · ←→ change · enter starts · esc cancels"
-	case m.runs.confirm != nil:
-		hint = "y stops the run · n keeps it"
-	default:
-		hint = "r run · x stop · s setup · ? keys · q quit"
+// binding is a key and what it does: in a word or two for the footer (none:
+// the help screen only), in a sentence for the help screen.
+type binding struct{ key, short, long string }
+
+// The keys every screen takes, unless a value is being typed.
+var (
+	tabsKey  = binding{fmt.Sprintf("1-%d, tab", len(tabNames)), "", "show a tab; shift+tab goes back"}
+	runKey   = binding{"r", "run", "start a run, on the Dashboard: market, dry run or live, a maximum"}
+	stopKey  = binding{"x", "stop", "stop the run in progress, whoever started it"}
+	setupKey = binding{"s", "setup", "the setup checklist"}
+	helpKey  = binding{"?", "keys", "this list; Esc closes it"}
+	quitKey  = binding{"q", "quit", "quit, as Ctrl-C does (a run in progress keeps running)"}
+)
+
+// globals are the keys that work everywhere on the screen shown: all of them
+// but on the setup checklist, where r is its own and s and x have nothing to do.
+func (m Model) globals() []binding {
+	if m.setupShown {
+		return []binding{tabsKey, helpKey, quitKey}
 	}
-	return m.styles.hints(hint)
+	return []binding{tabsKey, runKey, stopKey, setupKey, helpKey, quitKey}
 }
 
-// helpView lists every key that works now: the TUI's own, then the shown
-// screen's (all of them would not fit the smallest terminal).
-func (m Model) helpView() string {
-	lines := []string{m.styles.section.Render("Keys"), ""}
-	row := func(key, what string) {
-		lines = append(lines, "  "+m.styles.key.Render(fmt.Sprintf("%-11s", key))+" "+what)
-	}
-	for i, name := range tabNames {
-		row(tabKey(tab(i)), name)
-	}
-	row("?", "this list; Esc closes it")
-	row("q, Ctrl-C", "quit (a run in progress keeps running)")
-	section := func(title string) { lines = append(lines, "", m.styles.section.Render(title), "") }
+// moveKeys move the selection on every list.
+var moveKeys = binding{"↑↓", "move", "move the selection (k j too); PgUp PgDn, g G jump"}
+
+// screenKeys are the keys of what is shown: its name on the help screen and
+// its bindings, the footer and the help screen both made from them.
+func (m Model) screenKeys() (string, []binding) {
+	answer := func(yes, no string) []binding { return []binding{{"y", yes, ""}, {"n", no, ""}} }
+	entering := func(does string) []binding { return []binding{{"enter", does, ""}, {"esc", "cancels", ""}} }
 	switch {
+	case m.setupShown && m.checks.editing():
+		return "", entering("imports")
 	case m.setupShown:
-		section("Setup checklist")
-		row("Enter", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab")
-		row("i", "import from the Python bot")
-		row("r", "check again")
-		row("Esc", "back to the tabs (once there is a config file)")
-	case m.tab == tabDashboard:
-		section("Dashboard")
-		row("r", "start a run: market, dry run or live, a maximum")
-		row("x", "stop the run in progress, whoever started it")
-		row("s", "the setup checklist")
-	case m.tab == tabAnswers:
-		section("Answers")
-		row("Tab", "pending (the review queue) or approved")
-		row("a", "approve the answer as shown")
-		row("e, Enter", "correct it: pick or type an option, or type the answer")
-		row("d", "delete it: ajai asks the question again")
-	case m.tab == tabSchedule:
-		section("Schedule")
-		row("a", "add a window: weekdays, hours, market, dry run or live")
-		row("Space", "turn the window on or off")
-		row("d", "delete it")
-		row("i, u", "install (or reinstall) or uninstall the daemon's systemd unit")
-		row("s, t", "start or stop the daemon")
-	case m.tab == tabJobs:
-		section("Jobs")
-		row("Tab", "every job, or only the applied, external, failed or skipped ones")
-		row("/", "search titles, companies and locations; c clears the search")
-		row("o", "open the job in your browser (the application page for an external job)")
+		keys := []binding{moveKeys, {"enter", "fix", "fix the selected check: the init wizard, LinkedIn sign-in, or the Config tab"},
+			{"i", "import", "import settings, answers and history from the Python bot"}, {"r", "check again", "check again"}}
+		if m.checks.noConfig {
+			return "Setup checklist", append(keys, binding{tabKey(tabConfig), "config", "the Config tab, which works before there is a config file"})
+		}
+		return "Setup checklist", append(keys, binding{"esc", "back", "back to the tabs"})
+	case m.tab == tabConfig && m.conf.editing():
+		return "", entering("saves")
 	case m.tab == tabConfig:
-		section("Config")
-		row("↑ ↓, k j", "move; PgUp PgDn, g G jump")
-		row("Enter", "edit the setting or secret, then Enter saves")
-		row("Esc", "cancel the edit")
+		return "Config", []binding{moveKeys, {"enter", "edit", "edit the setting or secret; Enter saves it, Esc cancels"}}
+	case m.tab == tabAnswers && m.ans.deleting != nil:
+		return "", answer("deletes", "keeps")
+	case m.tab == tabAnswers && m.ans.edit != nil:
+		return "", entering("saves")
+	case m.tab == tabAnswers:
+		return "Answers", []binding{moveKeys, {"←→", "filter", "pending (the review queue) or approved (h l too)"},
+			{"enter", "edit", "correct the answer: pick or type an option, or type the answer"},
+			{"a", "approve", "approve the answer as shown"}, {"d", "delete", "delete it: ajai asks the question again"}}
+	case m.tab == tabSchedule && m.sched.daemon.editing():
+		return "", answer("does it", "leaves it")
+	case m.tab == tabSchedule && m.sched.deleting != nil:
+		return "", answer("deletes", "keeps")
+	case m.tab == tabSchedule && m.sched.form != nil:
+		return "", []binding{{"↑↓", "field", ""}, {"←→", "day or choice", ""}, {"space", "picks", ""}, {"enter", "adds", ""}, {"esc", "cancels", ""}}
+	case m.tab == tabSchedule:
+		keys := []binding{moveKeys, {"n", "new", "add a window: weekdays, hours, market, dry run or live"},
+			{"space", "on/off", "turn the window on or off"}, {"d", "delete", "delete it"}}
+		for _, k := range m.sched.daemon.keys() { // in the daemon's strip, not the footer
+			b := k.binding
+			b.short = ""
+			keys = append(keys, b)
+		}
+		return "Schedule", keys
+	case m.tab == tabJobs && m.jobs.editing():
+		return "", entering("searches")
+	case m.tab == tabJobs:
+		clears := ""
+		if m.jobs.text != "" {
+			clears = "clears"
+		}
+		return "Jobs", []binding{moveKeys, {"←→", "filter", "every job, or only the applied, external, failed or skipped ones (h l too)"},
+			{"/", "search", "search titles, companies and locations"}, {"esc", clears, "clear the search"},
+			{"enter", "open", "open the job in your browser (the application page for an external job)"}}
+	case m.runs.form != nil:
+		return "", []binding{{"↑↓", "field", ""}, {"←→", "change", ""}, {"enter", "starts", ""}, {"esc", "cancels", ""}}
+	case m.runs.confirm != nil:
+		return "", answer("stops the run", "keeps it")
+	}
+	return "Dashboard", []binding{runKey, stopKey, setupKey}
+}
+
+// hints is the footer: the shown screen's keys, then the help and quit keys
+// unless a value is being typed or a question asked.
+func (m Model) hints() string {
+	_, keys := m.screenKeys()
+	switch {
+	case m.help:
+		keys = []binding{{"esc", "closes the list", ""}, quitKey}
+	case !m.typing():
+		keys = append(keys, helpKey, quitKey)
+	}
+	var parts []string
+	for _, b := range keys {
+		if b.short != "" {
+			parts = append(parts, b.key+" "+b.short)
+		}
+	}
+	return m.styles.hints(strings.Join(parts, " · "))
+}
+
+// helpView lists every key that works now: the global ones, then the shown
+// screen's own (all of them would not fit the smallest terminal).
+func (m Model) helpView() string {
+	lines := []string{m.styles.section.Render("Keys")}
+	rows := func(title string, keys []binding) {
+		lines = append(lines, "", m.styles.section.Render(title), "")
+		for _, b := range keys {
+			lines = append(lines, "  "+m.styles.key.Render(fmt.Sprintf("%-11s", b.key))+" "+b.long)
+		}
+	}
+	globals := m.globals()
+	rows("Everywhere", globals)
+	title, keys := m.screenKeys()
+	var own []binding
+	for _, b := range keys {
+		if b.long != "" && !slices.Contains(globals, b) {
+			own = append(own, b)
+		}
+	}
+	if len(own) > 0 {
+		rows(title, own)
 	}
 	return strings.Join(lines, "\n")
 }

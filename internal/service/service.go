@@ -259,6 +259,15 @@ type Status struct {
 	Active    string // "active", "inactive", "failed", ... (systemctl is-active)
 }
 
+// Running says whether systemd has the unit running, or on its way to.
+func (s Status) Running() bool {
+	switch s.Active {
+	case "active", "activating", "reloading":
+		return true
+	}
+	return false
+}
+
 // Status asks systemd about the unit. is-enabled and is-active print a word
 // and exit non-zero for anything but yes: the word is the answer; with no word,
 // systemd could not be asked and the error says why.

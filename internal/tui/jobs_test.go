@@ -56,17 +56,17 @@ func TestTheJobsTabListsTheHistoryWithCountsAndDetails(t *testing.T) {
 	h.shows("Go Developer · Acme · Recife (Remote)", "applied Mon 05 Oct 08:01 · posted 2026-10-03", "job: https://www.linkedin.com/jobs/view/1/",
 		"questions answered (2): Years of Go? 3 · Relocate? Yes")
 	h.golden("jobs")
-	h.press("o")
+	h.press("enter")
 	h.shows("Opened https://www.linkedin.com/jobs/view/1/")
 	if !strings.Contains(h.logs.String(), `"msg":"job opened from the TUI","job":"1"`) {
 		t.Errorf("not logged: %s", h.logs)
 	}
 	h.selectJob("Backend Engineer")
 	h.shows("applies at: https://initech.example/apply")
-	h.press("o")
+	h.press("enter")
 	h.selectJob("Senior Java")
 	h.shows("the description asks for 10 years")
-	h.press("o")
+	h.press("enter")
 	h.shows("This job has no link.")
 	if want := []string{"https://www.linkedin.com/jobs/view/1/", "https://initech.example/apply"}; !reflect.DeepEqual(h.opened, want) {
 		t.Errorf("opened %q, want %q (an external job opens where it applies)", h.opened, want)
@@ -78,24 +78,24 @@ func TestJobsAreFilteredByOutcomeAndSearched(t *testing.T) {
 	h.someJobs()
 	h.open(100, 30)
 	h.jobsTab()
-	h.press("tab")
+	h.press("right")
 	h.shows("[applied]", "Go Developer")
 	if strings.Contains(h.screen(), "Initech") {
 		t.Errorf("only applied jobs:\n%s", h.screen())
 	}
-	h.press("tab", "tab", "tab", "tab") // back to every job
-	h.press("/", "q1umbr")              // typed, not keys
+	h.press("right", "right", "right", "right") // round to every job
+	h.press("/", "q1umbr")                      // typed, not keys
 	h.shows("search: q1umbr", "enter searches · esc cancels")
 	h.press("ctrl+u", "umbr", "enter")
-	h.shows(`matching "umbr" (c clears)`, "Senior Java")
+	h.shows(`matching "umbr" (esc clears)`, "Senior Java")
 	if strings.Contains(h.screen(), "Go Developer") {
 		t.Errorf("only the match:\n%s", h.screen())
 	}
-	h.press("c")
+	h.press("esc")
 	h.shows("Go Developer", "Senior Java")
 
 	// A read made for a filter no longer shown is dropped when it comes back.
-	h.press("tab")
+	h.press("right")
 	h.send(jobsLoadedMsg{filter: 0, read: readFirst, jobs: []store.Job{{JobID: "2", Outcome: store.External, Title: "Backend Engineer", Company: "Initech"}}})
 	if strings.Contains(h.screen(), "Initech") {
 		t.Errorf("an old read replaced the applied jobs:\n%s", h.screen())
@@ -128,7 +128,7 @@ func TestOnlyWebLinksAreOpened(t *testing.T) {
 		ExternalLink: "file:///etc/passwd"})
 	h.open(100, 30)
 	h.jobsTab()
-	h.press("o")
+	h.press("enter")
 	h.shows("Not opened: file:///etc/passwd is not a web link.")
 	if len(h.opened) > 0 {
 		t.Errorf("opened %q", h.opened)
@@ -138,7 +138,7 @@ func TestOnlyWebLinksAreOpened(t *testing.T) {
 	h.refreshJobs()
 	h.noOpen = errors.New("xdg-open: not found")
 	h.selectJob("Fine")
-	h.press("o")
+	h.press("enter")
 	h.shows("Could not open https://www.linkedin.com/jobs/view/2/: xdg-open: not found")
 	if !strings.Contains(h.logs.String(), `"msg":"could not open a job from the TUI","job":"2"`) {
 		t.Errorf("not logged: %s", h.logs)

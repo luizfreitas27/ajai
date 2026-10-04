@@ -202,10 +202,11 @@ func (j jobsTab) browseKey(msg tea.KeyMsg, d Deps) (jobsTab, tea.Cmd) {
 		}
 		return j, nil
 	}
-	switch msg.String() {
-	case "tab":
-		j.outcome = (j.outcome + 1) % len(jobOutcomes)
+	if step := filterStep(msg.String()); step != 0 {
+		j.outcome = (j.outcome + step + len(jobOutcomes)) % len(jobOutcomes)
 		return j.refilter(d)
+	}
+	switch msg.String() {
 	case "/":
 		in := textinput.New()
 		in.Prompt = "search: "
@@ -216,12 +217,12 @@ func (j jobsTab) browseKey(msg tea.KeyMsg, d Deps) (jobsTab, tea.Cmd) {
 		in.Cursor.SetMode(cursor.CursorStatic)
 		in.Focus()
 		j.search = &in
-	case "c":
+	case "esc":
 		if j.text != "" {
 			j.text = ""
 			return j.refilter(d)
 		}
-	case "o":
+	case "enter":
 		if job, ok := j.current(); ok {
 			return j, openJob(d, job)
 		}
@@ -298,7 +299,7 @@ func (j jobsTab) frame(s styles, d Deps) listFrame {
 	}
 	summary := strings.Join(counts, " · ")
 	if j.text != "" {
-		summary = fmt.Sprintf("matching %q (c clears) · %s", j.text, summary)
+		summary = fmt.Sprintf("matching %q (esc clears) · %s", j.text, summary)
 	}
 	notes := listNotes(s, j.problem, j.notice, j.width)
 	if j.search != nil {

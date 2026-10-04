@@ -46,9 +46,9 @@ func TestTheAnswersTabListsTheReviewQueueAndTheApprovedOnes(t *testing.T) {
 		t.Errorf("an approved answer among the pending ones:\n%s", h.screen())
 	}
 	h.selectAnswer("Are you willing")
-	h.shows("radio · answer: none yet: e gives it one (the form)", "options: Yes | No, not now", "last job: https://www.linkedin.com/jobs/view/2/")
+	h.shows("radio · answer: none yet: Enter gives it one (the form)", "options: Yes | No, not now", "last job: https://www.linkedin.com/jobs/view/2/")
 	h.golden("answers")
-	h.press("tab")
+	h.press("right")
 	h.shows("Answers   pending  [approved]", "City", "Recife", "you")
 }
 
@@ -69,7 +69,7 @@ func TestApproveCorrectAndDelete(t *testing.T) {
 	}
 
 	h.selectAnswer("Are you willing")
-	h.press("e")
+	h.press("enter")
 	h.shows("Answer: Are you willing to relocate?", "Yes", "No, not now", "enter saves · esc cancels")
 	h.press("q1", "maybe", "enter") // typed, not keys
 	h.shows(`Refused: "q1maybe" is not one of the options`)
@@ -80,7 +80,7 @@ func TestApproveCorrectAndDelete(t *testing.T) {
 	}
 
 	h.selectAnswer("Send me updates")
-	h.press("e")
+	h.press("enter")
 	h.shows("A checkbox takes only Approve (a) or Delete (d).")
 	h.press("d")
 	h.shows(`Delete the answer to "Send me updates"?`, "y deletes · n keeps")
@@ -128,7 +128,7 @@ func TestThePickListIsUsedWithArrowsAndShowsEveryOption(t *testing.T) {
 	}
 	h.open(80, 24)
 	h.answersTab()
-	h.press("e")
+	h.press("enter")
 	for _, o := range options {
 		h.shows(o) // all eight, on the smallest terminal
 	}
@@ -137,7 +137,7 @@ func TestThePickListIsUsedWithArrowsAndShowsEveryOption(t *testing.T) {
 	h.shows("Saved: How long have you used Kubernetes? = 3 years")
 
 	// Typing moves the pick; an arrow afterwards wins over what was typed.
-	h.press("tab", "e", "mor")
+	h.press("right", "enter", "mor")
 	if !strings.Contains(h.screen(), selected+"More than 10 years") {
 		t.Errorf("the pick follows the typing:\n%s", h.screen())
 	}
@@ -180,7 +180,7 @@ func TestEnterOnAnUnchangedAnswerApprovesItAndALateResultLeavesTheEditorOpen(t *
 	h.open(100, 30)
 	h.answersTab()
 	h.selectAnswer("Years of experience")
-	h.press("e")
+	h.press("enter")
 	h.send(answerChangedMsg{notice: notice{text: "an approval from before"}}) // not the editor's
 	h.shows("Answer: Years of experience with Go?")
 	h.press("enter")

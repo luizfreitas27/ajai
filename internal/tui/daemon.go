@@ -40,8 +40,24 @@ const (
 	stopDaemon
 )
 
-// daemonKeys are the Schedule tab's keys for the daemon section.
-var daemonKeys = map[string]daemonAction{"i": installUnit, "u": uninstallUnit, "s": startDaemon, "t": stopDaemon}
+// daemonKey is one of the Schedule tab's keys for the daemon and what it
+// asks to do.
+type daemonKey struct {
+	binding
+	action daemonAction
+}
+
+// keys are the daemon's keys as its unit stands (t starts the daemon, or
+// stops it while the unit runs): the strip shows them, the help explains
+// them, and the Schedule tab acts on them.
+func (s daemonSection) keys() []daemonKey {
+	t := daemonKey{binding{"t", "start", "start the daemon, or stop it while its unit runs"}, startDaemon}
+	if s.unit.Running() {
+		t.short, t.action = "stop", stopDaemon
+	}
+	return []daemonKey{{binding{"i", "install", "install (or reinstall) the daemon's systemd unit"}, installUnit},
+		{binding{"u", "uninstall", "uninstall it"}, uninstallUnit}, t}
+}
 
 // daemonSection is the Schedule tab's daemon part: whether the daemon runs
 // and how its systemd unit stands, with install, uninstall, start and stop,
@@ -214,7 +230,11 @@ func (s daemonSection) strip(st styles, width int, proc daemonProc) []string {
 	case s.busy != noDaemonAction:
 		return append(out, st.dim.Render("Working…"))
 	}
-	out = append(out, st.hints("i install · u uninstall · s start · t stop"))
+	var keys []string
+	for _, k := range s.keys() {
+		keys = append(keys, k.key+" "+k.short)
+	}
+	out = append(out, st.hints(strings.Join(keys, " · ")))
 	if s.notice.text != "" {
 		out = append(out, wrapStyled(st.byLevel(s.notice.level), s.notice.text, width)...)
 	}

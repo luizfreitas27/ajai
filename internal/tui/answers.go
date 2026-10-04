@@ -165,16 +165,17 @@ func (a answersTab) browseKey(msg tea.KeyMsg, d Deps) (answersTab, tea.Cmd) {
 		a.cursor = cursor
 		return a.settled(), nil
 	}
-	switch msg.String() {
-	case "tab":
+	if filterStep(msg.String()) != 0 { // two filters: either way is the other
 		a.state = otherState(a.shownState())
 		a.loaded, a.answers, a.cursor, a.top, a.notice = false, nil, 0, 0, notice{}
 		return a, loadAnswers(d, a.state)
+	}
+	switch msg.String() {
 	case "a":
 		if r, ok := a.current(); ok {
 			return a, approveAnswer(d, r)
 		}
-	case "e", "enter":
+	case "enter":
 		if r, ok := a.current(); ok {
 			if isCheckbox(r) {
 				a.notice = notice{"A checkbox takes only Approve (a) or Delete (d).", levelWarn}
@@ -282,7 +283,7 @@ func approveAnswer(d Deps, r memory.Remembered) tea.Cmd {
 		}
 		if _, err := mem.Approve(r.ID, ""); err != nil {
 			if errors.Is(err, memory.ErrNothingToApprove) {
-				return answerChangedMsg{notice: notice{"This question has no answer yet: e gives it one.", levelWarn}}
+				return answerChangedMsg{notice: notice{"This question has no answer yet: Enter gives it one.", levelWarn}}
 			}
 			return answerChangedMsg{notice: notice{"Could not approve: " + err.Error(), levelFail}}
 		}
@@ -394,7 +395,7 @@ func (a answersTab) detail(s styles, width int, beside bool) []string {
 	lines = append(lines, wrap(r.Label, width)...)
 	answer := r.Answer
 	if unansweredYet(r) {
-		answer = "none yet: e gives it one"
+		answer = "none yet: Enter gives it one"
 	}
 	if beside {
 		lines = append(lines, "", labelled(s, "kind", r.Kind), labelled(s, "answer", answer), labelled(s, "from", sourceName(r.Source)),
@@ -446,24 +447,4 @@ func clip(text string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return text
-}
-
-// moved is where a list's selection goes for key, the list being n long; ok
-// is false for a key that does not move it.
-func moved(key string, cursor, n int) (int, bool) {
-	switch key {
-	case "up", "k":
-		return cursor - 1, true
-	case "down", "j":
-		return cursor + 1, true
-	case "pgup":
-		return cursor - 10, true
-	case "pgdown":
-		return cursor + 10, true
-	case "home", "g":
-		return 0, true
-	case "end", "G":
-		return n - 1, true
-	}
-	return cursor, false
 }

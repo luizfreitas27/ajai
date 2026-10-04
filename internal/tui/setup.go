@@ -147,13 +147,11 @@ func (v checklist) update(msg tea.Msg, d Deps) (checklist, tea.Cmd) {
 }
 
 func (v checklist) key(msg tea.KeyMsg, d Deps) (checklist, tea.Cmd) {
+	if cursor, ok := moved(msg.String(), v.cursor, len(v.report.Checks)); ok {
+		v.cursor = cursor
+		return v.settled(d), nil
+	}
 	switch msg.String() {
-	case "up", "k":
-		v.cursor--
-		return v.settled(d), nil
-	case "down", "j":
-		v.cursor++
-		return v.settled(d), nil
 	case "r":
 		v.notice = notice{text: "Checked again."}
 		return v, checkAgain
