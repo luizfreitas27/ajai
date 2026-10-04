@@ -23,6 +23,7 @@ type node struct {
 	files    []string
 	visible  bool
 	onClick  func()
+	clickErr error // what Click returns after onClick, as a button that never became clickable
 	// failElements makes Elements fail, like a stale DOM after the page changed.
 	failElements bool
 }
@@ -46,7 +47,7 @@ func (n *node) Click() error {
 	if n.onClick != nil {
 		n.onClick()
 	}
-	return nil
+	return n.clickErr
 }
 func (n *node) ClickAtCentre() error           { return n.Click() }
 func (n *node) Input(text string) error        { n.typed.WriteString(text); return nil }

@@ -310,9 +310,43 @@ func (e *rodElement) Property(name string) (string, error) {
 	return v.String(), nil
 }
 
+// actionWait bounds how long a click, typing, focus or pick waits for its
+// element to be ready (shown, uncovered and enabled), which rod would otherwise
+// wait for without end: a button LinkedIn keeps disabled must not hang the run.
+// A var so the tests can shorten it. The bound holds for every wait rod runs on
+// the element; its wait for a repaint runs on the page and is not bounded, but
+// Chrome keeps repainting a hidden window with rod's default flags.
+var actionWait = 10 * time.Second
+
+// notReadyScript says why an element is still not ready, as a NotReadyReason;
+// "shown" as rod's own wait has it.
+var notReadyScript = fmt.Sprintf(`() => {
+	const style = getComputedStyle(this), box = this.getBoundingClientRect();
+	if (!this.isConnected) return %q;
+	if (this.disabled) return %q;
+	if (style.display === "none" || style.visibility === "hidden" || !(box.width || box.height)) return %q;
+	return %q;
+}`, LeftThePage, StayedDisabled, StayedHidden, StayedCovered)
+
+// whenReady runs act on the element with rod's waits for it bounded by
+// actionWait, and returns a *NotReadyError saying why when the bound runs out.
+func (e *rodElement) whenReady(act func(el *rod.Element) error) error {
+	el := e.el.Timeout(actionWait)
+	defer el.CancelTimeout()
+	err := act(el)
+	if !errors.Is(err, context.DeadlineExceeded) || e.el.GetContext().Err() != nil {
+		return err // done, failed for another reason, or the caller's own context ended
+	}
+	reason, evalErr := e.el.Eval(notReadyScript)
+	if evalErr != nil {
+		return &NotReadyError{Wait: actionWait, Reason: NotReadyReason("its state could not be read: " + evalErr.Error())}
+	}
+	return &NotReadyError{Wait: actionWait, Reason: NotReadyReason(reason.Value.Str())}
+}
+
 func (e *rodElement) Click() error {
 	_ = e.ScrollIntoView()
-	return e.el.Click(proto.InputMouseButtonLeft, 1)
+	return e.whenReady(func(el *rod.Element) error { return el.Click(proto.InputMouseButtonLeft, 1) })
 }
 
 // drawnOverScript names what the page draws at x, y when it is unrelated to
@@ -350,16 +384,22 @@ func (e *rodElement) ClickAtCentre() error {
 	return mouse.Click(proto.InputMouseButtonLeft, 1)
 }
 
-func (e *rodElement) Input(text string) error { return e.el.Input(text) }
-
-func (e *rodElement) Clear() error {
-	if err := e.el.SelectAllText(); err != nil {
-		return err
-	}
-	return e.el.Input("")
+func (e *rodElement) Input(text string) error {
+	return e.whenReady(func(el *rod.Element) error { return el.Input(text) })
 }
 
-func (e *rodElement) Focus() error { return e.el.Focus() }
+func (e *rodElement) Clear() error {
+	return e.whenReady(func(el *rod.Element) error {
+		if err := el.SelectAllText(); err != nil {
+			return err
+		}
+		return el.Input("")
+	})
+}
+
+func (e *rodElement) Focus() error {
+	return e.whenReady(func(el *rod.Element) error { return el.Focus() })
+}
 
 // ScrollIntoView brings the element to the middle of the viewport, smoothly when
 // settings.smooth_scroll is on (the Python bot's scroll_to_view), and waits for a
@@ -433,7 +473,7 @@ func (e *rodElement) Elements(xpath string) ([]Element, error) {
 }
 
 func (e *rodElement) SelectOption(text string) error {
-	return e.el.Select([]string{text}, true, rod.SelectorTypeText)
+	return e.whenReady(func(el *rod.Element) error { return el.Select([]string{text}, true, rod.SelectorTypeText) })
 }
 
 func (e *rodElement) SetFiles(paths []string) error { return e.el.SetFiles(paths) }

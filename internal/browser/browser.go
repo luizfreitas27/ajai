@@ -6,6 +6,7 @@ package browser
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -16,6 +17,8 @@ type Element interface {
 	Attr(name string) (string, bool)
 	// Property reads a live DOM property such as "value" or "checked" as text ("true"/"false" for booleans).
 	Property(name string) (string, error)
+	// Click waits a short while for the element to be shown, uncovered and
+	// enabled, then clicks it; past that it gives up with a *NotReadyError.
 	Click() error
 	// ClickAtCentre clicks the mouse in the middle of the element, on whatever
 	// the page draws there, as a person would: a control the page hides under
@@ -24,15 +27,17 @@ type Element interface {
 	// an element that takes no room or one something unrelated is drawn over.
 	ClickAtCentre() error
 	// Input inserts text at the caret; callers type a character at a time for a human rhythm.
+	// Like Click it waits a short while for the control to be shown and enabled.
 	Input(text string) error
-	// Clear selects and deletes the control's text.
+	// Clear selects and deletes the control's text, waiting as Input does.
 	Clear() error
+	// Focus waits a short while for the element to be shown, as Click does.
 	Focus() error
 	ScrollIntoView() error
 	Visible() bool
 	Element(xpath string) (Element, error)
 	Elements(xpath string) ([]Element, error)
-	// SelectOption picks an <option> by its visible text.
+	// SelectOption picks an <option> by its visible text, waiting as Focus does.
 	SelectOption(text string) error
 	// SetFiles sets the files of an <input type="file">.
 	SetFiles(paths []string) error
@@ -68,3 +73,23 @@ type Browser interface {
 type ErrNotFound struct{ XPath string }
 
 func (e *ErrNotFound) Error() string { return "no element matches " + e.XPath }
+
+// NotReadyError is returned when an element could not be clicked, typed into or
+// focused within the wait: the wait, and why it was not ready.
+type NotReadyError struct {
+	Wait   time.Duration
+	Reason NotReadyReason
+}
+
+func (e *NotReadyError) Error() string { return fmt.Sprintf("gave up after %s: %s", e.Wait, e.Reason) }
+
+// NotReadyReason is why an element was still not ready when the wait ran out.
+type NotReadyReason string
+
+const (
+	// LeftThePage: the page drew the element anew, as LinkedIn redraws a button.
+	LeftThePage    NotReadyReason = "it left the page"
+	StayedDisabled NotReadyReason = "it stayed disabled"
+	StayedHidden   NotReadyReason = "it stayed hidden"
+	StayedCovered  NotReadyReason = "something stayed drawn over it"
+)

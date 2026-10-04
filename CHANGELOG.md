@@ -49,6 +49,13 @@ no such section the notes are the commit list.
   external jobs that were then skipped. The switch is clicked where it shows, as a person
   would, never through something drawn over it; one already on is left on, and one the
   click leaves off is logged.
+- A button that never becomes clickable no longer hangs the run. A click, typing into a
+  field or picking from a dropdown waits up to 10 seconds for the element to be shown,
+  enabled and uncovered, then gives up saying why ("it stayed disabled", "it stayed
+  hidden", "something stayed drawn over it"). The job fails at that step, and the run goes
+  on to the next job. It used to wait forever, with nothing in the log, and `ajai stop`
+  could not end it. A Next button LinkedIn redraws while ajai waits for it, as it does
+  while it takes an uploaded resume, is found again and pressed.
 
 ### New
 
