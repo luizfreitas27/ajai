@@ -185,10 +185,29 @@ func (s *Session) clickSwitch(ctx context.Context, title string) {
 		s.Logger.Warn("filter switch input not found", "title", title)
 		return
 	}
-	if err := sw.Click(); err != nil {
-		s.Logger.Warn("filter switch click failed", "title", title, "error", err)
+	if switchOn(sw) { // already on: a click would turn it off
+		return
 	}
+	// The input is drawn over by LinkedIn's toggle (pointer-events none on it):
+	// clicked where it shows, as the Python bot's mouse did.
+	err = sw.ClickAtCentre()
 	_ = s.Pacer.BetweenActions(ctx)
+	switch {
+	case err != nil:
+		s.Logger.Warn("filter switch click failed", "title", title, "error", err)
+	case !switchOn(sw):
+		s.Logger.Warn("filter switch did not turn on", "title", title)
+	}
+}
+
+// switchOn says whether a switch is on, by its state or by what it tells a
+// screen reader (LinkedIn's toggle keeps both).
+func switchOn(sw browser.Element) bool {
+	if on, _ := sw.Property("checked"); on == "true" {
+		return true
+	}
+	aria, _ := sw.Attr("aria-checked")
+	return aria == "true"
 }
 
 // ApplyFilters sets the search location and every configured filter through

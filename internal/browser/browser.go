@@ -17,6 +17,12 @@ type Element interface {
 	// Property reads a live DOM property such as "value" or "checked" as text ("true"/"false" for booleans).
 	Property(name string) (string, error)
 	Click() error
+	// ClickAtCentre clicks the mouse in the middle of the element, on whatever
+	// the page draws there, as a person would: a control the page hides under
+	// its own drawing (a switch's input with pointer-events none under a toggle)
+	// is reached this way when Click refuses it. It refuses, without clicking,
+	// an element that takes no room or one something unrelated is drawn over.
+	ClickAtCentre() error
 	// Input inserts text at the caret; callers type a character at a time for a human rhythm.
 	Input(text string) error
 	// Clear selects and deletes the control's text.

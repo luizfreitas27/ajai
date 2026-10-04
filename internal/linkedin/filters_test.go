@@ -1,7 +1,9 @@
 package linkedin
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -14,25 +16,45 @@ import (
 // fakeElement records clicks and typed text. The embedded interface value is nil:
 // any method not overridden here would panic, which is what a test wants.
 type fakeElement struct {
-	stub  browser.Element
-	name  string
-	page  *fakePage
-	typed strings.Builder
+	stub    browser.Element
+	name    string
+	page    *fakePage
+	typed   strings.Builder
+	checked string // the "checked" property: "true" for a switch already on
+	aria    string // the aria-checked attribute
+	stuck   bool   // a switch the click leaves off
 }
 
-func (e *fakeElement) Property(string) (string, error)            { return e.stub.Property("") }
+func (e *fakeElement) Property(name string) (string, error) {
+	if name == "checked" {
+		return e.checked, nil
+	}
+	return e.stub.Property("")
+}
 func (e *fakeElement) Focus() error                               { return e.stub.Focus() }
 func (e *fakeElement) Elements(string) ([]browser.Element, error) { return e.stub.Elements("") }
 func (e *fakeElement) SelectOption(string) error                  { return e.stub.SelectOption("") }
 func (e *fakeElement) SetFiles([]string) error                    { return e.stub.SetFiles(nil) }
 
-func (e *fakeElement) Click() error               { e.page.clicks = append(e.page.clicks, e.name); return nil }
-func (e *fakeElement) Clear() error               { e.typed.Reset(); return nil }
-func (e *fakeElement) Input(text string) error    { e.typed.WriteString(text); return nil }
-func (e *fakeElement) ScrollIntoView() error      { return nil }
-func (e *fakeElement) Visible() bool              { return true }
-func (e *fakeElement) Text() (string, error)      { return e.name, nil }
-func (e *fakeElement) Attr(string) (string, bool) { return "", false }
+func (e *fakeElement) Click() error { e.page.clicks = append(e.page.clicks, e.name); return nil }
+func (e *fakeElement) ClickAtCentre() error {
+	e.page.clicks = append(e.page.clicks, e.name+" (at centre)")
+	if !e.stuck {
+		e.checked = "true"
+	}
+	return nil
+}
+func (e *fakeElement) Clear() error            { e.typed.Reset(); return nil }
+func (e *fakeElement) Input(text string) error { e.typed.WriteString(text); return nil }
+func (e *fakeElement) ScrollIntoView() error   { return nil }
+func (e *fakeElement) Visible() bool           { return true }
+func (e *fakeElement) Text() (string, error)   { return e.name, nil }
+func (e *fakeElement) Attr(name string) (string, bool) {
+	if name == "aria-checked" && e.aria != "" {
+		return e.aria, true
+	}
+	return "", false
+}
 func (e *fakeElement) Element(xpath string) (browser.Element, error) {
 	return e.page.Element(xpath)
 }
@@ -90,7 +112,7 @@ func TestApplyFiltersClicksEveryConfiguredControlInThePythonOrder(t *testing.T) 
 		t.Fatal(err)
 	}
 	got := strings.Join(page.clicks, " > ")
-	want := "City, state, or zip code > All filters > \"most recent\" > \"past week\" > \"mid-senior level\" > \"acme\" > \"add a company\" > placeholder='Add a company' > \"remote\" > switch > apply current filters to show"
+	want := "City, state, or zip code > All filters > \"most recent\" > \"past week\" > \"mid-senior level\" > \"acme\" > \"add a company\" > placeholder='Add a company' > \"remote\" > switch (at centre) > apply current filters to show"
 	if got != want {
 		t.Errorf("clicks:\n got %s\nwant %s", got, want)
 	}
@@ -133,5 +155,55 @@ func TestXPathLiteralHandlesQuotes(t *testing.T) {
 	}
 	if !strings.Contains(TextXPath("span", `Say "Hi"`), `'say "hi"'`) {
 		t.Error(TextXPath("span", `Say "Hi"`))
+	}
+}
+
+// easyApplyOnly sets the filters with only the Easy Apply switch on, sw, and
+// returns what was logged.
+func easyApplyOnly(t *testing.T, sw *fakeElement) string {
+	t.Helper()
+	page := newFakePage("All filters", `"easy apply"`, "apply current filters to show")
+	sw.name, sw.page = "switch", page
+	page.elements[`role="switch"`] = sw
+	var log bytes.Buffer
+	s := NewSession(page, nil, quick(), slog.New(slog.NewTextHandler(&log, nil)))
+	f := config.Defaults().Search
+	f.EasyApplyOnly = true
+	if err := s.ApplyFilters(context.Background(), f, ""); err != nil {
+		t.Fatal(err)
+	}
+	return log.String()
+}
+
+func TestASwitchAlreadyOnIsLeftOn(t *testing.T) {
+	for name, sw := range map[string]*fakeElement{"checked": {checked: "true"}, "aria-checked": {aria: "true"}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel() // each run waits for the results to settle
+			easyApplyOnly(t, sw)
+			for _, c := range sw.page.clicks {
+				if strings.HasPrefix(c, "switch") {
+					t.Errorf("a switch already on was clicked (off): %q", sw.page.clicks)
+				}
+			}
+		})
+	}
+}
+
+func TestASwitchTheClickLeavesOffIsLogged(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		stuck bool
+		want  string // the switch's warning, "" for none
+	}{
+		{"turned on", false, ""},
+		{"left off", true, `level=WARN msg="filter switch did not turn on" title="Easy Apply"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			log := easyApplyOnly(t, &fakeElement{stuck: tc.stuck})
+			if tc.want == "" && strings.Contains(log, "filter switch") || !strings.Contains(log, tc.want) {
+				t.Errorf("want %q, logged:\n%s", tc.want, log)
+			}
+		})
 	}
 }
