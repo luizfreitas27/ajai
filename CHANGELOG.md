@@ -56,6 +56,9 @@ no such section the notes are the commit list.
   on to the next job. It used to wait forever, with nothing in the log, and `ajai stop`
   could not end it. A Next button LinkedIn redraws while ajai waits for it, as it does
   while it takes an uploaded resume, is found again and pressed.
+- When LinkedIn redraws the whole Easy Apply modal while ajai waits on its Next button,
+  the modal is found again and the application goes on in it. The job used to fail with
+  "clicking Next: no element matches".
 
 ### New
 

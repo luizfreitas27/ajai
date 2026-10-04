@@ -132,11 +132,11 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 		}
 		st.previousBlocked, st.stuck = blocked, stuck
 		a.uploadResume(st, &out, opts.ResumePath)
-		if _, err := modal.Element(linkedin.SubmitButtonXPath); err == nil {
-			return a.review(ctx, job, modal, &out, opts)
+		if _, err := st.modal.Element(linkedin.SubmitButtonXPath); err == nil {
+			return a.review(ctx, job, st.modal, &out, opts)
 		}
-		if controls, err := ReadForm(modal); err == nil {
-			if page := pageSignature(modal, controls); page == st.page && pages > 0 {
+		if controls, err := ReadForm(st.modal); err == nil {
+			if page := pageSignature(st.modal, controls); page == st.page && pages > 0 {
 				st.samePage++
 			} else {
 				st.page, st.samePage = page, 0
@@ -151,17 +151,13 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 			}
 			return a.fail(job, &out, "walking the form", fmt.Errorf("still not at Review after %d pages", MaxPages))
 		}
-		next, err := nextButton(modal)
+		next, err := nextButton(st.modal)
 		if err != nil {
 			return a.fail(job, &out, "finding Next, Review or Submit", err)
 		}
 		err = next.Click()
 		if notReady := (*browser.NotReadyError)(nil); errors.As(err, &notReady) && notReady.Reason == browser.LeftThePage {
-			// LinkedIn drew the button anew while it was waited for (as while it takes
-			// an uploaded resume): the one it drew is pressed instead.
-			if next, err = nextButton(modal); err == nil {
-				err = next.Click()
-			}
+			err = a.pressRedrawnNext(ctx, st)
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -174,6 +170,26 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 			return a.stopped(&out), err
 		}
 	}
+}
+
+// modalRedrawWait bounds the look for the modal LinkedIn drew anew.
+const modalRedrawWait = 3 * time.Second
+
+// pressRedrawnNext presses the Next LinkedIn drew anew while the one found was
+// waited for (as while it takes an uploaded resume). It sometimes draws the
+// whole modal anew, so the modal is found again from the page first, and the
+// rest of the application goes on with it.
+func (a *Applier) pressRedrawnNext(ctx context.Context, st *formState) error {
+	modal, err := a.Page.WaitElement(ctx, linkedin.ModalXPath, modalRedrawWait)
+	if err != nil {
+		return fmt.Errorf("the Easy Apply modal is gone: %w", err)
+	}
+	st.modal = modal
+	next, err := nextButton(modal)
+	if err != nil {
+		return err
+	}
+	return next.Click()
 }
 
 // nextButton is the button that moves the form on: Review when the page has
