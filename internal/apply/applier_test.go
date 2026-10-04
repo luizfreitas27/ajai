@@ -480,3 +480,29 @@ func TestPartialFillsGetSeveralPausesAndThenTheJobIsGivenUpNotFailed(t *testing.
 		t.Errorf("the rest go to the review queue: %+v", out)
 	}
 }
+
+func TestADropdownOnThePortuguesePlaceholderIsUnansweredNotFailed(t *testing.T) {
+	// As on the 2026-10-04 dry run: an employer's question in Portuguese, its
+	// dropdown still on LinkedIn's placeholder, and LinkedIn refusing to go on.
+	sel, _ := selectBlock("Você tem grau de parentesco com algum colaborador da empresa?", "Selecionar opção", "Selecionar opção", "Sim", "Não")
+	modal := modalWith(sel)
+	modal.with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	st, err := store.Open(filepath.Join(t.TempDir(), "ajai.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	mem := memory.New(st, nil)
+	cfg := config.Defaults()
+	cfg.Search.Terms = []string{"x"}
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: questions.New(cfg, mem, nil, nil)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "parentesco") || out.Queued != 1 {
+		t.Fatalf("the job is not unanswered with its question queued: %+v %v", out, err)
+	}
+	pending, _ := mem.List("pending")
+	if len(pending) != 1 || strings.Join(pending[0].Options, "|") != "Sim|Não" {
+		t.Errorf("the queued question, its options without the placeholder: %+v", pending)
+	}
+}

@@ -33,6 +33,13 @@ no such section the notes are the commit list.
   yours it leaves the window open, as before.
 - **Linux only for now.** Releases are built for linux/amd64 and linux/arm64.
 
+### Fixed
+
+- A dropdown still on LinkedIn's Portuguese placeholder ("Selecionar opção"), common in
+  employers' own questions, counts as unanswered: it is answered from the config or the
+  answer memory, or the job is skipped with the question in the review queue. It used to
+  pass for an answer, and the job failed after 15 pages.
+
 ### New
 
 - `ajai login`: sign in to LinkedIn once in the profile ajai uses.
