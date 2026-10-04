@@ -554,6 +554,8 @@ func (m Model) screenKeys() (string, []binding) {
 		return "Jobs", []binding{moveKeys, {"←→", "filter", "every job, or only the applied, external, failed or skipped ones (h l too)"},
 			{"/", "search", "search titles, companies and locations"}, {"esc", clears, "clear the search"},
 			{"enter", "open", "open the job in your browser (the application page for an external job)"}}
+	case m.runs.form != nil && m.runs.form.askingLive:
+		return "", answer("starts it", "goes back")
 	case m.runs.form != nil:
 		return "", []binding{{"↑↓", "field", ""}, {"←→", "change", ""}, {"enter", "starts", ""}, {"esc", "cancels", ""}}
 	case m.runs.confirm != nil:

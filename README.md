@@ -151,7 +151,8 @@ It refreshes every second. It shows:
 - today's log as it grows. A run the daemon started is followed in the daemon's log.
 
 `r`, from any tab, starts a run on the Dashboard. You choose the market (the config's, brasil or
-internacional), dry run (the default) or live, and a maximum of applications. It runs
+internacional), dry run (the default) or live, and a maximum of applications; live shows in
+red, and Enter on it asks once more, since that run submits applications for real. It runs
 `ajai run --unattended` in a process of its own, so closing the TUI never ends it, and
 questions nothing can answer go to the review queue. If a run is already in progress, Start
 says which one and starts nothing; if the new run cannot start (a config problem, Chrome

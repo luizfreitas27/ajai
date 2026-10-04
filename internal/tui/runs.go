@@ -75,11 +75,12 @@ const (
 
 // runForm is the Start form.
 type runForm struct {
-	field   int
-	market  int // index into marketChoices
-	dry     bool
-	max     textinput.Model
-	refusal string
+	field      int
+	market     int // index into marketChoices
+	dry        bool
+	max        textinput.Model
+	refusal    string
+	askingLive bool // Enter on a live run asks first: it submits applications for real
 }
 
 type runStartedMsg struct {
@@ -202,6 +203,18 @@ func (c runControl) confirmKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 
 func (c runControl) formKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 	f := *c.form
+	if f.askingLive {
+		switch msg.String() {
+		case "y":
+			args, _ := f.args() // checked when the question was asked
+			c.form = nil
+			return c, startRun(d, args)
+		case "n", "esc":
+			f.askingLive = false // back to the form, every choice kept
+		}
+		c.form = &f
+		return c, nil
+	}
 	var cmd tea.Cmd
 	switch key := msg.String(); {
 	case key == "esc":
@@ -211,6 +224,11 @@ func (c runControl) formKey(msg tea.KeyMsg, d Deps) (runControl, tea.Cmd) {
 		args, err := f.args()
 		if err != nil {
 			f.refusal = err.Error()
+			c.form = &f
+			return c, nil
+		}
+		if !f.dry { // a live run submits applications: one more, deliberate step
+			f.askingLive, f.refusal = true, ""
 			c.form = &f
 			return c, nil
 		}
@@ -387,17 +405,25 @@ func (c runControl) lines(s styles, width int) []string {
 func (f runForm) lines(s styles) []string {
 	field := func(i int, label, value string) string { return formLine(s, i == f.field, label, value) }
 	market := marketName(marketChoices[f.market])
-	mode := "live: applies for real"
+	mode := s.fail.Render("‹ live: applies for real ›") // stands out from the default dry run
 	if f.dry {
-		mode = "dry run: fills every form, sends none"
+		mode = "‹ dry run: fills every form, sends none ›"
 	}
 	out := []string{
 		s.section.Render("Start a run") + "  " + s.dim.Render("unattended, in a process of its own: closing the TUI never ends it"),
 		field(fieldMarket, "Market", "‹ "+market+" ›"),
-		field(fieldMode, "Mode", "‹ "+mode+" ›"),
+		field(fieldMode, "Mode", mode),
 		field(fieldMax, "Maximum", f.max.View()+s.dim.Render("  applications; 0 or blank: the pacing cap")),
 	}
-	if f.refusal != "" {
+	switch {
+	case f.askingLive:
+		most := "up to the pacing cap"
+		if n, _ := strconv.Atoi(strings.TrimSpace(f.max.Value())); n > 0 {
+			most = fmt.Sprintf("at most %d", n)
+		}
+		out = append(out, s.warn.Render(fmt.Sprintf("This run submits applications for real (market %s, %s). Start it?", market, most)),
+			s.key.Render("y")+" starts it · "+s.key.Render("n")+" goes back")
+	case f.refusal != "":
 		out = append(out, s.fail.Render("Refused: "+f.refusal))
 	}
 	return append(out, "")
