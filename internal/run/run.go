@@ -206,6 +206,15 @@ type termState struct {
 	applied     map[string]bool // our own history
 	blacklisted map[string]bool // companies blacklisted during this run
 	rejected    map[string]bool // job ids rejected during this run
+	// handled maps each posting this run handled to the job it was handled
+	// under: anything but a failure, which may be tried again.
+	handled map[string]string
+}
+
+// posting names a role as its card shows it: one title, company and location
+// are one role, however many jobs LinkedIn lists it under.
+func posting(c linkedin.Card) string {
+	return strings.ToLower(strings.Join(strings.Fields(c.Title+" | "+c.Company+" | "+c.Location), " "))
 }
 
 func (r *Runner) saveState(sum *Summary, term string) {
@@ -319,7 +328,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		return sum, err
 	}
 	rules := screening.FromConfig(r.Cfg)
-	state := termState{applied: applied, blacklisted: map[string]bool{}, rejected: map[string]bool{}}
+	state := termState{applied: applied, blacklisted: map[string]bool{}, rejected: map[string]bool{}, handled: map[string]string{}}
 
 	for _, term := range terms {
 		r.emit(EventTerm, term, nil)
@@ -421,6 +430,15 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		r.emit(EventSkip, v.Reason, &c)
 		return cardPassed, nil
 	}
+	if first, ok := st.handled[posting(c)]; ok { // listed again, or the same role posted again
+		reason := "already handled in this run"
+		if first != c.ID {
+			reason = "the same posting as job " + first + ", already handled in this run"
+		}
+		sum.Skipped++
+		r.emit(EventSkip, reason, &c)
+		return cardPassed, nil
+	}
 	if err := r.Site.OpenCard(ctx, card); err != nil {
 		if ctx.Err() != nil {
 			return cardPassed, ctx.Err()
@@ -428,6 +446,12 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		r.Logger.Warn("could not open card", "job", c.ID, "error", err)
 		return cardPassed, nil
 	}
+	handled := true // opened: whatever comes of it but a failure, the posting is not opened again in this run
+	defer func() {
+		if handled {
+			st.handled[posting(c)] = c.ID
+		}
+	}()
 	if r.Site.AlreadyAppliedOnPage() {
 		sum.Skipped++
 		r.emit(EventSkip, "already applied", &c)
@@ -468,6 +492,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 					return cardPassed, ctx.Err()
 				}
 				sum.Failed++
+				handled = false
 				r.emit(EventFailed, "could not open the external application", &c)
 				return cardPassed, r.Store.UpsertJob(store.Job{JobID: c.ID, Outcome: store.Failed, Reason: "could not open the external application",
 					StackTrace: err.Error(), Title: c.Title, Company: c.Company, WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, RunID: sum.RunID})
@@ -532,6 +557,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, ctx.Err()
 	default: // Failed
 		sum.Failed++
+		handled = false
 		row.Outcome, row.Reason = store.Failed, outcome.Stage
 		if err != nil {
 			row.StackTrace = err.Error()
