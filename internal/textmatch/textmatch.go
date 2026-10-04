@@ -34,6 +34,24 @@ func FindWord(text string, words []string) string {
 // Has reports whether any of words occurs in text as a whole phrase.
 func Has(text string, words ...string) bool { return FindWord(text, words) != "" }
 
+// unaccent folds the accented letters Portuguese and Spanish use.
+var unaccent = strings.NewReplacer("á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a", "é", "e", "è", "e", "ê", "e", "ë", "e",
+	"í", "i", "ì", "i", "î", "i", "ï", "i", "ó", "o", "ò", "o", "ô", "o", "õ", "o", "ö", "o",
+	"ú", "u", "ù", "u", "û", "u", "ü", "u", "ç", "c", "ñ", "n")
+
+// Fold lowers the case and folds accents, so "Experiência" reads as "experiencia".
+func Fold(text string) string { return unaccent.Replace(strings.ToLower(text)) }
+
+// HasFolded is Has ignoring accents on both sides: one spelling of a term,
+// accented or not, matches both.
+func HasFolded(text string, words ...string) bool {
+	folded := make([]string, len(words))
+	for i, w := range words {
+		folded[i] = Fold(w)
+	}
+	return Has(Fold(text), folded...)
+}
+
 func containsPhrase(text, phrase []rune) bool {
 	needLeft := isWordRune(phrase[0])
 	needRight := isWordRune(phrase[len(phrase)-1])

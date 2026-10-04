@@ -41,7 +41,7 @@ type Personals struct {
 type Questions struct {
 	Resume            string   `yaml:"resume" doc:"Path to the resume to upload when the active market has none. Relative paths resolve against the resumes directory." example:"resume.pdf"`
 	YearsOfExperience string   `yaml:"years_of_experience" doc:"Total years of experience, as text, for 'years of experience' questions." example:"5"`
-	SkillYears        []string `yaml:"skill_years" doc:"Your years with each technology or role, as \"name: years\" (a whole number, 1 or more). They answer questions about one of them, in English or Portuguese: how many years (the smallest when a question names several), and Yes/No questions about experience or knowledge with it (yes, never no). A question naming none of them goes to the review queue." example:"java: 3,.net: 5,computação em nuvem: 3"`
+	SkillYears        []string `yaml:"skill_years" doc:"Your years with each technology or role, as \"name: years\" (a whole number, 1 or more). They answer questions about one of them, in English or Portuguese: how many years (the smallest when a question names several), and Yes/No questions about experience or knowledge with it (yes, never no). A question naming none of them is left to the answer memory, the AI and the review queue, as before." example:"java: 3,.net: 5,computação em nuvem: 3"`
 	RequireVisa       string   `yaml:"require_visa" doc:"Do you need visa sponsorship?" opts:"Yes|No"`
 	Website           string   `yaml:"website" doc:"Portfolio or GitHub URL."`
 	LinkedIn          string   `yaml:"linkedin" doc:"Your LinkedIn profile URL."`

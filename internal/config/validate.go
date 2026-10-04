@@ -90,7 +90,7 @@ func (c *Config) Validate() error {
 		add("questions.resume", "must not be blank")
 	}
 	for _, entry := range c.Questions.SkillYears {
-		if _, ok := ParseSkillYears(entry); !ok {
+		if _, ok := ParseSkill(entry); !ok {
 			add("questions.skill_years", fmt.Sprintf("%q is not \"name: years\" with a whole number of years, 1 or more", entry))
 		}
 	}
