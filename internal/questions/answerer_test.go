@@ -166,6 +166,8 @@ func TestDropdownRouting(t *testing.T) {
 		{"a phone code dropdown keeps LinkedIn's value", dropdown("Phone country code", "Select an option", "+1", "+55"), Leave, "Select an option"},
 		{"a Portuguese visa question answers from config", dropdown("Você precisa de visto para trabalhar no país?", "Select an option", "Sim", "Não"), Choose, "Sim"},
 		{"a Portuguese authorization question maps Yes to Sim", dropdown("Você está legalmente autorizado a trabalhar no Brasil?", "Select an option", "Sim", "Não"), Choose, "Sim"},
+		{"the Portuguese placeholder is no answer: a known question is answered", dropdown("Você está legalmente autorizado a trabalhar no Brasil?", "Selecionar opção", "Sim", "Não"), Choose, "Sim"},
+		{"the Portuguese placeholder is no answer: an unknown one is unanswered", dropdown("Você tem grau de parentesco com algum colaborador da empresa?", "Selecionar opção", "Sim", "Não"), Blocked, ""},
 	}
 	a, _ := answerer(t, pinned())
 	for _, tc := range cases {
@@ -948,5 +950,18 @@ func TestGenderAndEthnicityAreAnsweredFromTheConfigInDropdownsAndRadios(t *testi
 	// A label that is just "Race" is one.
 	if d := a.Answer(radio("Race *", "Asian", "White", "I don't wish to answer"), job); d.Value != "I don't wish to answer" || d.Source != "config" {
 		t.Errorf("%+v", d)
+	}
+}
+
+func TestPlaceholdersInEitherLanguageMeanNothingChosen(t *testing.T) {
+	for _, text := range []string{"Select an option", "Selecionar opção", "Selecione uma opção", "Selecione", "Escolha uma opção", "  selecionar OPÇÃO ", ""} {
+		if !IsPlaceholder(text) {
+			t.Errorf("%q is a placeholder", text)
+		}
+	}
+	for _, text := range []string{"Sim", "Não", "Selecionado", "Select all that apply"} {
+		if IsPlaceholder(text) {
+			t.Errorf("%q is an answer, not a placeholder", text)
+		}
 	}
 }

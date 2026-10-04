@@ -480,3 +480,17 @@ func TestPartialFillsGetSeveralPausesAndThenTheJobIsGivenUpNotFailed(t *testing.
 		t.Errorf("the rest go to the review queue: %+v", out)
 	}
 }
+
+func TestADropdownOnThePortuguesePlaceholderIsUnansweredNotFailed(t *testing.T) {
+	// As on the 2026-10-04 dry run: an employer's question in Portuguese, its
+	// dropdown still on LinkedIn's placeholder, and LinkedIn refusing to go on.
+	sel, _ := selectBlock("Você tem grau de parentesco com algum colaborador da empresa?", "Selecionar opção", "Selecionar opção", "Sim", "Não")
+	modal := modalWith(sel)
+	modal.with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "parentesco") {
+		t.Fatalf("the job is not unanswered: %+v %v", out, err)
+	}
+}
