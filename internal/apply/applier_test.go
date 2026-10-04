@@ -506,3 +506,36 @@ func TestADropdownOnThePortuguesePlaceholderIsUnansweredNotFailed(t *testing.T) 
 		t.Errorf("the queued question, its options without the placeholder: %+v", pending)
 	}
 }
+
+func TestAPageLinkedInRefusesEndsTheJobAsUnansweredInTwoTries(t *testing.T) {
+	// LinkedIn refuses the page and says why on the question: the job ends
+	// unanswered at once instead of pressing Next fifteen times.
+	salary, _ := textBlock("Qual é sua pretensão salarial?", "abc")
+	salary.with(linkedin.InlineErrorXPath, el("Insira uma resposta válida"))
+	modal := modalWith(salary)
+	next := el("Next")
+	modal.with(linkedin.NextButtonXPath, next) // the same page after every click
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 ||
+		!strings.Contains(out.Blocked[0], "Qual é sua pretensão salarial?") || !strings.Contains(out.Blocked[0], "Insira uma resposta válida") {
+		t.Fatalf("the refused page did not end the job as unanswered: %+v %v", out, err)
+	}
+	if next.clicks > 2 {
+		t.Errorf("Next pressed %d times on a page LinkedIn refuses", next.clicks)
+	}
+}
+
+func TestAFormThatNeverReachesReviewStillFails(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	next := el("Next")
+	modal.with(linkedin.NextButtonXPath, next) // nothing flagged, never a Review
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err == nil || out.Kind != Failed || !strings.Contains(err.Error(), "still not at Review") || next.clicks != MaxPages {
+		t.Errorf("%+v %v (Next pressed %d times)", out, err, next.clicks)
+	}
+}

@@ -88,9 +88,12 @@ const (
 	FilterSwitchXPath        = `.//input[@role="switch"]`
 	PostedAgoXPath           = `//*[contains(@class,'jobs-unified-top-card') or contains(@class,'job-details-jobs-unified-top-card')]//span[contains(normalize-space(), " ago")]`
 	InlineFeedbackXPath      = `//*[contains(@class,'artdeco-inline-feedback__message')]`
-	AppliedOnPageXPath       = `//*[contains(@class,'jobs-s-apply__application-link')]`
-	PaginationActiveXPath    = `.//button[contains(@class, 'active')]`
-	DailyLimitPhrase         = "exceeded the daily application limit"
+	// InlineErrorXPath, within a form question, is the message LinkedIn shows when
+	// it refuses the question's answer ("Please enter a valid answer").
+	InlineErrorXPath      = `.//*[contains(@class,'artdeco-inline-feedback--error')]`
+	AppliedOnPageXPath    = `//*[contains(@class,'jobs-s-apply__application-link')]`
+	PaginationActiveXPath = `.//button[contains(@class, 'active')]`
+	DailyLimitPhrase      = "exceeded the daily application limit"
 )
 
 // PaginationClasses are tried in order to find the results pager.

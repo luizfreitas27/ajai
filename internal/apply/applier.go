@@ -185,6 +185,9 @@ func (a *Applier) pass(ctx context.Context, st *formState, out *Outcome) (blocke
 			continue
 		}
 		d := a.Answerer.AnswerContext(ctx, c.Question, st.qjob)
+		if c.Refusal != "" && d.Action != questions.Blocked { // LinkedIn refused what is there: it will not take it as is
+			d.Action, d.Reason = questions.Blocked, "LinkedIn refused it: "+c.Refusal
+		}
 		if d.Action == questions.Blocked {
 			blocked = append(blocked, describe(c.Question, d))
 			stuck = append(stuck, stuckControl{c.Question, d})
@@ -506,8 +509,11 @@ func describe(q questions.Question, d questions.Decision) string {
 	case q.Kind == questions.Checkbox:
 		text = strings.TrimSpace(strings.TrimPrefix(q.GroupTitle+" ", questions.UnknownTitle+" ") + q.Label)
 	}
-	if strings.HasPrefix(d.Reason, "no option matched the configured answer") {
+	switch {
+	case strings.HasPrefix(d.Reason, "no option matched the configured answer"):
 		text += " (" + d.Reason + "; fix it in the config)"
+	case strings.HasPrefix(d.Reason, "LinkedIn refused it"):
+		text += " (" + d.Reason + ")"
 	}
 	return text
 }
