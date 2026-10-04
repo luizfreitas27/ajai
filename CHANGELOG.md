@@ -59,6 +59,11 @@ no such section the notes are the commit list.
 - When LinkedIn redraws the whole Easy Apply modal while ajai waits on its Next button,
   the modal is found again and the application goes on in it. The job used to fail with
   "clicking Next: no element matches".
+- A run no longer opens a job it already settled when LinkedIn lists it again, nor a
+  second posting of the same role (same title, company and location). They are counted as
+  skips ("already handled in this run", "the same posting as job …"). Settled means applied,
+  would apply, or skipped for the job itself (its questions, company or description). A job
+  that failed, had no apply button or was external is still tried, and so is its repost.
 
 ### New
 
