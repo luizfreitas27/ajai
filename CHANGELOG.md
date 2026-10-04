@@ -39,6 +39,11 @@ no such section the notes are the commit list.
   employers' own questions, counts as unanswered: it is answered from the config or the
   answer memory, or the job is skipped with the question in the review queue. It used to
   pass for an answer, and the job failed after 15 pages.
+- When LinkedIn refuses a page of the Easy Apply form, the job ends unanswered within two
+  tries instead of pressing Next fifteen times and failing. A question LinkedIn flags
+  ("Please enter a valid answer") is named with its message and queued for review, or
+  pointed to the config when the config gave the answer; a page that stays with nothing
+  flagged is said so. A correction typed in a help pause is remembered.
 
 ### New
 

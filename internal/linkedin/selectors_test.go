@@ -138,7 +138,7 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 		RadioFieldsetXPath, RadioTitleXPath, RadioInputsXPath, TextInputXPath, TextareaXPath, CheckboxXPath, LabelForXPath,
 		HiddenTitleXPath, ResumeUploadInputXPath, TodayButtonXPath, NextButtonXPath, ReviewButtonXPath, SubmitButtonXPath,
 		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
-		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, AppliedOnPageXPath, PaginationActiveXPath,
+		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, InlineErrorXPath, FormProgressXPath, AppliedOnPageXPath, PaginationActiveXPath,
 		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
 		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath)}
 	for _, loc := range EasyApplyLocators {
@@ -189,6 +189,12 @@ func TestModalAndFormAnchors(t *testing.T) {
 	}
 	if count(t, dialog, ResumeUploadInputXPath) != 1 || count(t, dialog, FollowCompanyInputXPath) != 1 || count(t, dialog, FollowCompanyLabelXPath) != 1 {
 		t.Error("resume input / follow checkbox and its label")
+	}
+	if bar := one(t, dialog, FormProgressXPath); !strings.Contains(htmlquery.SelectAttr(bar, "aria-label"), "progress is at 0 percent") {
+		t.Error("the progress region's label")
+	}
+	if count(t, dialog, InlineErrorXPath) != 0 { // a form LinkedIn has not refused: no question flagged
+		t.Error("an inline error matched in a form with none")
 	}
 	submit := one(t, dialog, SubmitButtonXPath)
 	if htmlquery.SelectAttr(submit, "type") != "button" {

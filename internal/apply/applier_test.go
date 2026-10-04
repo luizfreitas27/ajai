@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -504,5 +505,134 @@ func TestADropdownOnThePortuguesePlaceholderIsUnansweredNotFailed(t *testing.T) 
 	pending, _ := mem.List("pending")
 	if len(pending) != 1 || strings.Join(pending[0].Options, "|") != "Sim|Não" {
 		t.Errorf("the queued question, its options without the placeholder: %+v", pending)
+	}
+}
+
+func TestAPageLinkedInRefusesEndsTheJobAsUnansweredInTwoTries(t *testing.T) {
+	// LinkedIn refuses the page and says why on the question: the job ends
+	// unanswered at once instead of pressing Next fifteen times.
+	salary, _ := textBlock("Qual é sua pretensão salarial?", "abc")
+	salary.with(linkedin.InlineErrorXPath, el("Insira uma resposta válida"))
+	modal := modalWith(salary)
+	next := el("Next")
+	modal.with(linkedin.NextButtonXPath, next) // the same page after every click
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 ||
+		!strings.Contains(out.Blocked[0], "Qual é sua pretensão salarial?") || !strings.Contains(out.Blocked[0], "Insira uma resposta válida") {
+		t.Fatalf("the refused page did not end the job as unanswered: %+v %v", out, err)
+	}
+	if next.clicks > 2 {
+		t.Errorf("Next pressed %d times on a page LinkedIn refuses", next.clicks)
+	}
+}
+
+// progressBar is the modal's progress region, at percent.
+func progressBar(modal *node, percent int) *node {
+	bar := el("").attr("aria-label", fmt.Sprintf("Your job application progress is at %d percent.", percent))
+	modal.with(linkedin.FormProgressXPath, bar)
+	return bar
+}
+
+func TestAFormThatKeepsAdvancingWithoutReachingReviewStillFails(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	bar := progressBar(modal, 0)
+	next := el("Next")
+	step := 0
+	next.onClick = func() {
+		step++
+		bar.attrs["aria-label"] = fmt.Sprintf("Your job application progress is at %d percent.", step)
+	}
+	modal.with(linkedin.NextButtonXPath, next) // a new page every time, never a Review
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err == nil || out.Kind != Failed || !strings.Contains(err.Error(), "still not at Review") || next.clicks != MaxPages {
+		t.Errorf("%+v %v (Next pressed %d times)", out, err, next.clicks)
+	}
+}
+
+func TestAPageThatStaysWithNoQuestionFlaggedEndsTheJobAsUnanswered(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	progressBar(modal, 67)
+	next := el("Next")
+	modal.with(linkedin.NextButtonXPath, next) // LinkedIn says nothing and keeps the page
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != Unanswered || len(out.Blocked) != 1 || !strings.Contains(out.Blocked[0], "stayed on the same page") || next.clicks != stuckAfter {
+		t.Errorf("%+v %v (Next pressed %d times)", out, err, next.clicks)
+	}
+}
+
+func TestAPageSlowToChangeIsNotGivenUp(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	bar := progressBar(modal, 50)
+	next := el("Next")
+	next.onClick = func() {
+		if next.clicks == 2 { // the first press seemed to do nothing; the second lands on Review
+			bar.attrs["aria-label"] = "Your job application progress is at 100 percent."
+			delete(modal.children, linkedin.NextButtonXPath)
+			modal.with(linkedin.SubmitButtonXPath, el("Submit application"))
+		}
+	}
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	if out, err := a.Apply(context.Background(), job, button, Options{DryRun: true}); err != nil || out.Kind != DryRun {
+		t.Errorf("a slow page was given up: %+v %v", out, err)
+	}
+}
+
+func TestARefusedAnswerIsQueuedUnlessTheConfigGaveIt(t *testing.T) {
+	company, _ := textBlock("Current company", "abc") // prefilled, and LinkedIn refuses it
+	company.with(linkedin.InlineErrorXPath, el("Please enter a valid answer"))
+	phone, _ := textBlock("Phone", "")
+	phone.with(linkedin.InlineErrorXPath, el("Enter a valid phone number"))
+	modal := modalWith(company, phone)
+	modal.with(linkedin.NextButtonXPath, el("Next"))
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != Unanswered || out.Queued != 1 {
+		t.Fatalf("%+v %v", out, err)
+	}
+	blocked := strings.Join(out.Blocked, "\n")
+	if !strings.Contains(blocked, "Phone (LinkedIn refused it: Enter a valid phone number; fix it in the config)") ||
+		!strings.Contains(blocked, "Current company (LinkedIn refused it: Please enter a valid answer)") {
+		t.Errorf("the blocked questions: %q", out.Blocked)
+	}
+	if found, err := a.Answerer.Memory.Find("current company", "text"); err != nil || found == nil || found.State != "pending" {
+		t.Errorf("the refused question is not in the review queue: %+v", found)
+	}
+}
+
+func TestARefusedFieldTheUserCorrectsInThePauseIsCaptured(t *testing.T) {
+	company, companyInput := textBlock("Current company", "abc")
+	refusal := el("Please enter a valid answer")
+	company.with(linkedin.InlineErrorXPath, refusal)
+	modal := modalWith(company)
+	next := el("Next")
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	helper := &fakeHelper{fill: func() {
+		companyInput.prop("value", "Acme") // the user corrects it, and LinkedIn takes it
+		delete(company.children, linkedin.InlineErrorXPath)
+		next.onClick = func() {
+			delete(modal.children, linkedin.NextButtonXPath)
+			modal.with(linkedin.SubmitButtonXPath, el("Submit application"))
+		}
+	}}
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), Helper: helper, ScreenshotDir: t.TempDir()}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err != nil || out.Kind != DryRun || out.Captured != 1 {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if found, _, _ := a.Answerer.Memory.Lookup("Current company", "text", false); found == nil || found.Answer != "Acme" || found.State != "approved" {
+		t.Errorf("the correction is not remembered: %+v", found)
 	}
 }

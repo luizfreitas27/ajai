@@ -23,6 +23,9 @@ type Control struct {
 	// FollowCompany marks LinkedIn's own "Follow <company>" box, which the applier
 	// sets from the follow_companies setting instead of answering.
 	FollowCompany bool
+	// Refusal is the message LinkedIn shows on the question when it refused its
+	// answer (after Next or Review), "" when it shows none.
+	Refusal string
 }
 
 // ReadForm reads every question block of the modal's current page.
@@ -34,6 +37,10 @@ func ReadForm(modal browser.Element) ([]Control, error) {
 	var out []Control
 	for _, block := range blocks {
 		if c, ok := readBlock(block); ok {
+			if e, err := block.Element(linkedin.InlineErrorXPath); err == nil {
+				t, _ := e.Text()
+				c.Refusal = strings.Join(strings.Fields(t), " ")
+			}
 			out = append(out, c)
 		}
 	}
