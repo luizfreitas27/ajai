@@ -63,6 +63,32 @@ func TestSplitLocation(t *testing.T) {
 	}
 }
 
+func TestAPostingIsTheTitleCompanyAndLocationOrOnlyTheJob(t *testing.T) {
+	role := Card{ID: "1", Title: "Java Specialist", Company: "Inter", Location: "Brazil"}
+	if again := (Card{ID: "2", Title: " java  SPECIALIST", Company: "inter", Location: "Brazil "}); again.Posting() != role.Posting() {
+		t.Errorf("the same role posted again: %q, want %q", again.Posting(), role.Posting())
+	}
+	for name, c := range map[string]Card{
+		"another city":    {ID: "2", Title: "Java Specialist", Company: "Inter", Location: "Lisbon"},
+		"another company": {ID: "2", Title: "Java Specialist", Company: "Nubank", Location: "Brazil"},
+	} {
+		if c.Posting() == role.Posting() {
+			t.Errorf("%s: %q is the same role", name, c.Posting())
+		}
+	}
+	for name, c := range map[string]Card{ // a card missing a part names only its own job
+		"an unreadable title":   {ID: "2", Company: "Inter", Location: "Brazil"},
+		"an unreadable company": {ID: "2", Title: "Java Specialist", Location: "Brazil"},
+		"an unknown location":   {ID: "2", Title: "Java Specialist", Company: "Inter", Location: "Unknown"},
+	} {
+		twin := c
+		twin.ID = "3"
+		if c.Posting() == twin.Posting() || c.Posting() == role.Posting() {
+			t.Errorf("%s: %q passes for another job", name, c.Posting())
+		}
+	}
+}
+
 func TestParsePosted(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	posted, reposted, ok := ParsePosted("Reposted 3 days ago", now)

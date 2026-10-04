@@ -201,20 +201,26 @@ func (r *Runner) emitEvent(e Event) {
 	}
 }
 
-// termState is what one run accumulates while walking the terms.
-type termState struct {
+// runState is what one run accumulates while walking the terms.
+type runState struct {
 	applied     map[string]bool // our own history
 	blacklisted map[string]bool // companies blacklisted during this run
 	rejected    map[string]bool // job ids rejected during this run
-	// handled maps each posting this run handled to the job it was handled
-	// under: anything but a failure, which may be tried again.
+	// handled maps each posting (linkedin.Card.Posting) this run settled to the
+	// job it was settled under, so neither that job nor a repost of the role is
+	// opened again in this run. Only verdicts about the role itself settle it: a
+	// failure, a missing apply button or an external application does not.
 	handled map[string]string
 }
 
-// posting names a role as its card shows it: one title, company and location
-// are one role, however many jobs LinkedIn lists it under.
-func posting(c linkedin.Card) string {
-	return strings.ToLower(strings.Join(strings.Fields(c.Title+" | "+c.Company+" | "+c.Location), " "))
+// handle settles the job's posting for the rest of the run (a settled posting
+// is never opened again, so it is settled once).
+func (s *runState) handle(c linkedin.Card) { s.handled[c.Posting()] = c.ID }
+
+// reject rejects the job for the rest of the run, and settles its posting.
+func (s *runState) reject(c linkedin.Card) {
+	s.rejected[c.ID] = true
+	s.handle(c)
 }
 
 func (r *Runner) saveState(sum *Summary, term string) {
@@ -328,7 +334,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		return sum, err
 	}
 	rules := screening.FromConfig(r.Cfg)
-	state := termState{applied: applied, blacklisted: map[string]bool{}, rejected: map[string]bool{}, handled: map[string]string{}}
+	state := runState{applied: applied, blacklisted: map[string]bool{}, rejected: map[string]bool{}, handled: map[string]string{}}
 
 	for _, term := range terms {
 		r.emit(EventTerm, term, nil)
@@ -417,7 +423,7 @@ const (
 const DailyLimitStateKey = "daily_limit_reached_at"
 
 // handleCard processes one card.
-func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rules screening.Rules, card browser.Element, st *termState) (cardOutcome, error) {
+func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rules screening.Rules, card browser.Element, st *runState) (cardOutcome, error) {
 	c, err := r.Site.ReadCard(card)
 	if err != nil {
 		r.Logger.Warn("unreadable card", "error", err)
@@ -430,7 +436,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		r.emit(EventSkip, v.Reason, &c)
 		return cardPassed, nil
 	}
-	if first, ok := st.handled[posting(c)]; ok { // listed again, or the same role posted again
+	if first, ok := st.handled[c.Posting()]; ok { // listed again, or the same role posted again
 		reason := "already handled in this run"
 		if first != c.ID {
 			reason = "the same posting as job " + first + ", already handled in this run"
@@ -446,20 +452,15 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		r.Logger.Warn("could not open card", "job", c.ID, "error", err)
 		return cardPassed, nil
 	}
-	handled := true // opened: whatever comes of it but a failure, the posting is not opened again in this run
-	defer func() {
-		if handled {
-			st.handled[posting(c)] = c.ID
-		}
-	}()
 	if r.Site.AlreadyAppliedOnPage() {
+		st.handle(c)
 		sum.Skipped++
 		r.emit(EventSkip, "already applied", &c)
 		return cardPassed, nil
 	}
 	job.AboutCompany = r.Site.AboutCompany()
 	if v := rules.Company(job); v.Skip {
-		st.rejected[c.ID] = true
+		st.reject(c)
 		if v.BlacklistCompany {
 			st.blacklisted[c.Company] = true
 		}
@@ -468,7 +469,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	job.Description, job.DescriptionOK = r.Site.Description(ctx)
 	v := rules.Description(job)
 	if v.Skip {
-		st.rejected[c.ID] = true
+		st.reject(c)
 		return cardPassed, r.skip(sum, c, v)
 	}
 	button, kind, how := r.Site.FindApplyButton()
@@ -492,7 +493,6 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 					return cardPassed, ctx.Err()
 				}
 				sum.Failed++
-				handled = false
 				r.emit(EventFailed, "could not open the external application", &c)
 				return cardPassed, r.Store.UpsertJob(store.Job{JobID: c.ID, Outcome: store.Failed, Reason: "could not open the external application",
 					StackTrace: err.Error(), Title: c.Title, Company: c.Company, WorkLocation: c.Location, WorkStyle: c.Style, JobLink: c.Link, RunID: sum.RunID})
@@ -536,17 +536,19 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		sum.Applied++
 		row.Outcome, row.DateApplied, row.Questions = store.Applied, store.Timestamp(r.Now()), strings.Join(outcome.Answered, "; ")
 		r.Pacer.RecordApplication()
+		st.handle(c)
 		r.emit(EventApplied, "", &c)
 		counted = true
 	case apply.DryRun:
 		sum.WouldApply++
 		row.Outcome, row.Reason = store.Skipped, "dry run"
 		r.Pacer.RecordApplication()
+		st.handle(c)
 		r.emit(EventWouldApply, "", &c)
 		counted = true
 	case apply.Unanswered:
 		sum.Skipped++
-		st.rejected[c.ID] = true
+		st.reject(c)
 		row.Outcome, row.Reason = store.Skipped, "unanswered questions: "+strings.Join(outcome.Blocked, " | ")
 		text := row.Reason
 		if outcome.Queued > 0 {
@@ -557,7 +559,6 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, ctx.Err()
 	default: // Failed
 		sum.Failed++
-		handled = false
 		row.Outcome, row.Reason = store.Failed, outcome.Stage
 		if err != nil {
 			row.StackTrace = err.Error()

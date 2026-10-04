@@ -294,6 +294,17 @@ type Card struct {
 	Link           string
 }
 
+// Posting names the role a card shows: one title, company and location are one
+// role, however many jobs LinkedIn lists it under (case and spacing aside). A
+// card missing any of them names only its own job, so unreadable cards never
+// pass for each other.
+func (c Card) Posting() string {
+	if strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Company) == "" || c.Location == "" || c.Location == "Unknown" {
+		return "job " + c.ID
+	}
+	return strings.ToLower(strings.Join(strings.Fields(c.Title+" | "+c.Company+" | "+c.Location), " "))
+}
+
 // WaitForCards waits for the results list to render.
 func (s *Session) WaitForCards(ctx context.Context) error {
 	_, err := s.Page.WaitElement(ctx, JobCardsXPath, 15*time.Second)

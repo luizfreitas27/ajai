@@ -58,6 +58,7 @@ type fakeSite struct {
 	pages      [][]string // card ids per results page
 	page       int
 	opened     string
+	openedAll  []string // every card opened, in order
 	searched   []string
 	filters    int
 	dailyLimit bool
@@ -98,6 +99,7 @@ func (f *fakeSite) ReadCard(card browser.Element) (linkedin.Card, error) {
 }
 func (f *fakeSite) OpenCard(_ context.Context, card browser.Element) error {
 	f.opened = card.(*fakeCard).id
+	f.openedAll = append(f.openedAll, f.opened)
 	return nil
 }
 func (f *fakeSite) AlreadyAppliedOnPage() bool { return f.jobs[f.opened].appliedOnPage }
@@ -322,21 +324,29 @@ func TestAJobListedAgainInTheRunIsNotOpenedAgain(t *testing.T) {
 	if jobs, _ := st.ListJobs(store.JobFilter{}); len(jobs) != 1 || jobs[0].Reason != "dry run" {
 		t.Errorf("the pass is counted, not stored: %+v", jobs)
 	}
+	// Live, an application is settled the same way: neither it nor a repost is opened again.
+	site = &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go"), "2": job("2", "Go Dev", "ACME", "Go")},
+		pages: [][]string{{"1"}, {"1", "2"}}}
+	r, _, _ = runner(t, site, cfg())
+	if sum, err := r.Run(context.Background(), Options{}); err != nil || sum.Applied != 1 || sum.Skipped != 2 || strings.Join(site.openedAll, ",") != "1" {
+		t.Errorf("%+v %v, opened %v", sum, err, site.openedAll)
+	}
 }
 
 func TestTheSameRolePostedTwiceIsHandledOnce(t *testing.T) {
+	elsewhere := job("3", "Java Specialist", "Inter", "Java") // the same title in another city: another role
+	elsewhere.card.Location = "Lisbon"
 	site := &fakeSite{jobs: map[string]fakeJob{
 		"1": job("1", "Java Specialist", "Inter", "Java"),
 		"2": job("2", "Java  Specialist", "inter", "Java"), // the same role, posted again
-		"3": job("3", "Java Specialist", "Inter", "Java"),  // the same title elsewhere: another role
+		"3": elsewhere,
 	}, pages: [][]string{{"1", "2", "3"}}}
-	site.jobs["3"] = fakeJob{card: linkedin.Card{ID: "3", Title: "Java Specialist", Company: "Inter", Location: "Lisbon"}, desc: "Java", descOK: true, apply: linkedin.EasyApply}
 	r, _, events := runner(t, site, cfg())
 	applier := &fakeApplier{outcomes: map[string]apply.Outcome{"1": {Kind: apply.Unanswered, Blocked: []string{"CPF"}}}}
 	r.Applier = applier
 	sum, err := r.Run(context.Background(), Options{DryRun: true, Fast: true})
-	if err != nil || sum.WouldApply != 1 || sum.Skipped != 2 || strings.Join(applier.opened(), ",") != "1,3" || site.opened == "2" {
-		t.Errorf("%+v %v, the applier had %v", sum, err, applier.opened())
+	if err != nil || sum.WouldApply != 1 || sum.Skipped != 2 || strings.Join(site.openedAll, ",") != "1,3" {
+		t.Errorf("%+v %v, opened %v", sum, err, site.openedAll)
 	}
 	var texts []string
 	for _, e := range kinds(*events, EventSkip) {
@@ -347,26 +357,48 @@ func TestTheSameRolePostedTwiceIsHandledOnce(t *testing.T) {
 	}
 }
 
-func TestAFailedJobMayBeTriedAgainInTheRun(t *testing.T) {
+func TestARepostOfAFailedJobIsTried(t *testing.T) {
 	site := &fakeSite{jobs: map[string]fakeJob{
-		"1": job("1", "Software Engineer", "Quectel", "Go"), "2": job("2", "Software Engineer", "Quectel", "Go"), // a failure, then the same role posted again
-		"3": job("3", "Go Dev", "Flaky", "Go"), // fails each time it is listed
-	}, pages: [][]string{{"1", "2", "3"}, {"3"}}}
+		"1": job("1", "Software Engineer", "Quectel", "Go"), "2": job("2", "Software Engineer", "Quectel", "Go"),
+	}, pages: [][]string{{"1", "2"}}}
 	r, _, _ := runner(t, site, cfg())
-	applier := &fakeApplier{errs: map[string]error{"1": errors.New("element detached"), "3": errors.New("element detached")}}
-	r.Applier = applier
+	r.Applier = &fakeApplier{errs: map[string]error{"1": errors.New("element detached")}}
 	sum, err := r.Run(context.Background(), Options{})
-	if err != nil || sum.Failed != 3 || sum.Applied != 1 || strings.Join(applier.opened(), ",") != "1,2,3,3" {
-		t.Errorf("%+v %v, the applier had %v", sum, err, applier.opened())
+	if err != nil || sum.Failed != 1 || sum.Applied != 1 || strings.Join(site.openedAll, ",") != "1,2" {
+		t.Errorf("%+v %v, opened %v", sum, err, site.openedAll)
 	}
-	// An external application whose tab did not open failed too: listed again, it is tried again.
-	site = &fakeSite{jobs: map[string]fakeJob{"8": job("8", "Dev", "External Co", "Fine job")}, pages: [][]string{{"8"}, {"8"}}, linkFails: true}
-	site.jobs["8"] = fakeJob{card: site.jobs["8"].card, desc: "Fine job", descOK: true, apply: linkedin.ExternalApply}
+}
+
+func TestAFailedJobListedAgainIsTriedAgain(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"3": job("3", "Go Dev", "Flaky", "Go")}, pages: [][]string{{"3"}, {"3"}}}
+	r, _, _ := runner(t, site, cfg())
+	r.Applier = &fakeApplier{errs: map[string]error{"3": errors.New("element detached")}}
+	if sum, err := r.Run(context.Background(), Options{}); err != nil || sum.Failed != 2 || sum.Skipped != 0 {
+		t.Errorf("%+v %v", sum, err)
+	}
+	// An external application whose tab did not open failed too.
+	external := job("8", "Dev", "External Co", "Fine job")
+	external.apply = linkedin.ExternalApply
+	site = &fakeSite{jobs: map[string]fakeJob{"8": external}, pages: [][]string{{"8"}, {"8"}}, linkFails: true}
 	c := cfg()
 	c.Search.EasyApplyOnly = false
 	r, _, _ = runner(t, site, c)
 	if sum, err := r.Run(context.Background(), Options{}); err != nil || sum.Failed != 2 || sum.Skipped != 0 {
 		t.Errorf("%+v %v", sum, err)
+	}
+}
+
+func TestAClosedOrExternalPostingDoesNotSettleTheRole(t *testing.T) {
+	closed, external := job("1", "Go Dev", "ACME", "Go"), job("3", "Rust Dev", "Big", "Rust")
+	closed.apply, external.apply = linkedin.NoApplyButton, linkedin.ExternalApply
+	site := &fakeSite{jobs: map[string]fakeJob{
+		"1": closed, "2": job("2", "Go Dev", "ACME", "Go"), // no apply button any more; the repost takes Easy Apply
+		"3": external, "4": job("4", "Rust Dev", "Big", "Rust"), // external; the repost takes Easy Apply
+	}, pages: [][]string{{"1", "2", "3", "4"}}}
+	r, _, _ := runner(t, site, cfg())
+	sum, err := r.Run(context.Background(), Options{DryRun: true, Fast: true})
+	if err != nil || sum.WouldApply != 2 || strings.Join(site.openedAll, ",") != "1,2,3,4" {
+		t.Errorf("%+v %v, opened %v", sum, err, site.openedAll)
 	}
 }
 
