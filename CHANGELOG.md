@@ -67,6 +67,17 @@ no such section the notes are the commit list.
 
 ### New
 
+- `questions.skill_years`: your years with each technology or role, as "name: years" (for
+  example `java: 3`, `.net: 5`, `computação em nuvem: 3`). They answer the questions about
+  one technology that used to go to the review queue, in English and Portuguese:
+  - "How long / Há quanto tempo / Quanto tempo de experiência com X?" gets X's years (the
+    smallest of those a question names);
+  - "Do you have experience with X? / Possui experiência (conhecimento, domínio) com X?"
+    gets yes, never no.
+
+  A technology you did not list, a name inside a longer word ("java" in "JavaScript") and
+  sensitive questions are left alone. Set it in the TUI's Config tab or with
+  `ajai config set questions.skill_years "java: 3, .net: 5"`.
 - `ajai login`: sign in to LinkedIn once in the profile ajai uses.
 - `ajai stop`: stop the run in progress cleanly, from any terminal.
 - One run at a time on the machine: a second `ajai run` refuses and names the run in

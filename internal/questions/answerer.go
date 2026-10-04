@@ -364,6 +364,8 @@ func (a *Answerer) answerSelect(ctx context.Context, q Question, job Job) Decisi
 			return blocked("a work-authorization question with no configured answer is never guessed")
 		}
 		answer = authAnswer
+	case a.skillYes(label, q.Options):
+		answer = "Yes"
 	case textmatch.Has(label, "email", "phone") && strings.TrimSpace(q.Current) != "":
 		// Phone country code and the like: LinkedIn's own value stands, even a placeholder.
 		return Decision{Action: Leave, Value: q.Current, Option: indexOf(q.Options, q.Current), Source: "prefilled"}
@@ -403,6 +405,8 @@ func (a *Answerer) answerRadio(ctx context.Context, q Question, job Job) Decisio
 			return blocked("a work-authorization question with no configured answer is never guessed")
 		}
 		answer = authAnswer
+	case a.skillYes(label, q.Options):
+		answer = "Yes"
 	case textmatch.Has(label, "veteran", "protected", "veterano"):
 		answer = a.Cfg.Personals.Veteran
 	case textmatch.Has(label, disabilityTerms...):
@@ -450,9 +454,12 @@ func (a *Answerer) answerText(ctx context.Context, q Question, job Job) Decision
 	p, qs := a.Cfg.Personals, a.Cfg.Questions
 	answer, fallbackAllowed, typeahead := "", true, false
 	authMatched, authAnswer := a.WorkAuthorizationAnswer(label)
+	years := a.skillYears(label)
 	switch {
 	case authMatched:
 		answer, fallbackAllowed = authAnswer, false
+	case years != "":
+		answer = years
 	case textmatch.Has(label, "experience", "years", "experiência", "experiencia", "anos"):
 		// Only the total. "years of Kubernetes experience" and "experience with Python" ask about ONE skill.
 		withoutUnit := label
