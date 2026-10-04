@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -377,6 +378,22 @@ func TestStopAsksTheRunAndConfirmsWhenItEnded(t *testing.T) {
 	w.tg.say(chat, "/stop", w.now)
 	if m := w.tg.waitFor(t, 3); m[2] != "No run in progress." {
 		t.Errorf("%q", m[2])
+	}
+}
+
+func TestStatusEndsTheRunADeadProcessLeft(t *testing.T) {
+	w := newWorld(t)
+	killed, _ := w.st.StartRun(context.Background(), "brasil", true)
+	gone := exec.Command("true")
+	if err := gone.Run(); err != nil {
+		t.Skip("no true(1):", err)
+	}
+	_ = run.WriteState(run.StatePath(w.dir), run.State{PID: gone.Process.Pid, RunID: killed, Skipped: 7})
+	w.listen()
+	w.tg.say(chat, "/status", w.now)
+	m := w.tg.waitFor(t, 1)
+	if !strings.Contains(m[0], run.StaleReason) || !strings.Contains(m[0], "skipped 7") || strings.Contains(m[0], "never recorded an end") {
+		t.Errorf("%s", m[0])
 	}
 }
 

@@ -285,6 +285,26 @@ func (r *Runner) record(sum *Summary) {
 	}
 }
 
+// endAbandoned ends the runs dead processes left in progress (killed,
+// crashed). A run holds the run lock and has no row yet, so no run is in
+// progress: the run a state file names, if it has no end, was left by a dead
+// process and ends with the counts it last saved (the file stays: this run
+// writes its own next), and any other run left without an end ends too.
+func (r *Runner) endAbandoned() {
+	if old, err := ReadState(r.StatePath); r.StatePath != "" && err == nil {
+		if _, err := EndStale(context.Background(), r.Store, r.StatePath, old, true); err != nil {
+			r.Logger.Warn("could not end the run a dead process left in progress", "run", old.RunID, "error", err)
+		}
+	}
+	n, err := r.Store.EndAbandonedRuns(context.Background(), StaleReason)
+	switch {
+	case err != nil:
+		r.Logger.Warn("could not end the runs dead processes left in progress", "error", err)
+	case n > 0:
+		r.Logger.Info("ended runs dead processes left in progress", "runs", n)
+	}
+}
+
 // Crash is what Run panics with after recording and reporting a panic in a run.
 type Crash struct{ Value any }
 
@@ -299,6 +319,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	r.started = r.Now()
 	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
 	r.inProgress = &sum
+	r.endAbandoned()
 	id, err := r.Store.StartRun(context.Background(), sum.Market, opts.DryRun) // the record must exist even when ctx is already cancelled
 	if err != nil {
 		return sum, err

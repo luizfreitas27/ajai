@@ -64,6 +64,12 @@ no such section the notes are the commit list.
   skips ("already handled in this run", "the same posting as job …"). Settled means applied,
   would apply, or skipped for the job itself (its questions, company or description). A job
   that failed, had no apply button or was external is still tried, and so is its repost.
+- A run whose process died without ending it (killed, crashed) no longer stays "in
+  progress" in Last runs. It is ended with the counts it last saved and "did not exit
+  cleanly" by the first to see it: `ajai status`, the TUI, Telegram's /status, or the next
+  run. The next run also ends any older run left without an end, since one run at a time
+  holds the machine. A run still alive is never touched.
+- A skipped job names each unanswered question once, even when LinkedIn draws it twice.
 
 ### New
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -295,7 +296,7 @@ func (a *Applier) pass(ctx context.Context, st *formState, out *Outcome) (blocke
 		_ = today.Click()
 	}
 	sort.Strings(blocked)
-	return blocked, stuck, "", nil
+	return slices.Compact(blocked), stuck, "", nil // LinkedIn can draw one question twice: it is named once
 }
 
 // tryHelp runs a help pause when one is allowed (an attended run, a set of stuck

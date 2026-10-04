@@ -38,6 +38,7 @@ func (l *Listener) status() string {
 		}
 	default:
 		b.WriteString("No run in progress.\n")
+		_, _ = act.EndIfStale(context.Background(), l.store, l.dataDir) // the last run, if it died, shows as ended
 		if runs, err := l.store.ListRuns(1); err == nil && len(runs) > 0 {
 			r := runs[0]
 			when := r.StartedAt

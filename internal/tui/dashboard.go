@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -47,6 +48,8 @@ func readSnapshot(d Deps) snapshot {
 	var err error
 	s.activity, err = run.ReadActivity(d.Paths.DataDir)
 	problem("run", err)
+	_, err = s.activity.EndIfStale(context.Background(), d.Store, d.Paths.DataDir)
+	problem("ending a dead run", err)
 	s.runs, err = d.Store.ListRuns(lastRunsRead)
 	problem("runs", err)
 	s.pending, err = d.Store.CountAnswers("pending")
