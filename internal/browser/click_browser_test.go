@@ -121,3 +121,82 @@ func TestClickAtCentreNeverClicksWhatCoversTheElement(t *testing.T) {
 		})
 	}
 }
+
+// shortWait shortens actionWait for one test.
+func shortWait(t *testing.T, d time.Duration) {
+	t.Helper()
+	was := actionWait
+	actionWait = d
+	t.Cleanup(func() { actionWait = was })
+}
+
+// later runs js on el once the action under test has started waiting.
+func later(el Element, js string) {
+	time.AfterFunc(300*time.Millisecond, func() { _, _ = el.(*rodElement).el.Eval(js) })
+}
+
+// TestAClickOrTypingThatCannotHappenGivesUpSayingWhy: rod waits without end
+// for an element to be uncovered and enabled, as it did for a Next button
+// LinkedIn kept disabled; ajai gives up within actionWait, saying why, and
+// nothing is clicked or typed.
+func TestAClickOrTypingThatCannotHappenGivesUpSayingWhy(t *testing.T) {
+	shortWait(t, time.Second)
+	for _, tc := range []struct {
+		name, extra string
+		then        string // js run on the element once the wait started, "" for none
+		act         func(Element) error
+		why         string
+	}{
+		{"a disabled button", `<button id="target" disabled ` + clickedMark + `>Next</button>`, "", Element.Click, "it stayed disabled"},
+		{"a covered button", `<button id="target" ` + clickedMark + `>Next</button><div style="position:fixed;inset:0;background:#fff"></div>`, "",
+			Element.Click, "something stayed drawn over it"},
+		{"a disabled button the page replaces", `<button id="target" disabled ` + clickedMark + `>Next</button>`, "() => this.remove()",
+			Element.Click, "it left the page"},
+		{"a disabled input", `<input id="target" disabled>`, "", func(e Element) error { return e.Input("typed") }, "it stayed disabled"},
+		{"clearing a disabled input", `<input id="target" disabled value="kept">`, "", Element.Clear, "it stayed disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pg := openPage(t, tc.extra)
+			el, err := pg.Element(`//*[@id="target"]`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.then != "" {
+				later(el, tc.then)
+			}
+			start := time.Now()
+			err = tc.act(el)
+			if took := time.Since(start); took > 5*actionWait {
+				t.Errorf("it took %s to give up", took)
+			}
+			if err == nil || !strings.Contains(err.Error(), "gave up after 1s: "+tc.why) {
+				t.Errorf("%v, want it to give up because %s", err, tc.why)
+			}
+			var missing *ErrNotFound
+			if _, err := pg.Element(`//p[@id="clicked"]`); !errors.As(err, &missing) {
+				t.Errorf("something was clicked: %v", err)
+			}
+			if v, _ := el.Property("value"); v == "typed" || strings.Contains(tc.extra, `value="kept"`) && v != "kept" {
+				t.Errorf("the input's value is %q", v)
+			}
+		})
+	}
+}
+
+// TestAButtonEnabledWhileWaitedForIsClicked: the bounded wait still waits, as
+// for a Next button LinkedIn enables once an upload is processed.
+func TestAButtonEnabledWhileWaitedForIsClicked(t *testing.T) {
+	shortWait(t, 5*time.Second)
+	pg := openPage(t, `<button id="target" disabled `+clickedMark+`>Next</button>`)
+	el, err := pg.Element(`//*[@id="target"]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later(el, "() => { this.disabled = false }")
+	if err := el.Click(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.Element(`//p[@id="clicked"]`); err != nil {
+		t.Errorf("the button was not clicked: %v", err)
+	}
+}

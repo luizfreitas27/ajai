@@ -310,9 +310,34 @@ func (e *rodElement) Property(name string) (string, error) {
 	return v.String(), nil
 }
 
+// actionWait bounds how long a click or typing waits for its element to be
+// ready (uncovered and enabled), which rod would otherwise wait for without
+// end: a button LinkedIn keeps disabled must not hang the run. A var
+// so the tests can shorten it.
+var actionWait = 10 * time.Second
+
+// notReadyScript says why an element is still not ready to be clicked or typed into.
+const notReadyScript = `() => !this.isConnected ? "it left the page" : this.disabled ? "it stayed disabled" : "something stayed drawn over it"`
+
+// whenReady runs act on the element with rod's wait for it bounded by
+// actionWait, and says why it was not ready when the bound runs out.
+func (e *rodElement) whenReady(act func(el *rod.Element) error) error {
+	el := e.el.Timeout(actionWait)
+	defer el.CancelTimeout()
+	err := act(el)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	why := "it never became ready"
+	if v, evalErr := e.el.Eval(notReadyScript); evalErr == nil {
+		why = v.Value.Str()
+	}
+	return fmt.Errorf("gave up after %s: %s", actionWait, why)
+}
+
 func (e *rodElement) Click() error {
 	_ = e.ScrollIntoView()
-	return e.el.Click(proto.InputMouseButtonLeft, 1)
+	return e.whenReady(func(el *rod.Element) error { return el.Click(proto.InputMouseButtonLeft, 1) })
 }
 
 // drawnOverScript names what the page draws at x, y when it is unrelated to
@@ -350,13 +375,17 @@ func (e *rodElement) ClickAtCentre() error {
 	return mouse.Click(proto.InputMouseButtonLeft, 1)
 }
 
-func (e *rodElement) Input(text string) error { return e.el.Input(text) }
+func (e *rodElement) Input(text string) error {
+	return e.whenReady(func(el *rod.Element) error { return el.Input(text) })
+}
 
 func (e *rodElement) Clear() error {
-	if err := e.el.SelectAllText(); err != nil {
-		return err
-	}
-	return e.el.Input("")
+	return e.whenReady(func(el *rod.Element) error {
+		if err := el.SelectAllText(); err != nil {
+			return err
+		}
+		return el.Input("")
+	})
 }
 
 func (e *rodElement) Focus() error { return e.el.Focus() }

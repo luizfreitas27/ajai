@@ -49,6 +49,11 @@ no such section the notes are the commit list.
   external jobs that were then skipped. The switch is clicked where it shows, as a person
   would, never through something drawn over it; one already on is left on, and one the
   click leaves off is logged.
+- A button that never becomes clickable no longer hangs the run. A click, or typing into a
+  field, waits up to 10 seconds for the element to be enabled and uncovered, then gives up
+  saying why ("it stayed disabled", "it left the page"). The job fails at that step, and
+  the run goes on to the next job. It used to wait forever, with nothing in the log, and
+  `ajai stop` could not end it.
 
 ### New
 

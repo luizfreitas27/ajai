@@ -554,6 +554,20 @@ func TestAFormThatKeepsAdvancingWithoutReachingReviewStillFails(t *testing.T) {
 	}
 }
 
+func TestANextButtonThatNeverBecomesClickableFailsTheJob(t *testing.T) {
+	phone, _ := textBlock("Phone", "")
+	modal := modalWith(phone)
+	next := el("Next")
+	next.clickErr = errors.New("gave up after 10s: it stayed disabled")
+	modal.with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t), ScreenshotDir: t.TempDir()}
+	out, err := a.Apply(context.Background(), job, button, Options{DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "it stayed disabled") || out.Kind != Failed || out.Stage != "clicking Next" || len(pg.shots) != 1 {
+		t.Errorf("%+v %v shots=%v", out, err, pg.shots)
+	}
+}
+
 func TestAPageThatStaysWithNoQuestionFlaggedEndsTheJobAsUnanswered(t *testing.T) {
 	phone, _ := textBlock("Phone", "")
 	modal := modalWith(phone)

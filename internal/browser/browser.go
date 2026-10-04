@@ -16,6 +16,8 @@ type Element interface {
 	Attr(name string) (string, bool)
 	// Property reads a live DOM property such as "value" or "checked" as text ("true"/"false" for booleans).
 	Property(name string) (string, error)
+	// Click waits a short while for the element to be uncovered and enabled, then
+	// clicks it; past that it gives up, saying why. Input and Clear wait the same.
 	Click() error
 	// ClickAtCentre clicks the mouse in the middle of the element, on whatever
 	// the page draws there, as a person would: a control the page hides under
