@@ -70,11 +70,14 @@ no such section the notes are the commit list.
   run. The next run also ends any older run left without an end, since one run at a time
   holds the machine. A run still alive is never touched.
 - A skipped job names each unanswered question once, even when LinkedIn draws it twice.
-- An hourly-rate salary question ("valor hora", "por hora", "hourly rate") gets the hourly
-  figure: the monthly desired (or current) salary divided by the hours the question names,
-  weekly hours turned monthly, or by 168 when it names none. It used to get the monthly
-  figure, so "8000" read as R$ 8,000 an hour. "Hourly rate" questions are pay questions now,
-  never the AI's.
+- An hourly-rate salary question ("valor hora", "valor-hora", "por hora", "R$/hora", "quanto
+  você cobra por hora", "hourly rate") gets the hourly figure. It used to get the monthly one,
+  so "8000" read as R$ 8,000 an hour.
+  - The figure is the monthly desired (or current) salary divided by the monthly basis the
+    question names ("baseados em 168 horas"), or by 168 when it names none.
+  - Daily or weekly hours are a workload and do not change the rate.
+  - A month or a year asked first still wins.
+  - These questions are pay questions now, so the AI never answers them.
 
 ### New
 
