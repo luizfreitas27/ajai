@@ -4,7 +4,7 @@ Release notes, newest first. When a `v*` tag is pushed, the release workflow pub
 section whose heading is that tag (rename "Unreleased" to it first, e.g. `## v0.2.0`); with
 no such section the notes are the commit list.
 
-## Unreleased
+## v0.1.0
 
 ### Renamed: aja is now ajai
 
@@ -78,6 +78,10 @@ no such section the notes are the commit list.
   - Daily or weekly hours are a workload and do not change the rate.
   - A month or a year asked first still wins.
   - These questions are pay questions now, so the AI never answers them.
+- A one-page Easy Apply form is no longer submitted within a second. ajai now pauses after
+  uploading the resume, so LinkedIn takes the file, and again before pressing Submit, as a
+  person reading the Review page would. Both pauses take `pacing.between_actions_min_seconds`
+  to `between_actions_max_seconds`, and a stop during either one submits nothing.
 
 ### New
 
