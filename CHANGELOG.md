@@ -70,6 +70,11 @@ no such section the notes are the commit list.
   run. The next run also ends any older run left without an end, since one run at a time
   holds the machine. A run still alive is never touched.
 - A skipped job names each unanswered question once, even when LinkedIn draws it twice.
+- An hourly-rate salary question ("valor hora", "por hora", "hourly rate") gets the hourly
+  figure: the monthly desired (or current) salary divided by the hours the question names,
+  weekly hours turned monthly, or by 168 when it names none. It used to get the monthly
+  figure, so "8000" read as R$ 8,000 an hour. "Hourly rate" questions are pay questions now,
+  never the AI's.
 
 ### New
 

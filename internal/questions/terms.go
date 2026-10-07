@@ -38,7 +38,8 @@ var (
 	// Sensitive questions: configured answers only, never the AI, never the memory.
 	// No bare "pay": "Do you pay attention to detail?" is not a salary question.
 	salaryTerms = []string{"salary", "salaries", "compensation", "ctc", "remuneration", "wage", "wages", "pay rate", "pay range",
-		"salário", "salario", "salarial", "pretensão", "pretensao", "remuneração", "remuneracao"}
+		"hourly rate", "rate per hour", "salário", "salario", "salarial", "pretensão", "pretensao", "remuneração", "remuneracao",
+		"valor hora", "valor por hora", "valor/hora", "valor da hora"}
 	disabilityTerms = []string{"disability", "disabilities", "disabled", "handicap", "handicapped", "deficiência", "deficiencia", "pcd"}
 	veteranTerms    = []string{"veteran", "veterans", "military"}
 	sensitiveTerms  = concat(visaTerms, authorizationTerms, citizenshipTerms, clearanceTerms, salaryTerms, disabilityTerms, veteranTerms)
@@ -47,6 +48,12 @@ var (
 	monthTerms  = []string{"month", "months", "monthly", "mês", "mes", "meses", "mensal", "mensais"}
 	weekTerms   = []string{"week", "weeks", "weekly", "semana", "semanas", "semanal"}
 	annualTerms = []string{"year", "yearly", "annual", "annually", "per annum", "ano", "anual", "anuais", "por ano"}
+	// An hourly rate, asked in a salary question; ahead of the month and the year, which may only qualify its hours
+	// ("baseado em 168 horas mensais"). No bare "hora": "40 horas semanais" is a workload.
+	hourlyTerms = []string{"hourly", "per hour", "an hour", "hour rate", "valor hora", "valor por hora", "valor/hora",
+		"valor da hora", "por hora", "preço hora", "preço por hora"}
+	// Weekly hours named in the question, turned monthly.
+	weeklyHourTerms = concat(weekTerms, []string{"semanais"})
 
 	// Gender and race/ethnicity questions are answered from the configured
 	// personals.gender / personals.ethnicity ("Decline" picks the decline option).

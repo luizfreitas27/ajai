@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -179,6 +181,8 @@ func (a *Answerer) salaryAnswer(label string) string {
 		annual, monthly = m.CurrentAnnual, m.CurrentMonthly
 	}
 	switch {
+	case textmatch.Has(label, hourlyTerms...):
+		return hourlyRate(monthly, label)
 	case textmatch.Has(label, monthTerms...):
 		return markets.FormatMoney(monthly)
 	case textmatch.Has(label, "lakh", "lakhs"):
@@ -193,6 +197,28 @@ func (a *Answerer) salaryAnswer(label string) string {
 }
 
 // pythonRound renders str(round(v, decimals)): "12.0", "2.5", "2.75".
+// monthlyHours is the hours a month holds when a question names none: 21 days of 8 hours.
+const monthlyHours = 168
+
+// hoursNamed is a number of hours a question names ("168 horas", "40 hours").
+var hoursNamed = regexp.MustCompile(`(\d+)\s*(?:horas|hours|hrs|h)\b`)
+
+// hourlyRate is a monthly figure as an hourly one, to the cent: divided by the
+// hours the question names (weekly ones turned monthly), else by monthlyHours.
+func hourlyRate(monthly float64, label string) string {
+	hours := float64(monthlyHours)
+	if m := hoursNamed.FindStringSubmatch(strings.ToLower(label)); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
+			hours = float64(n)
+			if textmatch.Has(label, weeklyHourTerms...) {
+				hours = hours * 52 / 12
+			}
+		}
+	}
+	text := strconv.FormatFloat(math.Round(monthly/hours*100)/100, 'f', 2, 64)
+	return strings.TrimSuffix(strings.TrimRight(text, "0"), ".")
+}
+
 func pythonRound(v float64, decimals int) string {
 	text := strconv.FormatFloat(v, 'f', decimals, 64)
 	text = strings.TrimRight(text, "0")

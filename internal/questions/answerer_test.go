@@ -345,6 +345,37 @@ func TestBrazilianSalaryQuestionsGetTheMonthlyFigureUnlessAnnualIsAsked(t *testi
 	}
 }
 
+func TestAnHourlyRateIsTheMonthlyFigureOverTheHours(t *testing.T) {
+	cfg := pinned()
+	cfg.Markets.Active = "brasil"
+	cfg.Markets.Brasil.DesiredSalary, cfg.Markets.Brasil.CurrentSalary = 8000, 6500
+	a, _ := answerer(t, cfg)
+	for label, want := range map[string]string{
+		"Qual sua pretensão valor hora para modalidade PJ baseados em 168 horas ?": "47.62", // the first live run's question
+		"Qual seu valor hora?":                                     "47.62", // no hours named: 168
+		"Pretensão por hora (PJ, 160 horas mensais)":               "50",    // the month only qualifies the hours
+		"Pretensão salarial por hora para 40 horas semanais":       "46.15", // weekly hours, turned monthly
+		"Valor hora atual":                                         "38.69",
+		"Pretensão salarial mensal (CLT, 40 horas semanais)":       "8000", // a workload, not an hourly rate
+		"Quantas horas por semana você pode trabalhar? Pretensão?": "8000",
+	} {
+		if d := a.Answer(text(label), job); d.Value != want || d.Source != "config" {
+			t.Errorf("%q: %+v, want %s", label, d, want)
+		}
+	}
+	cfg = pinned()
+	cfg.Markets.Internacional.DesiredSalary = 90000
+	a, _ = answerer(t, cfg)
+	for _, label := range []string{"What is your expected hourly rate?", "Expected rate per hour (USD)"} {
+		if d := a.Answer(text(label), job); d.Value != "44.64" {
+			t.Errorf("%q: %+v, want 44.64 (90000 / 12 / 168)", label, d)
+		}
+		if !IsSensitive(label) {
+			t.Errorf("%q is a pay question: never the AI's", label)
+		}
+	}
+}
+
 func TestPrefilledTextIsKeptUnlessOverwriteIsOn(t *testing.T) {
 	cfg := pinned()
 	a, _ := answerer(t, cfg)
