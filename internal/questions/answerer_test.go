@@ -345,6 +345,53 @@ func TestBrazilianSalaryQuestionsGetTheMonthlyFigureUnlessAnnualIsAsked(t *testi
 	}
 }
 
+func TestAnHourlyRateIsTheMonthlyFigureOverTheHours(t *testing.T) {
+	cfg := pinned()
+	cfg.Markets.Active = "brasil"
+	cfg.Markets.Brasil.DesiredSalary, cfg.Markets.Brasil.CurrentSalary = 8000, 6500
+	a, _ := answerer(t, cfg)
+	for label, want := range map[string]string{
+		"Qual sua pretensão valor hora para modalidade PJ baseados em 168 horas ?": "47.62", // the first live run's question
+		"Qual seu valor hora?":                                     "47.62", // no monthly basis named: 168
+		"Pretensão por hora (PJ, 160 horas mensais)":               "50",    // the month only qualifies the basis
+		"Início em 2 semanas, valor hora para 160 horas/mês":       "50",
+		"Pretensão salarial por hora para 40 horas semanais":       "47.62", // weekly hours are a workload, not the basis
+		"Disponibilidade de 8h/dia; qual seu valor hora?":          "47.62",
+		"Pretensão valor hora (1h de almoço)":                      "47.62",
+		"Quanto você cobra por hora?":                              "47.62",
+		"Qual seu preço hora?":                                     "47.62",
+		"Valor-hora pretendido":                                    "47.62",
+		"Pretensão salarial (R$/hora)":                             "47.62",
+		"Valor hora atual":                                         "38.69",
+		"Pretensão salarial mensal ou valor hora":                  "8000", // the month asked first
+		"Pretensão salarial mensal (CLT, 40 horas semanais)":       "8000", // a workload, not an hourly rate
+		"Quantas horas por semana você pode trabalhar? Pretensão?": "8000",
+	} {
+		if d := a.Answer(text(label), job); d.Value != want || d.Source != "config" {
+			t.Errorf("%q: %+v, want %s", label, d, want)
+		}
+	}
+	cfg = pinned()
+	cfg.Markets.Internacional.DesiredSalary = 90000
+	a, _ = answerer(t, cfg)
+	for label, want := range map[string]string{
+		"What is your expected hourly rate?":                          "44.64", // 90000 / 12 / 168
+		"Expected rate per hour (USD)":                                "44.64",
+		"What is your hourly expectation?":                            "44.64",
+		"What is your hourly rate expectation for 20 hours per week?": "44.64",
+		"Annual salary expectation (or hourly rate for contractors)":  "90000",
+	} {
+		if d := a.Answer(text(label), job); d.Value != want {
+			t.Errorf("%q: %+v, want %s", label, d, want)
+		}
+	}
+	for _, label := range []string{"What is your expected hourly rate?", "Quanto você cobra por hora?", "Qual seu preço hora?"} {
+		if !IsSensitive(label) {
+			t.Errorf("%q is a pay question: never the AI's", label)
+		}
+	}
+}
+
 func TestPrefilledTextIsKeptUnlessOverwriteIsOn(t *testing.T) {
 	cfg := pinned()
 	a, _ := answerer(t, cfg)

@@ -37,8 +37,11 @@ var (
 
 	// Sensitive questions: configured answers only, never the AI, never the memory.
 	// No bare "pay": "Do you pay attention to detail?" is not a salary question.
-	salaryTerms = []string{"salary", "salaries", "compensation", "ctc", "remuneration", "wage", "wages", "pay rate", "pay range",
-		"salário", "salario", "salarial", "pretensão", "pretensao", "remuneração", "remuneracao"}
+	// Asking for an hourly rate is asking for pay.
+	hourlyPayTerms = []string{"hourly rate", "hourly expectation", "rate per hour", "/hour", "valor hora", "valor-hora",
+		"valor por hora", "valor da hora", "preço hora", "preço por hora", "cobra por hora", "/hora"}
+	salaryTerms = concat([]string{"salary", "salaries", "compensation", "ctc", "remuneration", "wage", "wages", "pay rate", "pay range",
+		"salário", "salario", "salarial", "pretensão", "pretensao", "remuneração", "remuneracao"}, hourlyPayTerms)
 	disabilityTerms = []string{"disability", "disabilities", "disabled", "handicap", "handicapped", "deficiência", "deficiencia", "pcd"}
 	veteranTerms    = []string{"veteran", "veterans", "military"}
 	sensitiveTerms  = concat(visaTerms, authorizationTerms, citizenshipTerms, clearanceTerms, salaryTerms, disabilityTerms, veteranTerms)
@@ -47,6 +50,8 @@ var (
 	monthTerms  = []string{"month", "months", "monthly", "mês", "mes", "meses", "mensal", "mensais"}
 	weekTerms   = []string{"week", "weeks", "weekly", "semana", "semanas", "semanal"}
 	annualTerms = []string{"year", "yearly", "annual", "annually", "per annum", "ano", "anual", "anuais", "por ano"}
+	// A salary question asks for an hourly figure with these. No bare "hora": "40 horas semanais" is a workload.
+	hourlyTerms = concat([]string{"hourly", "per hour", "an hour", "por hora"}, hourlyPayTerms)
 
 	// Gender and race/ethnicity questions are answered from the configured
 	// personals.gender / personals.ethnicity ("Decline" picks the decline option).

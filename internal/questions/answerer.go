@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -178,7 +180,12 @@ func (a *Answerer) salaryAnswer(label string) string {
 	if current {
 		annual, monthly = m.CurrentAnnual, m.CurrentMonthly
 	}
+	hourly, period := firstAt(label, hourlyTerms), firstAt(label, concat(monthTerms, annualTerms))
 	switch {
+	case hourly >= 0 && (period < 0 || hourly < period):
+		// Hourly, unless a month or a year is asked first ("mensal ou valor hora"); after it
+		// they only qualify its hours ("valor hora, baseado em 168 horas mensais").
+		return hourlyRate(monthly, label)
 	case textmatch.Has(label, monthTerms...):
 		return markets.FormatMoney(monthly)
 	case textmatch.Has(label, "lakh", "lakhs"):
@@ -190,6 +197,43 @@ func (a *Answerer) salaryAnswer(label string) string {
 	default:
 		return markets.FormatMoney(annual)
 	}
+}
+
+// monthlyHours is the hours a month holds when a question names no monthly
+// basis: 21 days of 8 hours.
+const monthlyHours = 168
+
+// hoursNamed is a number of hours a question names. Only a monthly one (80 or
+// more) is the basis of the rate ("baseados em 168 horas", "160h/mês"): fewer
+// are a daily or weekly workload ("8h/dia", "40 horas semanais") and leave the
+// rate as it is.
+var hoursNamed = regexp.MustCompile(`(\d+)\s*(?:horas|hours|hrs|h)\b`)
+
+// hourlyRate is a monthly figure as an hourly one, to the cent: divided by the
+// monthly basis the question names, else by monthlyHours.
+func hourlyRate(monthly float64, label string) string {
+	hours := float64(monthlyHours)
+	for _, m := range hoursNamed.FindAllStringSubmatch(strings.ToLower(label), -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil && n >= 80 {
+			hours = float64(n)
+			break
+		}
+	}
+	return markets.FormatMoney(math.Round(monthly/hours*100) / 100)
+}
+
+// firstAt is where the first of terms the label holds starts, -1 when none.
+func firstAt(label string, terms []string) int {
+	lower, at := strings.ToLower(label), -1
+	for _, term := range terms {
+		if !textmatch.Has(label, term) {
+			continue
+		}
+		if i := strings.Index(lower, strings.ToLower(term)); i >= 0 && (at < 0 || i < at) {
+			at = i
+		}
+	}
+	return at
 }
 
 // pythonRound renders str(round(v, decimals)): "12.0", "2.5", "2.75".
