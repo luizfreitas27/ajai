@@ -4,6 +4,14 @@ Release notes, newest first. When a `v*` tag is pushed, the release workflow pub
 section whose heading is that tag (rename "Unreleased" to it first, e.g. `## v0.2.0`); with
 no such section the notes are the commit list.
 
+## Unreleased
+
+### Docs
+
+- The README opens with the flame logo, badges and screenshots of the TUI, says step by step
+  how to download a release (with its checksum), upgrade and uninstall, and gains a
+  troubleshooting section and a table of the AI providers.
+
 ## v0.1.0
 
 ### Renamed: aja is now ajai
