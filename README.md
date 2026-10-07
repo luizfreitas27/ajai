@@ -501,7 +501,7 @@ Releases are built by GitHub Actions from a tag:
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-`.goreleaser.yaml` builds the six binaries with the tag as the version (`ajai version`), and
+`.goreleaser.yaml` builds the two Linux binaries (amd64, arm64) with the tag as the version (`ajai version`), and
 publishes them with `checksums.txt`. Every pull request already builds them without
 publishing, so a broken build shows up before a tag does.
 
