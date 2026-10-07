@@ -96,11 +96,16 @@ By hand:
    Chrome opens on LinkedIn; sign in by hand (ajai never types your password) and it closes
    once the feed appears. The session stays in the ajai profile.
 
-5. **Check.** `ajai doctor` tests Chrome, the profile (and whether LinkedIn is signed in
+5. **Your profile.** Set `questions.summary`, `questions.about` and `questions.skill_years`
+   (see [Your profile](#your-profile) and [Skill years](#skill-years)). They answer the
+   questions about your experience, and give the AI something to work from if you turn it
+   on.
+
+6. **Check.** `ajai doctor` tests Chrome, the profile (and whether LinkedIn is signed in
    there), the config, the secrets, the resume and the data directory, and prints every
    path in use.
 
-6. **Dry run.**
+7. **Dry run.**
 
    ```bash
    ajai run --dry-run --fast
@@ -110,7 +115,7 @@ By hand:
    screens each job, fills every form and discards it at the Review step, so you can see
    the answers it would send. `--fast` shortens the pauses and only works with `--dry-run`.
 
-7. **For real.** Start small, then let the pacing limits do their job:
+8. **For real.** Start small, then let the pacing limits do their job:
 
    ```bash
    ajai run --max 1
@@ -258,18 +263,100 @@ discarded, the run is recorded with "stopped with ajai stop" and its summary sen
 
 ## Answers, the AI and the help pause
 
-Questions LinkedIn forms ask are answered from your configuration first (English and
-Portuguese labels), then from the answer memory, then, if `ai.enabled: true`, by a language
-model: OpenAI, DeepSeek, Gemini, or a local Ollama, LM Studio or vLLM. For dropdowns and
-radio buttons the model's answer counts only when it names one of the options exactly. The
-model sees a short candidate profile built from your config, never your phone, email,
-address, citizenship status or current salary, and it is never asked about visas, work
-authorization, citizenship, salary, disability, veteran status or clearances: those are
-answered from your configuration or not at all. A key is only ever sent over HTTPS or to
-localhost.
+Every question in an Easy Apply form is answered by the first of these that can (English
+and Portuguese labels alike):
 
-Every answer the AI gives is remembered as pending and used; `ajai answers review` lets you
-approve or correct it. Only an approved answer may tick a checkbox.
+1. **Your configuration.** Name, phone, city, work authorization, visa, salary, notice period
+   and total years of experience. Also your [skill years](#skill-years), for questions about
+   one technology.
+2. **The answer memory.** What you approved or typed before, and what the AI answered before.
+3. **The AI**, only with `ai.enabled: true`.
+4. **Nothing.** The job is skipped and the question goes to the review queue, or, with you
+   at the terminal, to a help pause (below).
+
+### What the AI does, and what it never does
+
+The AI answers only the questions nothing above could. It does not choose jobs or read your
+resume file. A cover-letter field with no `questions.cover_letter` is just another open
+question to it.
+
+- **What it is given:**
+  - the question;
+  - the job description;
+  - the options of a dropdown or radio button;
+  - a candidate profile built from your config: name, location, total years of experience,
+    most recent employer, `questions.headline`, desired salary, notice period, work
+    authorization and visa, plus `questions.summary` and `questions.about`.
+- **What it never sees:** your phone, email, street, zip, citizenship status, current salary
+  or protected characteristics.
+- **Never asked at all:** sensitive questions (visas, work authorization, citizenship,
+  salary, disability, veteran status, clearances) and the email question. Those are answered
+  from your configuration or not at all.
+- **Free text:** one sentence, or at most 350 characters for an open question.
+- **Dropdowns and radio buttons:** the answer counts only when it names one of the options
+  exactly; anything else is dropped. It never ticks a checkbox: only an answer you approved
+  does.
+- **Every AI answer is remembered as pending and used right away.** On a live run the
+  application is sent with it before you have reviewed it. Unlike skill years, it may also
+  answer "No" or misjudge your experience.
+
+  Review the queue with `ajai answers review` or the TUI's Answers tab. Approving or
+  correcting an answer fixes every later form that asks it. The safe way to try the AI is a
+  dry run first: nothing is sent, and the queue shows what it would have answered.
+
+### Turning it on
+
+The settings live in `config.yaml` (`ajai doctor` prints its path) and the key in the `.env`
+next to it:
+
+```bash
+ajai config set ai.enabled true
+ajai config set ai.provider openai        # openai, deepseek, gemini, ollama, lmstudio, vllm, custom
+ajai config set ai.model gpt-5.6-sol
+# AJAI_AI_API_KEY=sk-... in the .env (the TUI's Config tab writes it for you)
+```
+
+`ai.base_url` is blank for the provider's own endpoint. A key is only ever sent over HTTPS
+or to localhost. `ajai doctor` shows the provider, the model and whether the key is set; it
+does not call the model, so the first real call is your next run.
+
+### Your profile
+
+- **`questions.summary`:** a short professional summary. It is pasted as it is into
+  "Summary", "Resumo" and "Sobre você" fields, and the AI reads it.
+- **`questions.about`:** free text only the AI reads: your jobs with dates and stack,
+  skills, education, languages, what you are looking for. Keep secrets, phone numbers and
+  links out of it. Anything in it can surface in an answer.
+- **`questions.headline`:** a one-line headline, for "headline" fields and the AI.
+
+The fuller these are, the less generic the AI's answers.
+
+### Skill years
+
+`questions.skill_years` lists your years with each technology or role, as "name: years" (a
+whole number, 1 or more):
+
+```bash
+ajai config set questions.skill_years ".net: 4, c#: 4, python: 1, aws: 1, computação em nuvem: 1"
+```
+
+They answer, as configured answers:
+
+- **"How long have you used X?", "Há quanto tempo você usa X?", "Quanto tempo de experiência
+  com X?"** get X's years; with several technologies named, the fewest.
+- **"Do you have experience with X?", "Possui experiência (conhecimento, domínio) com X?"**
+  get yes, never no.
+  - With a number of years in the question ("at least 5 years", "no mínimo 3 anos"), yes
+    only when your years reach it.
+  - Options that are ranges of years are left alone.
+
+A name matches whole, whatever its case and accents ("java" is not "JavaScript", "react" is
+not "React-Native"), and only in the question itself, not its context or links. List
+Portuguese names and roles too ("computação em nuvem", "dev fullstack"). A technology you
+did not list, notice periods, totals and sensitive questions go on as before. Keep the
+numbers true to your resume: recruiters read both.
+
+### The help pause
 
 With you at the terminal, a question nothing can answer pauses the job: ajai shows it (and
 sends a Telegram message), you fill it in Chrome and press Enter, and what you typed is

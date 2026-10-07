@@ -189,8 +189,13 @@ to the tag before tagging and the workflow publishes that section as the release
   warning, and error line numbers stay right), never by just deleting it.
 - `internal/questions`: the question heuristics (`Answerer.Answer(Question, Job) Decision`),
   pure: configured answers, then the answer memory, then the AI, never a guess. Sensitive
-  questions are gated here. `internal/textmatch` is the whole-word matcher every label
-  test uses, plus `Normalise` and the difflib `Ratio`.
+  questions are gated here. Skill years (`skills.go`, `questions.skill_years` parsed once in
+  `New` into `config.Skill`) are configured answers. They are read only from a label's
+  asked sentence, without its links: how long a listed skill was used gets its fewest years
+  (`yearsFromSkills`), and a Yes/No about experience gets yes (`yesFromSkills`), never no,
+  only when a years floor in it is reached. Their term lists live in `terms.go`.
+  `internal/textmatch` is the whole-word matcher every label test uses (`HasFolded` also
+  ignores accents), plus `Normalise` and the difflib `Ratio`.
 - `internal/apply`: the Easy Apply modal loop. `ReadForm` reads the page's controls into
   `questions.Question` values with their DOM handles; `Applier.Apply` clicks the button,
   answers page by page, uploads the resume once, walks Next/Review/Submit, discards on a
