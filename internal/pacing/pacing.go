@@ -119,6 +119,13 @@ func (p *Pacer) BetweenJobs(ctx context.Context) error {
 	return p.sleep(ctx, d)
 }
 
+// WithSleep makes the pacer wait through sleep instead of the clock, for tests
+// that need to see its pauses.
+func (p *Pacer) WithSleep(sleep func(context.Context, time.Duration) error) *Pacer {
+	p.sleep = sleep
+	return p
+}
+
 // BetweenActions pauses between two form actions.
 func (p *Pacer) BetweenActions(ctx context.Context) error {
 	return p.sleep(ctx, p.between(p.cfg.BetweenActionsMin, p.cfg.BetweenActionsMax, time.Second))

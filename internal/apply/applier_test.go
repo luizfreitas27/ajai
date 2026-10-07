@@ -612,6 +612,66 @@ func TestASkipNamesEachQuestionOnce(t *testing.T) {
 	}
 }
 
+// onePageForm is a form with only the resume to upload and Submit, as the second
+// live run met: the input, the Submit button, and the page.
+func onePageForm() (*node, *node, *page, *node) {
+	input, submit := el(""), el("Submit application")
+	modal := modalWith()
+	modal.with(linkedin.ResumeUploadInputXPath, input).with(linkedin.SubmitButtonXPath, submit)
+	pg, button := pageWith(modal)
+	return input, submit, pg, button
+}
+
+func TestAOnePageFormPausesAfterTheUploadAndBeforeSubmit(t *testing.T) {
+	input, submit, pg, button := onePageForm()
+	var events []string
+	pacer := quick().WithSleep(func(ctx context.Context, _ time.Duration) error {
+		events = append(events, fmt.Sprintf("pause (uploaded %v)", len(input.files) > 0))
+		return ctx.Err()
+	})
+	submit.onClick = func() { events = append(events, "submit") }
+	a := &Applier{Page: pg, Pacer: pacer, Answerer: answerer(t)}
+	out, err := a.Apply(context.Background(), job, button, Options{ResumePath: "/cv/resume.pdf"})
+	if err != nil || out.Kind != Applied {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if got := strings.Join(events, ", "); got != "pause (uploaded true), pause (uploaded true), submit" {
+		t.Errorf("events: %s", got)
+	}
+}
+
+func TestAStopDuringEitherPauseSubmitsNothing(t *testing.T) {
+	for _, stopAt := range []int{1, 2} { // after the upload, before Submit
+		_, submit, pg, button := onePageForm()
+		ctx, cancel := context.WithCancel(context.Background())
+		pauses := 0
+		pacer := quick().WithSleep(func(ctx context.Context, _ time.Duration) error {
+			if pauses++; pauses == stopAt {
+				cancel()
+			}
+			return ctx.Err()
+		})
+		a := &Applier{Page: pg, Pacer: pacer, Answerer: answerer(t)}
+		out, err := a.Apply(ctx, job, button, Options{ResumePath: "/cv/resume.pdf"})
+		if !errors.Is(err, context.Canceled) || out.Kind != Stopped || submit.clicks != 0 {
+			t.Errorf("stop at pause %d: %+v %v, Submit pressed %d times", stopAt, out, err, submit.clicks)
+		}
+		cancel()
+	}
+	// On a longer form, a stop at the pause after the upload presses nothing more.
+	modal := modalWith()
+	next := el("Next")
+	modal.with(linkedin.ResumeUploadInputXPath, el("")).with(linkedin.NextButtonXPath, next)
+	pg, button := pageWith(modal)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pacer := quick().WithSleep(func(ctx context.Context, _ time.Duration) error { cancel(); return ctx.Err() })
+	a := &Applier{Page: pg, Pacer: pacer, Answerer: answerer(t)}
+	if out, err := a.Apply(ctx, job, button, Options{ResumePath: "/cv/resume.pdf"}); !errors.Is(err, context.Canceled) || out.Kind != Stopped || next.clicks != 0 {
+		t.Errorf("%+v %v, Next pressed %d times", out, err, next.clicks)
+	}
+}
+
 func TestAModalLinkedInRedrawsIsFoundAgain(t *testing.T) {
 	for _, dry := range []bool{true, false} {
 		phone, _ := textBlock("Phone", "")

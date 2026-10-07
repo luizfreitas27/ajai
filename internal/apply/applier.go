@@ -132,7 +132,12 @@ func (a *Applier) Apply(ctx context.Context, job linkedin.Card, button browser.E
 			return a.giveUp(st, &out, blocked, stuck), nil
 		}
 		st.previousBlocked, st.stuck = blocked, stuck
-		a.uploadResume(st, &out, opts.ResumePath)
+		if a.uploadResume(st, &out, opts.ResumePath) {
+			// LinkedIn takes the file, and a person would not press on at once.
+			if err := a.Pacer.BetweenActions(ctx); err != nil {
+				return a.stopped(&out), err
+			}
+		}
 		if _, err := st.modal.Element(linkedin.SubmitButtonXPath); err == nil {
 			return a.review(ctx, st, &out, opts)
 		}
@@ -332,21 +337,23 @@ func (a *Applier) giveUp(st *formState, out *Outcome, blocked []string, stuck []
 	return *out
 }
 
-// uploadResume sets the resume file once per application, when the page has the input.
-func (a *Applier) uploadResume(st *formState, out *Outcome, path string) {
+// uploadResume sets the resume file once per application, when the page has
+// the input, and reports whether it did.
+func (a *Applier) uploadResume(st *formState, out *Outcome, path string) bool {
 	if path == "" || out.Resume != PreviousResume {
-		return
+		return false
 	}
 	input, err := st.modal.Element(linkedin.ResumeUploadInputXPath)
 	if err != nil {
-		return
+		return false
 	}
 	if err := input.SetFiles([]string{path}); err != nil {
 		a.Logger.Warn("resume upload failed; keeping the previous one", "error", err)
-		return
+		return false
 	}
 	out.Resume = filepath.Base(path)
 	a.Logger.Info("resume uploaded", "job", st.job.ID, "file", out.Resume)
+	return true
 }
 
 // review is the last page: discard in a dry run, otherwise set the follow box and submit.
@@ -362,6 +369,10 @@ func (a *Applier) review(ctx context.Context, st *formState, out *Outcome, opts 
 	submit, err := modal.Element(linkedin.SubmitButtonXPath)
 	if err != nil {
 		return a.fail(job, out, "finding Submit", err)
+	}
+	// A person glances over the Review page before submitting: never at once.
+	if err := a.Pacer.BetweenActions(ctx); err != nil {
+		return a.stopped(out), err
 	}
 	if err := submit.Click(); err != nil {
 		return a.fail(job, out, "clicking Submit", err)
