@@ -33,6 +33,12 @@ func New(cfg config.Pacing, fast bool) *Pacer {
 	return &Pacer{cfg: cfg, fast: fast, now: time.Now, sleep: Sleep, rand: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 7))}
 }
 
+// WithSleep makes the pacer wait through sleep instead of the clock (tests).
+func (p *Pacer) WithSleep(sleep func(context.Context, time.Duration) error) *Pacer {
+	p.sleep = sleep
+	return p
+}
+
 // Sleep waits d, or returns ctx's error as soon as ctx ends.
 func Sleep(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
@@ -117,13 +123,6 @@ func (p *Pacer) BetweenJobs(ctx context.Context) error {
 		d /= 10
 	}
 	return p.sleep(ctx, d)
-}
-
-// WithSleep makes the pacer wait through sleep instead of the clock, for tests
-// that need to see its pauses.
-func (p *Pacer) WithSleep(sleep func(context.Context, time.Duration) error) *Pacer {
-	p.sleep = sleep
-	return p
 }
 
 // BetweenActions pauses between two form actions.

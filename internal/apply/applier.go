@@ -365,14 +365,15 @@ func (a *Applier) review(ctx context.Context, st *formState, out *Outcome, opts 
 		out.Kind = DryRun
 		return *out, nil
 	}
+	// A person glances over the Review page before submitting: never at once. The
+	// page is read after the pause, so nothing found on it has been drawn anew since.
+	if err := a.Pacer.BetweenActions(ctx); err != nil {
+		return a.stopped(out), err
+	}
 	a.setFollowCompany(modal, opts.FollowCompanies)
 	submit, err := modal.Element(linkedin.SubmitButtonXPath)
 	if err != nil {
 		return a.fail(job, out, "finding Submit", err)
-	}
-	// A person glances over the Review page before submitting: never at once.
-	if err := a.Pacer.BetweenActions(ctx); err != nil {
-		return a.stopped(out), err
 	}
 	if err := submit.Click(); err != nil {
 		return a.fail(job, out, "clicking Submit", err)

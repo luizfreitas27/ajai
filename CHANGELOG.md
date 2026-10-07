@@ -80,8 +80,8 @@ no such section the notes are the commit list.
   - These questions are pay questions now, so the AI never answers them.
 - A one-page Easy Apply form is no longer submitted within a second. ajai now pauses after
   uploading the resume, so LinkedIn takes the file, and again before pressing Submit, as a
-  person reading the Review page would. Both pauses use `pacing.between_actions`, and a stop
-  during either one submits nothing.
+  person reading the Review page would. Both pauses take `pacing.between_actions_min_seconds`
+  to `between_actions_max_seconds`, and a stop during either one submits nothing.
 
 ### New
 
