@@ -303,9 +303,9 @@ func TestUnclassifiedAndNearMissTextQuestionsAreLeftEmpty(t *testing.T) {
 
 func TestTheCityQuestionTypesTheCityAndIsATypeahead(t *testing.T) {
 	cfg := pinned()
-	cfg.Personals.City = "Manaus"
+	cfg.Personals.City = "Lisbon"
 	a, _ := answerer(t, cfg)
-	if d := a.Answer(text("Cidade"), job); d.Action != Fill || d.Value != "Manaus" || !d.Typeahead {
+	if d := a.Answer(text("Cidade"), job); d.Action != Fill || d.Value != "Lisbon" || !d.Typeahead {
 		t.Errorf("%+v", d)
 	}
 	cfg.Personals.City = ""

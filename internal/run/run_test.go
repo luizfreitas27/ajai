@@ -334,11 +334,11 @@ func TestAJobListedAgainInTheRunIsNotOpenedAgain(t *testing.T) {
 }
 
 func TestTheSameRolePostedTwiceIsHandledOnce(t *testing.T) {
-	elsewhere := job("3", "Java Specialist", "Inter", "Java") // the same title in another city: another role
+	elsewhere := job("3", "Java Specialist", "Globex", "Java") // the same title in another city: another role
 	elsewhere.card.Location = "Lisbon"
 	site := &fakeSite{jobs: map[string]fakeJob{
-		"1": job("1", "Java Specialist", "Inter", "Java"),
-		"2": job("2", "Java  Specialist", "inter", "Java"), // the same role, posted again
+		"1": job("1", "Java Specialist", "Globex", "Java"),
+		"2": job("2", "Java  Specialist", "globex", "Java"), // the same role, posted again
 		"3": elsewhere,
 	}, pages: [][]string{{"1", "2", "3"}}}
 	r, _, events := runner(t, site, cfg())
@@ -359,7 +359,7 @@ func TestTheSameRolePostedTwiceIsHandledOnce(t *testing.T) {
 
 func TestARepostOfAFailedJobIsTried(t *testing.T) {
 	site := &fakeSite{jobs: map[string]fakeJob{
-		"1": job("1", "Software Engineer", "Quectel", "Go"), "2": job("2", "Software Engineer", "Quectel", "Go"),
+		"1": job("1", "Software Engineer", "Initech", "Go"), "2": job("2", "Software Engineer", "Initech", "Go"),
 	}, pages: [][]string{{"1", "2"}}}
 	r, _, _ := runner(t, site, cfg())
 	r.Applier = &fakeApplier{errs: map[string]error{"1": errors.New("element detached")}}
