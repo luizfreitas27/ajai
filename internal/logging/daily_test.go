@@ -49,7 +49,11 @@ func TestTheLogDirectoryIsTheUsersAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = c.Close()
-	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
-		t.Errorf("%v %v", info.Mode().Perm(), err)
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("the log directory is %o", info.Mode().Perm())
 	}
 }

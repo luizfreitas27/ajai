@@ -73,12 +73,10 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrating %s: %w", path, err)
 	}
-	// The history and the answer memory are the user's alone, like their directory.
+	// The history and the answer memory are the user's alone, like their directory
+	// (best effort: a filesystem without modes keeps its own).
 	for _, f := range []string{path, path + "-wal", path + "-shm"} {
-		if err := os.Chmod(f, 0o600); err != nil && !os.IsNotExist(err) {
-			_ = db.Close()
-			return nil, err
-		}
+		_ = os.Chmod(f, paths.PrivateFileMode)
 	}
 	return s, nil
 }

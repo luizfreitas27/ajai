@@ -136,6 +136,7 @@ func (a *App) load() (*config.Loaded, error) {
 // openLog starts the day's log file. Commands that write to the data directory
 // call it; read-only commands (version, config get/show/path) stay silent.
 func (a *App) openLog(level string) {
+	_ = a.paths.EnsureDataDirs() // created private, an install from before narrowed; a failure shows below
 	logger, closer, err := logging.Open(a.paths.LogDir, logging.ParseLevel(level), nil)
 	if err != nil {
 		a.note(run.EventWarn, "log", "could not open the log file: "+err.Error())

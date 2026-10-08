@@ -80,34 +80,57 @@ func mode(t *testing.T, path string) os.FileMode {
 	return info.Mode().Perm()
 }
 
-func TestAjaisDirectoriesAreTheUsersAlone(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "ajai")
-	if err := os.MkdirAll(filepath.Join(home, "logs"), 0o755); err != nil { // an install from before: wide open
-		t.Fatal(err)
-	}
-	_ = os.Chmod(home, 0o755)
-	p := Resolve("", env(map[string]string{"AJAI_HOME": home}))
-	if err := p.EnsureDataDirs(); err != nil {
-		t.Fatal(err)
-	}
-	for _, dir := range []string{p.DataDir, p.LogDir, p.ScreenshotDir, p.ResumeDir} {
-		if m := mode(t, dir); m != PrivateDirMode {
-			t.Errorf("%s is %o, want %o", dir, m, PrivateDirMode)
+// wide makes dirs as an install from before left them: 0755.
+func wide(t *testing.T, dirs ...string) {
+	t.Helper()
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
 		}
+		_ = os.Chmod(d, 0o755)
 	}
 }
 
-func TestADirectoryConfigPointsIntoIsLeftAsItIs(t *testing.T) {
-	mine := filepath.Join(t.TempDir(), "dotfiles")
-	if err := os.MkdirAll(mine, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	p := Resolve(filepath.Join(mine, "ajai.yaml"), env(map[string]string{"AJAI_HOME": filepath.Join(t.TempDir(), "ajai")}))
-	if err := p.EnsureDataDirs(); err != nil {
-		t.Fatal(err)
-	}
-	if m := mode(t, mine); m != 0o755 {
-		t.Errorf("the --config directory was changed to %o", m)
+func TestEnsureDataDirsNarrowsWhatAjaiOwnsAndLeavesWhatTheUserChose(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(base string) (Paths, map[string]os.FileMode) // the paths, and the modes wanted after
+	}{
+		{"the OS conventions' directories, from before", func(base string) (Paths, map[string]os.FileMode) {
+			config, data := filepath.Join(base, "config", "ajai"), filepath.Join(base, "share", "ajai")
+			wide(t, config, data, filepath.Join(data, "logs"))
+			p := Paths{ConfigFile: filepath.Join(config, "config.yaml"), DataDir: data, LogDir: filepath.Join(data, "logs"),
+				ScreenshotDir: filepath.Join(data, "screenshots"), ResumeDir: filepath.Join(data, "resumes"), ownDataDir: true, ownConfigDir: true}
+			return p, map[string]os.FileMode{config: 0o700, data: 0o700, p.LogDir: 0o700, p.ScreenshotDir: 0o700, p.ResumeDir: 0o700}
+		}},
+		{"AJAI_HOME, a directory of the user's", func(base string) (Paths, map[string]os.FileMode) {
+			home := filepath.Join(base, "home")
+			wide(t, home, filepath.Join(home, "logs"))
+			p := Resolve("", env(map[string]string{"AJAI_HOME": home}))
+			return p, map[string]os.FileMode{home: 0o755, p.LogDir: 0o700, p.ScreenshotDir: 0o700, p.ResumeDir: 0o700}
+		}},
+		{"AJAI_HOME not there yet", func(base string) (Paths, map[string]os.FileMode) {
+			p := Resolve("", env(map[string]string{"AJAI_HOME": filepath.Join(base, "new")}))
+			return p, map[string]os.FileMode{p.DataDir: 0o700}
+		}},
+		{"a directory --config points into", func(base string) (Paths, map[string]os.FileMode) {
+			mine := filepath.Join(base, "dotfiles")
+			wide(t, mine)
+			p := Resolve(filepath.Join(mine, "ajai.yaml"), env(map[string]string{"AJAI_HOME": filepath.Join(base, "ajai")}))
+			return p, map[string]os.FileMode{mine: 0o755}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, want := tc.setup(t.TempDir())
+			if err := p.EnsureDataDirs(); err != nil {
+				t.Fatal(err)
+			}
+			for dir, m := range want {
+				if got := mode(t, dir); got != m {
+					t.Errorf("%s is %o, want %o", dir, got, m)
+				}
+			}
+		})
 	}
 }
 
@@ -125,19 +148,15 @@ func TestEnsurePrivateDirCreatesItPrivateAndItsParentsAsUsual(t *testing.T) {
 	}
 }
 
-func TestAjaisOwnConfigDirectoryIsNarrowedToo(t *testing.T) {
-	base := t.TempDir()
-	config := filepath.Join(base, "config", "ajai")
-	if err := os.MkdirAll(config, 0o755); err != nil { // as an install from before left it
+func TestAFileWhereADirectoryShouldBeIsAnError(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "logs")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data := filepath.Join(base, "share", "ajai")
-	p := Paths{ConfigFile: filepath.Join(config, "config.yaml"), DataDir: data, LogDir: filepath.Join(data, "logs"),
-		ScreenshotDir: filepath.Join(data, "screenshots"), ResumeDir: filepath.Join(data, "resumes"), ownConfigDir: true}
-	if err := p.EnsureDataDirs(); err != nil {
-		t.Fatal(err)
+	if err := EnsurePrivateDir(file); err == nil {
+		t.Error("a file passed for a directory")
 	}
-	if m := mode(t, config); m != PrivateDirMode {
-		t.Errorf("ajai's config directory is %o", m)
+	if m := mode(t, file); m != 0o644 {
+		t.Errorf("the file's mode was changed to %o", m)
 	}
 }

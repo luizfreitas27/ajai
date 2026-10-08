@@ -388,10 +388,11 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, paths.PrivateFileMode)
 	if err != nil {
 		return err
 	}
+	_ = out.Chmod(paths.PrivateFileMode) // also over a resume copied before
 	if _, err := io.Copy(out, in); err != nil {
 		_ = out.Close()
 		return err
