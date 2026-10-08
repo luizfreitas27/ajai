@@ -380,7 +380,7 @@ func copyResume(src string, cfg *config.Config, p paths.Paths, rep *Report) {
 }
 
 func copyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := paths.EnsurePrivateDir(filepath.Dir(dst)); err != nil {
 		return err
 	}
 	in, err := os.Open(src)
@@ -388,7 +388,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

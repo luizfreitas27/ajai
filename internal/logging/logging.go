@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 // FileName is the log file for a given day.
@@ -45,7 +47,7 @@ func ParseLevel(text string) slog.Level {
 // caller closes the returned io.Closer. extra, when non-nil, also receives the
 // lines (tests).
 func Open(dir string, level slog.Level, extra io.Writer) (*slog.Logger, io.Closer, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := paths.EnsurePrivateDir(dir); err != nil {
 		return nil, nil, fmt.Errorf("log directory: %w", err)
 	}
 	f, err := os.OpenFile(FileName(dir, time.Now()), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -68,7 +70,7 @@ var Discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 // day's file holds that day.
 func OpenDaily(dir string, name FileNamer, level slog.Level) (*slog.Logger, io.Closer, error) {
 	d := &dailyFile{dir: dir, name: name, now: time.Now}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := paths.EnsurePrivateDir(dir); err != nil {
 		return nil, nil, fmt.Errorf("log directory: %w", err)
 	}
 	if _, err := d.file(); err != nil {

@@ -265,3 +265,23 @@ func TestJobsAreFoundByTextAndPaged(t *testing.T) {
 		t.Errorf("offset alone: %s", got)
 	}
 }
+
+func TestTheDatabaseIsTheUsersAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "ajai.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	_ = os.Chmod(path, 0o644) // a database from before
+	_ = os.Chmod(filepath.Dir(path), 0o755)
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for file, want := range map[string]os.FileMode{path: 0o600, filepath.Dir(path): 0o700} {
+		if info, err := os.Stat(file); err != nil || info.Mode().Perm() != want {
+			t.Errorf("%s: %v %v, want %o", file, info.Mode().Perm(), err, want)
+		}
+	}
+}

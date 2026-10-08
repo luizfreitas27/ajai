@@ -87,7 +87,7 @@ func Write(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, data, 0o755)
+	return writeFileAtomic(path, data, 0o700)
 }
 
 // writeFileAtomic replaces the file at path with data, readable only by its

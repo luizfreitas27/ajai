@@ -137,8 +137,8 @@ func TestImportMapsTheConfigAndNeverCopiesSecrets(t *testing.T) {
 	if rep.ResumeCopied != filepath.Join(p.ResumeDir, "resume.pdf") {
 		t.Errorf("resume copied to %q", rep.ResumeCopied)
 	}
-	if _, err := os.Stat(rep.ResumeCopied); err != nil {
-		t.Error("resume file not copied")
+	if info, err := os.Stat(rep.ResumeCopied); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("resume file not copied, or not the user's alone: %v", err)
 	}
 }
 

@@ -6,6 +6,14 @@ no such section the notes are the commit list.
 
 ## Unreleased
 
+### Fixed
+
+- ajai's files are now readable only by you. The config and data directories (with the
+  logs, screenshots and resumes) are created 0700, and the database and an imported resume
+  0600. They used to be 0755 and 0644, so other users on the machine could read your job
+  history, answer memory and resume. An existing install is tightened the next time ajai
+  starts. A directory you point `--config` into is left as it is.
+
 ### Docs
 
 - The README opens with the flame logo, badges and screenshots of the TUI, says step by step

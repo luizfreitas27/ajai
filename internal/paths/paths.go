@@ -27,6 +27,9 @@ type Paths struct {
 	ResumeDir     string
 	// ChromeProfileDir is the ajai profile, used when settings.chrome_profile_dir is blank.
 	ChromeProfileDir string
+	// ownConfigDir: the config file's directory is ajai's own (not one --config
+	// points into), so ajai narrows it to PrivateDirMode.
+	ownConfigDir bool
 }
 
 // HomeEnv is the variable that puts every file under one directory.
@@ -50,8 +53,10 @@ func Resolve(configFlag string, getenv Getenv) Paths {
 		p.ConfigFile = filepath.Join(xdg.ConfigHome, name, "config.yaml")
 		p.DataDir = filepath.Join(xdg.DataHome, name)
 	}
+	p.ownConfigDir = true
 	if configFlag != "" {
 		p.ConfigFile = configFlag
+		p.ownConfigDir = false
 	}
 	p.EnvFile = filepath.Join(filepath.Dir(p.ConfigFile), ".env")
 	p.DBFile = filepath.Join(p.DataDir, name+".db")
@@ -78,11 +83,46 @@ func (p Paths) ChromeProfile(setting string) Profile {
 	return Profile{Dir: setting, Own: filepath.Clean(setting) == filepath.Clean(p.ChromeProfileDir)}
 }
 
-// EnsureDataDirs creates the data directories if they are missing.
+// PrivateDirMode is the mode of every directory ajai owns: what is in them
+// (the history, answers, resumes, logs, config) is the user's alone.
+const PrivateDirMode os.FileMode = 0o700
+
+// EnsurePrivateDir creates dir when missing (its parents as usual, 0755) and
+// narrows it to PrivateDirMode when it is wider.
+func EnsurePrivateDir(dir string) error {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, PrivateDirMode); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return narrow(dir)
+}
+
+// narrow sets dir to PrivateDirMode if it grants anyone else anything.
+func narrow(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm()&^PrivateDirMode != 0 {
+		return os.Chmod(dir, PrivateDirMode)
+	}
+	return nil
+}
+
+// EnsureDataDirs creates the data directories if they are missing, and narrows
+// them, and the config directory when it is ajai's own and exists, to
+// PrivateDirMode: an install from before is tightened on its next start.
 func (p Paths) EnsureDataDirs() error {
 	for _, dir := range []string{p.DataDir, p.LogDir, p.ScreenshotDir, p.ResumeDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := EnsurePrivateDir(dir); err != nil {
 			return err
+		}
+	}
+	if dir := filepath.Dir(p.ConfigFile); p.ownConfigDir && p.ConfigFile != "" {
+		if _, err := os.Stat(dir); err == nil {
+			return narrow(dir)
 		}
 	}
 	return nil

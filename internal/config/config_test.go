@@ -211,6 +211,18 @@ func TestMarketNamesMatchTheOptionsTag(t *testing.T) {
 }
 
 // ------------------------------------------------------------ write / load round trip
+func TestTheConfigDirectoryIsCreatedTheUsersAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh", "config.yaml")
+	if err := Write(path, valid()); err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]os.FileMode{filepath.Dir(path): 0o700, path: 0o600} {
+		if info, err := os.Stat(file); err != nil || info.Mode().Perm() != want {
+			t.Errorf("%s: %v %v, want %o", file, info.Mode().Perm(), err, want)
+		}
+	}
+}
+
 func TestWrittenFileIsCommentedAndRoundTrips(t *testing.T) {
 	p := tmpPaths(t)
 	c := valid()

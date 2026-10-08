@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/luizfreitas27/ajai/internal/paths"
 	"modernc.org/sqlite" // the database/sql driver
 )
 
@@ -59,7 +60,7 @@ type Store struct {
 // migrations. One connection: SQLite serialises writers anyway and this keeps
 // a process's own goroutines from stepping on each other.
 func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := paths.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
@@ -71,6 +72,13 @@ func Open(path string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrating %s: %w", path, err)
+	}
+	// The history and the answer memory are the user's alone, like their directory.
+	for _, f := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(f, 0o600); err != nil && !os.IsNotExist(err) {
+			_ = db.Close()
+			return nil, err
+		}
 	}
 	return s, nil
 }

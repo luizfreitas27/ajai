@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,5 +67,77 @@ func TestTheChromeProfileIsTheAjaiProfileUnlessTheSettingNamesAnother(t *testing
 		if got := p.ChromeProfile(tc.setting); got.Dir != tc.dir || got.Own != tc.own {
 			t.Errorf("%q: %+v, want %q %v", tc.setting, got, tc.dir, tc.own)
 		}
+	}
+}
+
+// mode is a path's permission bits.
+func mode(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm()
+}
+
+func TestAjaisDirectoriesAreTheUsersAlone(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "ajai")
+	if err := os.MkdirAll(filepath.Join(home, "logs"), 0o755); err != nil { // an install from before: wide open
+		t.Fatal(err)
+	}
+	_ = os.Chmod(home, 0o755)
+	p := Resolve("", env(map[string]string{"AJAI_HOME": home}))
+	if err := p.EnsureDataDirs(); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{p.DataDir, p.LogDir, p.ScreenshotDir, p.ResumeDir} {
+		if m := mode(t, dir); m != PrivateDirMode {
+			t.Errorf("%s is %o, want %o", dir, m, PrivateDirMode)
+		}
+	}
+}
+
+func TestADirectoryConfigPointsIntoIsLeftAsItIs(t *testing.T) {
+	mine := filepath.Join(t.TempDir(), "dotfiles")
+	if err := os.MkdirAll(mine, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := Resolve(filepath.Join(mine, "ajai.yaml"), env(map[string]string{"AJAI_HOME": filepath.Join(t.TempDir(), "ajai")}))
+	if err := p.EnsureDataDirs(); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, mine); m != 0o755 {
+		t.Errorf("the --config directory was changed to %o", m)
+	}
+}
+
+func TestEnsurePrivateDirCreatesItPrivateAndItsParentsAsUsual(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "share")
+	dir := filepath.Join(parent, "ajai")
+	if err := EnsurePrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, dir); m != PrivateDirMode {
+		t.Errorf("dir %o", m)
+	}
+	if m := mode(t, parent); m&0o055 == 0 {
+		t.Errorf("a parent ajai does not own was made private: %o", m)
+	}
+}
+
+func TestAjaisOwnConfigDirectoryIsNarrowedToo(t *testing.T) {
+	base := t.TempDir()
+	config := filepath.Join(base, "config", "ajai")
+	if err := os.MkdirAll(config, 0o755); err != nil { // as an install from before left it
+		t.Fatal(err)
+	}
+	data := filepath.Join(base, "share", "ajai")
+	p := Paths{ConfigFile: filepath.Join(config, "config.yaml"), DataDir: data, LogDir: filepath.Join(data, "logs"),
+		ScreenshotDir: filepath.Join(data, "screenshots"), ResumeDir: filepath.Join(data, "resumes"), ownConfigDir: true}
+	if err := p.EnsureDataDirs(); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, config); m != PrivateDirMode {
+		t.Errorf("ajai's config directory is %o", m)
 	}
 }
