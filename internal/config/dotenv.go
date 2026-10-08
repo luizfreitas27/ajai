@@ -47,7 +47,7 @@ func SetDotenv(path, name, value string) error {
 	if len(out) > 0 {
 		text = strings.Join(out, "\n") + "\n"
 	}
-	return writeFileAtomic(path, []byte(text), 0o700)
+	return writeFileAtomic(path, []byte(text))
 }
 
 // dotenvName is the variable a .env line sets, or "", reading the line as

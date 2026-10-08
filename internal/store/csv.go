@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 // The Python bot's spreadsheets, column for column.
@@ -66,7 +68,7 @@ func JobFromFailedRow(row map[string]string) Job {
 
 // ExportCSV writes both spreadsheets into dir and returns how many rows each got.
 func (s *Store) ExportCSV(dir string) (applied, failed int, err error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := paths.CreateDir(dir); err != nil { // a directory the user chose: created private, never narrowed
 		return 0, 0, err
 	}
 	jobs, err := s.ListJobs(JobFilter{Outcomes: []Outcome{Applied, External}})
@@ -87,10 +89,11 @@ func (s *Store) ExportCSV(dir string) (applied, failed int, err error) {
 }
 
 func writeCSV(path string, header []string, jobs []Job, row func(Job) []string) (int, error) {
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, paths.PrivateFileMode)
 	if err != nil {
 		return 0, err
 	}
+	_ = f.Chmod(paths.PrivateFileMode) // the job history, also over a file from before
 	w := csv.NewWriter(f)
 	if err := w.Write(header); err != nil {
 		_ = f.Close()

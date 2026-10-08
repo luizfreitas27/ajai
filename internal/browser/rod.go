@@ -18,6 +18,7 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 
+	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/procs"
 )
 
@@ -250,10 +251,10 @@ func (p *rodPage) Screenshot(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := paths.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	return os.WriteFile(path, data, paths.PrivateFileMode)
 }
 
 func (p *rodPage) Press(key string) error {

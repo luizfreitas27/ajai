@@ -293,3 +293,23 @@ func TestConfigPathHonoursTheFlag(t *testing.T) {
 		t.Errorf("got %q", out)
 	}
 }
+
+func TestACommandThatLogsNarrowsTheDataDirectoriesFromBefore(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	shots := filepath.Join(h.home, "screenshots") // logging narrows its own directory; this one only EnsureDataDirs does
+	if err := os.MkdirAll(shots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chmod(shots, 0o755) // as an install from before left it
+	if code, _, errText := h.run("config", "set", "search.location", "Lisboa"); code != 0 {
+		t.Fatal(errText)
+	}
+	info, err := os.Stat(shots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("the screenshots directory is %o after ajai config set", info.Mode().Perm())
+	}
+}

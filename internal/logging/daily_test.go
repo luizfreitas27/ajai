@@ -41,3 +41,19 @@ func TestOpenDailyWritesJSONLines(t *testing.T) {
 		t.Errorf("%s", data)
 	}
 }
+
+func TestTheLogDirectoryIsTheUsersAlone(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "logs")
+	_, c, err := Open(dir, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("the log directory is %o", info.Mode().Perm())
+	}
+}

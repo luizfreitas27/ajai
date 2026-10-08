@@ -211,6 +211,37 @@ func TestMarketNamesMatchTheOptionsTag(t *testing.T) {
 }
 
 // ------------------------------------------------------------ write / load round trip
+func TestWritingIntoADirectoryOfTheUsersLeavesItsMode(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.Chmod(dir, 0o755) // where --config points: the user's
+	if err := Write(filepath.Join(dir, "ajai.yaml"), valid()); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Errorf("the user's directory was changed to %o", info.Mode().Perm())
+	}
+}
+
+func TestTheConfigDirectoryIsCreatedTheUsersAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh", "config.yaml")
+	if err := Write(path, valid()); err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]os.FileMode{filepath.Dir(path): 0o700, path: 0o600} {
+		info, err := os.Stat(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != want {
+			t.Errorf("%s: %o, want %o", file, info.Mode().Perm(), want)
+		}
+	}
+}
+
 func TestWrittenFileIsCommentedAndRoundTrips(t *testing.T) {
 	p := tmpPaths(t)
 	c := valid()

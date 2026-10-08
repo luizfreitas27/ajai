@@ -137,8 +137,12 @@ func TestImportMapsTheConfigAndNeverCopiesSecrets(t *testing.T) {
 	if rep.ResumeCopied != filepath.Join(p.ResumeDir, "resume.pdf") {
 		t.Errorf("resume copied to %q", rep.ResumeCopied)
 	}
-	if _, err := os.Stat(rep.ResumeCopied); err != nil {
-		t.Error("resume file not copied")
+	info, err := os.Stat(rep.ResumeCopied)
+	if err != nil {
+		t.Fatal("resume file not copied:", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("the copied resume is %o", info.Mode().Perm())
 	}
 }
 
@@ -263,5 +267,28 @@ func TestProviderMapping(t *testing.T) {
 		if p != tc.wantProv || u != tc.wantURL {
 			t.Errorf("(%q,%q) = %q,%q want %q,%q", tc.prov, tc.url, p, u, tc.wantProv, tc.wantURL)
 		}
+	}
+}
+
+func TestAResumeImportedAgainOverAnOlderCopyIsTheUsersAlone(t *testing.T) {
+	src := pythonCheckout(t)
+	p, st := setup(t)
+	if err := os.MkdirAll(p.ResumeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.ResumeDir, "resume.pdf"), []byte("old"), 0o644); err != nil { // copied before, wide open
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	rep, err := Run(src, &cfg, st, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(rep.ResumeCopied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("the resume imported again is %o", info.Mode().Perm())
 	}
 }

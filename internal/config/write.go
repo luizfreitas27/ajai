@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/luizfreitas27/ajai/internal/paths"
 )
 
 const fileHeader = `ajai configuration. Edit by hand or with "ajai config set <section.key> <value>".
@@ -87,15 +89,16 @@ func Write(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, data, 0o755)
+	return writeFileAtomic(path, data)
 }
 
 // writeFileAtomic replaces the file at path with data, readable only by its
-// owner, creating its directory (with dirPerm) when missing: written beside
-// it, then renamed over it, so a reader never sees half a file.
-func writeFileAtomic(path string, data []byte, dirPerm os.FileMode) error {
+// owner, creating its directory private when missing (an existing one, maybe
+// one --config points into, is left as it is): written beside it, then renamed
+// over it, so a reader never sees half a file.
+func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, dirPerm); err != nil {
+	if err := paths.CreateDir(dir); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp") // created 0600

@@ -265,3 +265,47 @@ func TestJobsAreFoundByTextAndPaged(t *testing.T) {
 		t.Errorf("offset alone: %s", got)
 	}
 }
+
+func TestTheDatabaseIsTheUsersAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "ajai.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	_ = os.Chmod(path, 0o644) // a database from before
+	_ = os.Chmod(filepath.Dir(path), 0o755)
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for file, want := range map[string]os.FileMode{path: 0o600, path + "-wal": 0o600, path + "-shm": 0o600, filepath.Dir(path): 0o700} {
+		info, err := os.Stat(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != want {
+			t.Errorf("%s: %o, want %o", file, info.Mode().Perm(), want)
+		}
+	}
+}
+
+func TestExportedSpreadsheetsAreTheUsersAloneInAFolderTheyChose(t *testing.T) {
+	s := open(t)
+	must(t, s.UpsertJob(Job{JobID: "1", Outcome: Applied, Title: "Dev", Company: "ACME"}))
+	dir := t.TempDir()
+	_ = os.Chmod(dir, 0o755)
+	must(t, os.WriteFile(filepath.Join(dir, AppliedCSVName), nil, 0o644)) // exported before
+	if _, _, err := s.ExportCSV(dir); err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]os.FileMode{dir: 0o755, filepath.Join(dir, AppliedCSVName): 0o600, filepath.Join(dir, FailedCSVName): 0o600} {
+		info, err := os.Stat(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != want {
+			t.Errorf("%s: %o, want %o", file, info.Mode().Perm(), want)
+		}
+	}
+}

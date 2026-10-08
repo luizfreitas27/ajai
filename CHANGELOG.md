@@ -6,6 +6,16 @@ no such section the notes are the commit list.
 
 ## Unreleased
 
+### Fixed
+
+- ajai's files are now readable only by you. They used to be 0755 and 0644, so other users
+  on the machine could read your job history, answer memory and resume.
+  - The config and data directories, with the logs, screenshots and resumes, are 0700.
+  - The database, an imported resume and exported spreadsheets are 0600.
+  - An existing install is tightened the next time ajai starts.
+  - A directory you chose is created private when missing, but never changed: `AJAI_HOME`
+    itself, the one `--config` points into, an export folder.
+
 ### Docs
 
 - The README opens with the flame logo, badges and screenshots of the TUI, says step by step

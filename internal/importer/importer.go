@@ -380,7 +380,7 @@ func copyResume(src string, cfg *config.Config, p paths.Paths, rep *Report) {
 }
 
 func copyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := paths.EnsurePrivateDir(filepath.Dir(dst)); err != nil {
 		return err
 	}
 	in, err := os.Open(src)
@@ -388,10 +388,11 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, paths.PrivateFileMode)
 	if err != nil {
 		return err
 	}
+	_ = out.Chmod(paths.PrivateFileMode) // also over a resume copied before
 	if _, err := io.Copy(out, in); err != nil {
 		_ = out.Close()
 		return err
