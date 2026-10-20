@@ -131,3 +131,7 @@ func FromDocument(xpath string) string { return strings.TrimPrefix(xpath, ".") }
 
 // OptionLabelXPath is the label of a radio option with this input id.
 func OptionLabelXPath(inputID string) string { return `.//label[@for="` + inputID + `"]` }
+
+// OptionWrapLabelXPath is the label wrapping the input with this id, for an option
+// whose label has no for attribute.
+func OptionWrapLabelXPath(inputID string) string { return `.//label[.//input[@id="` + inputID + `"]]` }

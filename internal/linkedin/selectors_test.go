@@ -139,7 +139,7 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 		HiddenTitleXPath, ResumeUploadInputXPath, TodayButtonXPath, NextButtonXPath, ReviewButtonXPath, SubmitButtonXPath,
 		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
 		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, InlineErrorXPath, FormProgressXPath, AppliedOnPageXPath, PaginationActiveXPath,
-		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
+		OptionLabelXPath("x"), OptionWrapLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
 		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath)}
 	for _, loc := range EasyApplyLocators {
 		all = append(all, loc.XPath)
