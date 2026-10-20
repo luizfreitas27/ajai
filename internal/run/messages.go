@@ -36,7 +36,7 @@ func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, runID int64)
 
 // Why a message did not go out, as the store records it.
 const (
-	reasonNoRecipient = "the hirer changed, or only InMail or Premium is offered"
+	reasonNoRecipient = "the hirer changed, or only Premium or a paid InMail is offered"
 	reasonBlocked     = "LinkedIn blocked the message (restriction or CAPTCHA)"
 )
 

@@ -111,7 +111,7 @@ _Avoid_: user info, context, persona
 ### Recruiter messages
 
 **Recruiter message**:
-A short message to a member of a job's hiring team, sent through LinkedIn's free **Message** button after a real Easy Apply application is submitted. The tool queues one from the market's template, and sends it only after the user approved its exact text. Never sent with InMail or Premium. Off by default (`messages.enabled`).
+A short message to a member of a job's hiring team, sent through LinkedIn's free **Message** button after a real Easy Apply application is submitted. The tool queues one from the market's template, and sends it only after the user approved its exact text. Free messages only (a connection's message, or LinkedIn's free message to an open profile), never Premium or paid InMail credits; the optional subject is left empty. Off by default (`messages.enabled`).
 _Avoid_: InMail, DM, cold message, follow-up
 
 **Message queue**:

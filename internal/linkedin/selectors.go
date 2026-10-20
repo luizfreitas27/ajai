@@ -112,6 +112,34 @@ const (
 	HirerNameXPath         = `(.//p)[1]`
 )
 
+// The messaging overlay the hirer's Message link opens in place (fixtures 08 and
+// 09). It lives in the open shadow root of MessageOutletXPath, out of reach of a
+// document-wide XPath: the absolute selectors below are evaluated from that
+// shadow root (browser.Element.ShadowElements), the relative ones inside the
+// compose bubble or the upsell.
+const (
+	MessageOutletXPath = `//div[@id="interop-outlet"]`
+	ComposeBubbleXPath = `//div[@role="dialog" and contains(@class,"msg-overlay-conversation-bubble--is-compose")]`
+	// ComposeRecipientXPath is the profile link of the member the compose is to.
+	ComposeRecipientXPath  = `.//a[contains(@class,"msg-compose__profile-link")]`
+	MessageBoxXPath        = `.//div[contains(@class,"msg-form__contenteditable") and @contenteditable="true" and @role="textbox"]`
+	MessageSendButtonXPath = `.//button[contains(@class,"msg-form__send-btn") and @type="submit"]`
+	// MessageSubjectXPath is the subject of an InMail; a connection's compose has none.
+	MessageSubjectXPath = `.//input[@name="subject"]`
+	// InMailCreditsXPath says what an InMail costs; FreeMessageText in it means it costs nothing.
+	InMailCreditsXPath = `.//section[contains(@class,"msg-inmail-credits-display")]`
+	FreeMessageText    = "Free message"
+	// BubbleCloseButtonXPath closes the bubble by its icon: the draft's button says
+	// "Close your draft conversation", a conversation's names the member.
+	BubbleCloseButtonXPath = `.//button[.//*[@data-test-icon="close-small"]]`
+	UpsellModalXPath       = `//div[@data-test-modal-id="modal-upsell"]`
+	UpsellDismissXPath     = `.//button[@aria-label="Dismiss" and @data-test-modal-close-btn]`
+	// SentMessageBodyXPath is a message in a conversation's list. Not in a capture
+	// yet (see testdata/fixtures/README.md): the send is confirmed by the box
+	// emptying as well.
+	SentMessageBodyXPath = `//*[contains(@class,"msg-s-event-listitem__body")]`
+)
+
 // PaginationClasses are tried in order to find the results pager.
 var PaginationClasses = []string{"jobs-search-pagination__pages", "artdeco-pagination__pages", "artdeco-pagination"}
 

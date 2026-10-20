@@ -23,10 +23,12 @@ these rules:
   through the hook that `launch.Plan.Open` wires, never on a dry run.
 - **Capped and paced.** At most `messages.max_per_day` sends per local day (default 3),
   with a jittered pause of `between_min_seconds` to `between_max_seconds` before each one.
-- **Free button only.** The tool clicks the free **Message** button. It never uses InMail
-  or Premium. Before sending, it reads the hiring team again. If the recipient differs,
-  the compose box asks for a subject, or it shows a Premium upsell, the message is
-  marked `no_recipient` and not sent.
+- **Free messages only.** The tool clicks the hirer's **Message** button and sends only
+  when the message is free: a connection's message, or LinkedIn's free message to an open
+  profile (the compose says "Free message"). It never uses Premium or paid InMail
+  credits. The optional subject is left empty. Before sending, it reads the hiring team
+  again. If the recipient differs, LinkedIn shows a Premium upsell, or the compose would
+  use an InMail credit, the message is marked `no_recipient` and not sent.
 - **Once per job and recipient.** A message is keyed by job ID and recipient profile URL,
   so the same person is never messaged twice for the same job.
 - **Mark before clicking.** A message is saved as `sending` before the send click. A
@@ -50,7 +52,7 @@ same person, the pattern most likely to get the account flagged.
   before it goes out.
 - **Approval per message only.** Rejected as the only path: a user with a long list needs
   one step to approve it. Kept as the default path; the list digest is the shortcut.
-- **InMail or Premium messages.** Rejected: they cost money, and InMail asks for a subject
-  line the tool would have to fill in on the user's behalf.
+- **Premium or paid InMail messages.** Rejected: they cost money. A free message to an
+  open profile is sent, with its optional subject left empty.
 - **Retry a `sending` message on the next run.** Rejected: a retry after an unknown result
   is the one path that can send the same message twice.

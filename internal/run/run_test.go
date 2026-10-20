@@ -30,20 +30,22 @@ type fakeCard struct {
 // nullElement satisfies browser.Element with no behaviour; the fake site never touches cards.
 type nullElement struct{}
 
-func (nullElement) Text() (string, error)                      { return "", nil }
-func (nullElement) Attr(string) (string, bool)                 { return "", false }
-func (nullElement) Property(string) (string, error)            { return "", nil }
-func (nullElement) Click() error                               { return nil }
-func (nullElement) ClickAtCentre() error                       { return nil }
-func (nullElement) Input(string) error                         { return nil }
-func (nullElement) Clear() error                               { return nil }
-func (nullElement) Focus() error                               { return nil }
-func (nullElement) ScrollIntoView() error                      { return nil }
-func (nullElement) Visible() bool                              { return true }
-func (nullElement) Element(string) (browser.Element, error)    { return nil, &browser.ErrNotFound{} }
-func (nullElement) Elements(string) ([]browser.Element, error) { return nil, nil }
-func (nullElement) SelectOption(string) error                  { return nil }
-func (nullElement) SetFiles([]string) error                    { return nil }
+func (nullElement) Text() (string, error)                            { return "", nil }
+func (nullElement) Attr(string) (string, bool)                       { return "", false }
+func (nullElement) Property(string) (string, error)                  { return "", nil }
+func (nullElement) Click() error                                     { return nil }
+func (nullElement) ClickAtCentre() error                             { return nil }
+func (nullElement) Input(string) error                               { return nil }
+func (nullElement) Clear() error                                     { return nil }
+func (nullElement) Focus() error                                     { return nil }
+func (nullElement) ScrollIntoView() error                            { return nil }
+func (nullElement) Visible() bool                                    { return true }
+func (nullElement) Element(string) (browser.Element, error)          { return nil, &browser.ErrNotFound{} }
+func (nullElement) Elements(string) ([]browser.Element, error)       { return nil, nil }
+func (nullElement) SelectOption(string) error                        { return nil }
+func (nullElement) SetFiles([]string) error                          { return nil }
+func (nullElement) ShadowElements(string) ([]browser.Element, error) { return nil, nil }
+func (nullElement) ScriptClick() error                               { return nil }
 
 type fakeJob struct {
 	card          linkedin.Card
