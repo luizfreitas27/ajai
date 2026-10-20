@@ -31,6 +31,12 @@ func TestRenderFillsThePlaceholdersAndTidiesAMissingName(t *testing.T) {
 		{"surrounding blanks trimmed", "  Hi {title}  ", Recipient{}, "Hi Dev Python"},
 		{"a blank template renders nothing", "   ", Recipient{Name: "Ana"}, ""},
 		{"a template's own leading comma is kept without a name", ", hello {title}", Recipient{}, ", hello Dev Python"},
+		{"the name's casing is rewritten", "Hi {first_name}!", Recipient{Name: "aDRIana santos"}, "Hi Adriana!"},
+		{"an accented upper-case name", "Hi {first_name}!", Recipient{Name: "JOSÉ silva"}, "Hi José!"},
+		{"a lower-case name", "Hi {first_name}!", Recipient{Name: "stina"}, "Hi Stina!"},
+		{"each hyphen part capitalised", "Hi {first_name}!", Recipient{Name: "Ana-Maria Souza"}, "Hi Ana-Maria!"},
+		{"an accented initial", "Hi {first_name}!", Recipient{Name: "élodie"}, "Hi Élodie!"},
+		{"an apostrophe is not a word break", "Hi {first_name}!", Recipient{Name: "o'neil"}, "Hi O'neil!"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Render(tc.template, tc.r, job); got != tc.want {

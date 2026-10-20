@@ -535,7 +535,7 @@ the active market's `message_template` (`markets.brasil` or `markets.internacion
 before the language templates existed. A language template left blank also falls back to the
 market's. Every template can use three placeholders:
 
-- `{first_name}`: the hirer's first name. With no name, the greeting goes without it.
+- `{first_name}`: the hirer's first name, written with a capital first letter and the rest in lower case, whatever casing the profile uses. With no name, the greeting goes without it.
 - `{title}`: the job's title.
 - `{company}`: the company.
 

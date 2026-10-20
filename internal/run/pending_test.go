@@ -45,7 +45,7 @@ func TestSendPendingSendsTheApprovedMessagesFirstThenBackfillsAFreeHirer(t *test
 	if len(site.sends) != 1 || site.sends[0].jobID != "1" {
 		t.Errorf("sends %+v, want the approved message on its job page", site.sends)
 	}
-	if len(site.here) != 1 || site.here[0].opened != "2" || site.here[0].text != "Hi bia, I applied for Go Developer at Acme." {
+	if len(site.here) != 1 || site.here[0].opened != "2" || site.here[0].text != "Hi Bia, I applied for Go Developer at Acme." {
 		t.Errorf("sends here %+v, want the backfill on job 2's page", site.here)
 	}
 	if len(*pauses) != 2 {
