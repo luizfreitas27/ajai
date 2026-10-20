@@ -22,6 +22,10 @@ no such section the notes are the commit list.
   - That error now names what is drawn over the card (tag, id, class, role, aria-label,
     into LinkedIn's messaging overlay's shadow root) and saves a screenshot.
   - Two cards in a row covered end the run, instead of waiting 10 s on every card left.
+- ajai recognises LinkedIn's new daily limit notice ("We limit daily submissions … apply
+  tomorrow."), shown under a disabled Easy Apply button. The run used to go on and record
+  every job left as failed at "clicking the apply button"; it now ends at the daily limit,
+  as with the old notice, and records nothing for the job, so the next run tries it again.
 
 ### Docs
 
