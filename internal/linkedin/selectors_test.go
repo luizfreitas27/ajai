@@ -280,6 +280,16 @@ func TestHiringTeamSelectorsOnAnEmptySlot(t *testing.T) {
 	}
 }
 
+// HirerInSectionXPath is what the job page waits for: the slot is drawn empty
+// first (10) and filled later (07, and the search pane's 11).
+func TestHirerInSectionMatchesOnlyAFilledHiringTeam(t *testing.T) {
+	for name, filled := range map[string]bool{"07_hiring_team.html": true, "11_search_pane_hiring_team.html": true, "10_no_hiring_team.html": false} {
+		if n := count(t, fixture(t, name), HirerInSectionXPath); (n > 0) != filled {
+			t.Errorf("%s: %d hirer links in the hiring team, want them: %v", name, n, filled)
+		}
+	}
+}
+
 // A hirer card never climbs out of the hiring team section. Here the only hirer
 // has no Message control in its section, but a send-privately button sits
 // elsewhere in the pane: that button must not be paired with the hirer.

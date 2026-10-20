@@ -63,7 +63,9 @@ func TestSendPendingSendsTheApprovedMessagesFirstThenBackfillsAFreeHirer(t *test
 	}
 }
 
-func TestSendPendingSkipsARecruiterAlreadyMessagedAndRecordsAJobWithNoFreeHirer(t *testing.T) {
+// A job page with no hirer is "no hirer", not "no free message" (that is a
+// compose that would cost a credit), and every backfill job is read in order.
+func TestSendPendingSkipsARecruiterAlreadyMessagedAndRecordsAJobWithNoHirer(t *testing.T) {
 	site := liveSite()
 	site.hirers = map[string]hirer{"2": {to: ana, ok: true}, "3": {ok: false}}
 	r, st, _ := runner(t, site, messagesCfg())
@@ -76,8 +78,15 @@ func TestSendPendingSkipsARecruiterAlreadyMessagedAndRecordsAJobWithNoFreeHirer(
 	for _, l := range lines {
 		got[l] = true
 	}
-	if !got["2 "+LineMessaged] || !got["3 "+LineNoFree] || len(lines) != 2 {
+	if !got["2 "+LineMessaged] || !got["3 "+LineNoHirer] || len(lines) != 2 {
 		t.Fatalf("lines %v", lines)
+	}
+	var order []string // the jobs as reported, one line each
+	for _, l := range lines {
+		order = append(order, l[:1])
+	}
+	if fmt.Sprint(site.visited) != fmt.Sprint(order) {
+		t.Errorf("visited %v, want every job read once, in the order reported %v", site.visited, order)
 	}
 	if len(site.sends)+len(site.here) != 0 {
 		t.Errorf("sent %+v %+v", site.sends, site.here)

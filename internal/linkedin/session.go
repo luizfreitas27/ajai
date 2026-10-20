@@ -573,11 +573,11 @@ const (
 // HiringTeam reads the hiring team of the job shown, on its job page or in the
 // search page's details pane: the first hirer whose card holds both a profile
 // link and a free Message control (HirerCardXPath). It waits up to
-// hiringTeamWait for the section, which the pane may draw after the job, and
-// clicks nothing. ok is false, with no error, when the section is missing or
-// empty or no card has a Message control.
+// hiringTeamWait for a hirer in the section, which the pane may draw (or fill)
+// after the job, and clicks nothing. ok is false, with no error, when the
+// section is missing or empty or no card has a Message control.
 func (s *Session) HiringTeam(ctx context.Context) (messages.Recipient, bool, error) {
-	_, _ = s.Page.WaitElement(ctx, HiringTeamSectionXPath, hiringTeamWait) // a missing section is read below
+	_, _ = s.Page.WaitElement(ctx, HirerInSectionXPath, hiringTeamWait) // a missing hirer is read below
 	if ctx.Err() != nil {
 		return messages.Recipient{}, false, ctx.Err()
 	}
@@ -639,7 +639,9 @@ func NormaliseProfileURL(href string) (string, bool) {
 
 // The bounds of HiringTeam's and SendMessage's waits; vars so the tests can shorten them.
 var (
-	hiringTeamWait = 3 * time.Second
+	// LinkedIn fills the hiring team after the rest of the job, below the
+	// description; 3 s missed it on live job pages.
+	hiringTeamWait = 8 * time.Second
 	composeWait    = 20 * time.Second
 	sentWait       = 20 * time.Second
 )
@@ -673,8 +675,10 @@ func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID,
 // account or asks for a CAPTCHA, so nothing more is sent.
 var ErrBlocked = errors.New("LinkedIn showed a checkpoint page")
 
-// openJobPage opens the job page of jobID and waits for its hiring team, which
-// may be missing. blocked is true on a checkpoint page.
+// openJobPage opens the job page of jobID and waits for a hirer in its hiring
+// team, which may be missing or stay empty. The slot is drawn empty first and
+// filled later, so it is scrolled to (the fill may wait for it) and the wait
+// is for a hirer link, not the slot. blocked is true on a checkpoint page.
 func (s *Session) openJobPage(ctx context.Context, jobID string) (blocked bool, err error) {
 	base := s.jobBase
 	if base == "" {
@@ -686,10 +690,19 @@ func (s *Session) openJobPage(ctx context.Context, jobID string) (blocked bool, 
 	if s.blocked() {
 		return true, nil
 	}
-	if _, err := s.Page.WaitElement(ctx, HiringTeamSectionXPath, 15*time.Second); ctx.Err() != nil {
+	section, err := s.Page.WaitElement(ctx, HiringTeamSectionXPath, 15*time.Second)
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if err != nil {
+		s.Logger.Info("no hiring team on the job page", "job", jobID)
+		return false, nil
+	}
+	_ = section.ScrollIntoView()
+	if _, err := s.Page.WaitElement(ctx, HirerInSectionXPath, hiringTeamWait); ctx.Err() != nil {
 		return false, ctx.Err()
 	} else if err != nil {
-		s.Logger.Info("no hiring team on the job page", "job", jobID)
+		s.Logger.Info("empty hiring team on the job page", "job", jobID)
 	}
 	return false, nil
 }

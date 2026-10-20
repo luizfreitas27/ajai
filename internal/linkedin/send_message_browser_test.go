@@ -96,23 +96,32 @@ func messagePage(t *testing.T, overlayFixture, mode string, blocked bool, replac
 // overlayPage is messagePage over pageFixture, with nextCard listed above it.
 func overlayPage(t *testing.T, pageFixture, overlayFixture, mode string, blocked bool, replace ...string) *Session {
 	t.Helper()
+	return overlayHTML(t, readFixture(t, pageFixture), overlayFixture, mode, blocked, replace...)
+}
+
+// readFixture is the captured page name.
+func readFixture(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "fixtures", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// overlayHTML is overlayPage over the page body html.
+func overlayHTML(t *testing.T, html, overlayFixture, mode string, blocked bool, replace ...string) *Session {
+	t.Helper()
 	bin, err := chrome.Find("")
 	if err != nil {
 		t.Skip("no Chrome on this machine:", err)
 	}
-	read := func(name string) string {
-		b, err := os.ReadFile(filepath.Join("testdata", "fixtures", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
-	}
-	overlay := read(overlayFixture)
+	overlay := readFixture(t, overlayFixture)
 	for i := 0; i+1 < len(replace); i += 2 {
 		overlay = strings.ReplaceAll(overlay, replace[i], replace[i+1])
 	}
 	script := strings.NewReplacer("OVERLAY", overlay, "SENDMODE", mode).Replace(overlayScript)
-	page := "<html><body>" + nextCard + read(pageFixture) + script + "</body></html>"
+	page := "<html><body>" + nextCard + html + script + "</body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if blocked && strings.HasPrefix(r.URL.Path, "/jobs/view/") {
 			http.Redirect(w, r, "/checkpoint/challenge/", http.StatusFound)
@@ -276,5 +285,46 @@ func TestSendMessageWithoutConfirmation(t *testing.T) {
 	}
 	if n := recorded(t, s, "sends"); n != "1" {
 		t.Errorf("send clicked %q times, want 1", n)
+	}
+}
+
+// lateTeam is fixture 10, whose hiring team slot the job page draws empty,
+// filled with fixture 07's hirer 1.5 s after the page loads, as LinkedIn fills
+// it below the description.
+func lateTeam(t *testing.T) string {
+	t.Helper()
+	return readFixture(t, "10_no_hiring_team.html") +
+		`<template id="late-team">` + readFixture(t, "07_hiring_team.html") + `</template>
+<script>setTimeout(() => {
+  document.querySelector('[id^="JobDetailsPeopleWhoCanHelpSlot_"]').innerHTML =
+    document.getElementById("late-team").content.firstElementChild.innerHTML;
+}, 1500);</script>`
+}
+
+// TestJobPageWaitsForTheHirerNotTheEmptySlot reads and messages a hirer that
+// LinkedIn draws into the slot after the slot itself.
+func TestJobPageWaitsForTheHirerNotTheEmptySlot(t *testing.T) {
+	s := overlayHTML(t, lateTeam(t), "08_message_overlay.html", "", false)
+	got, ok, err := s.JobHiringTeam(context.Background(), "4100000002")
+	if err != nil || !ok || got != ana {
+		t.Errorf("JobHiringTeam = %+v, %v, %v; want %+v", got, ok, err, ana)
+	}
+	sent, err := s.SendMessage(context.Background(), ana, "4100000002", note)
+	if err != nil || sent != SendSent {
+		t.Errorf("SendMessage = %q, %v; want sent", sent, err)
+	}
+}
+
+// TestJobPageWithAnEmptyHiringTeam finds no hirer, with no error, once
+// hiringTeamWait has passed.
+func TestJobPageWithAnEmptyHiringTeam(t *testing.T) {
+	s := overlayPage(t, "10_no_hiring_team.html", "08_message_overlay.html", "", false)
+	start := time.Now()
+	got, ok, err := s.JobHiringTeam(context.Background(), "4100000002")
+	if err != nil || ok || got != (messages.Recipient{}) {
+		t.Errorf("JobHiringTeam = %+v, %v, %v; want no hirer and no error", got, ok, err)
+	}
+	if took := time.Since(start); took > hiringTeamWait+5*time.Second {
+		t.Errorf("took %v, want about hiringTeamWait (%v)", took, hiringTeamWait)
 	}
 }

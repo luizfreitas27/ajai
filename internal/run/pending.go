@@ -22,7 +22,8 @@ type PendingOptions struct {
 const (
 	LineSent      = "sent"
 	LineWouldSend = "would send"
-	LineNoFree    = "no free message"
+	LineNoFree    = "no free message" // the compose offered only Premium or a paid InMail
+	LineNoHirer   = "no hirer"        // the job page shows no hirer to message
 	LineMessaged  = "already messaged"
 	LineCap       = "cap reached"
 	LineFailed    = "failed"
@@ -181,7 +182,7 @@ func (r *Runner) SendPending(ctx context.Context, opts PendingOptions, report fu
 			continue
 		}
 		m := store.Message{JobID: j.JobID, State: store.MessageNoRecipient, Error: reasonNoRecipient}
-		outcome, detail := LineNoFree, ""
+		outcome, detail := LineNoHirer, ""
 		if ok && to.URL != "" { // a hirer without a profile URL cannot be keyed
 			m.RecipientName, m.RecipientURL, detail = to.Name, to.URL, to.Name+" "+to.URL
 			messaged, err := r.Store.HasMessaged(to.URL, 0)

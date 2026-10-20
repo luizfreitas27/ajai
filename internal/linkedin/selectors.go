@@ -118,6 +118,11 @@ const (
 	HirerNameXPath         = `(.//a[starts-with(@href,"https://www.linkedin.com/in/")]//p | .//a[starts-with(@href,"https://www.linkedin.com/in/")]//strong)[1]`
 )
 
+// HirerInSectionXPath is a hirer's profile link inside the hiring team, which
+// is what to wait for: the job page draws the slot before LinkedIn fills it,
+// and leaves it empty on a job without a hiring team (fixture 10).
+const HirerInSectionXPath = "(" + HiringTeamSectionXPath + `)//a[starts-with(@href,"https://www.linkedin.com/in/")]`
+
 // The messaging overlay the hirer's Message link opens in place (fixtures 08 and
 // 09). It lives in the open shadow root of MessageOutletXPath, out of reach of a
 // document-wide XPath: the absolute selectors below are evaluated from that
