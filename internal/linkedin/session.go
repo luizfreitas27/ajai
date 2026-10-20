@@ -540,12 +540,59 @@ const (
 	SendBlocked     SendResult = "blocked"      // a restriction or CAPTCHA: stop sending
 )
 
-// HiringTeam reads the job page's hiring team: the hirer a free Message button
-// is offered for, ok false when there is none.
-//
-// Not implemented until the hiring-team fixtures are captured (see testdata/fixtures/README.md).
+// HiringTeam reads the job page's hiring team: the first hirer whose card holds
+// both a profile link and a free Message control (HirerCardXPath). It clicks
+// nothing. ok is false, with no error, when the section is missing or empty or
+// no card has a Message control.
 func (s *Session) HiringTeam(ctx context.Context) (messages.Recipient, bool, error) {
+	section, err := s.Page.Element(HiringTeamSectionXPath)
+	var missing *browser.ErrNotFound
+	if errors.As(err, &missing) {
+		return messages.Recipient{}, false, nil
+	}
+	if err != nil {
+		return messages.Recipient{}, false, err
+	}
+	cards, err := section.Elements(HirerCardXPath)
+	if err != nil {
+		return messages.Recipient{}, false, err
+	}
+	for _, card := range cards {
+		link, err := card.Element(HirerProfileLinkXPath)
+		if err != nil {
+			return messages.Recipient{}, false, err
+		}
+		href, _ := link.Attr("href")
+		profile, ok := NormaliseProfileURL(href)
+		if !ok {
+			continue
+		}
+		var name string
+		if el, err := link.Element(HirerNameXPath); err == nil {
+			name, _ = el.Text()
+		}
+		return messages.Recipient{Name: strings.TrimSpace(name), URL: profile}, true, nil
+	}
 	return messages.Recipient{}, false, nil
+}
+
+// NormaliseProfileURL returns the canonical profile URL of a LinkedIn member
+// link, "https://www.linkedin.com/in/<slug>", for an absolute or relative /in/
+// href. The query, the fragment and a trailing slash go. ok is false for
+// anything that is not a member profile on www.linkedin.com over https.
+func NormaliseProfileURL(href string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return "", false
+	}
+	if (u.Scheme != "" && u.Scheme != "https") || (u.Host != "" && u.Host != "www.linkedin.com") {
+		return "", false
+	}
+	slug, ok := strings.CutPrefix(strings.TrimSuffix(u.Path, "/"), "/in/")
+	if !ok || slug == "" || strings.Contains(slug, "/") {
+		return "", false
+	}
+	return "https://www.linkedin.com/in/" + slug, true
 }
 
 // SendMessage sends text to the hirer of the job jobID.

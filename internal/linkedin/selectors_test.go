@@ -214,3 +214,40 @@ func TestModalAndFormAnchors(t *testing.T) {
 		t.Error("the dead form class came back")
 	}
 }
+
+// ------------------------------------------------------------ hiring team (07, 10)
+func TestHiringTeamSelectorsMatchTheCapturedSection(t *testing.T) {
+	team := fixture(t, "07_hiring_team.html")
+	if count(t, team, HiringTeamSectionXPath) != 1 {
+		t.Fatal("the 'People you can reach out to' section is not found")
+	}
+	section := one(t, team, HiringTeamSectionXPath)
+	link := one(t, section, HirerProfileLinkXPath)
+	if htmlquery.SelectAttr(link, "href") != "https://www.linkedin.com/in/ana-ribeiro-fictional/" {
+		t.Errorf("hirer profile href %q", htmlquery.SelectAttr(link, "href"))
+	}
+	if text(one(t, link, HirerNameXPath)) != "Ana Ribeiro" {
+		t.Errorf("hirer name %q", text(one(t, link, HirerNameXPath)))
+	}
+	msg := one(t, section, HirerMessageXPath)
+	if htmlquery.SelectAttr(msg, "aria-label") != "Message" || !strings.HasPrefix(htmlquery.SelectAttr(msg, "href"), "/messaging/compose/") {
+		t.Error("the free Message control")
+	}
+	card := one(t, section, HirerCardXPath)
+	if count(t, card, HirerProfileLinkXPath) != 1 || count(t, card, HirerMessageXPath) != 1 {
+		t.Error("the card does not hold the hirer's profile and its Message control together")
+	}
+}
+
+func TestHiringTeamSelectorsOnAnEmptySlot(t *testing.T) {
+	team := fixture(t, "10_no_hiring_team.html")
+	if count(t, team, HiringTeamSectionXPath) != 1 {
+		t.Fatal("the empty section is not found")
+	}
+	section := one(t, team, HiringTeamSectionXPath)
+	for _, xp := range []string{HirerProfileLinkXPath, HirerMessageXPath, HirerCardXPath} {
+		if count(t, section, xp) != 0 {
+			t.Errorf("%s matches an empty hiring team", xp)
+		}
+	}
+}

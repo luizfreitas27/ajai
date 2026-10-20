@@ -100,6 +100,18 @@ const (
 	DailyLimitPhrase      = "exceeded the daily application limit"
 )
 
+// The job page's hiring team ("Meet the hiring team"), captured in fixtures 07 and 10.
+// HirerCardXPath, within the section, is the nearest element holding a Message
+// control and exactly one hirer profile, so a profile is never paired with another
+// hirer's button. HirerNameXPath is applied inside the profile link.
+const (
+	HiringTeamSectionXPath = `//div[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_")]`
+	HirerProfileLinkXPath  = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]`
+	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")]`
+	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")]][count(.//a[starts-with(@href,"https://www.linkedin.com/in/")])=1][1]`
+	HirerNameXPath         = `(.//p)[1]`
+)
+
 // PaginationClasses are tried in order to find the results pager.
 var PaginationClasses = []string{"jobs-search-pagination__pages", "artdeco-pagination__pages", "artdeco-pagination"}
 
