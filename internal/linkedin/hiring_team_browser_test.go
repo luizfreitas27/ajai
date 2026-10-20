@@ -72,12 +72,42 @@ func TestHiringTeamReadsTheHirerWithAFreeMessageButton(t *testing.T) {
 	}
 }
 
+// TestHiringTeamReadsTheSearchPane reads the hirer from the search page's
+// details pane, which ajai is on right after an application.
+func TestHiringTeamReadsTheSearchPane(t *testing.T) {
+	s := hiringTeamPage(t, "11_search_pane_hiring_team.html")
+	got, ok, err := s.HiringTeam(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != (messages.Recipient{Name: "Bruno Tavares", URL: "https://www.linkedin.com/in/bruno-tavares-fictional"}) {
+		t.Errorf("HiringTeam = %+v, %v", got, ok)
+	}
+}
+
+// TestHiringTeamSkipsAHirerWithoutAMessageButton never pairs a hirer with the
+// next hirer's button: the first hirer with a button of their own is read.
+func TestHiringTeamSkipsAHirerWithoutAMessageButton(t *testing.T) {
+	card := `<div class="display-flex align-items-center mt4">`
+	s := hiringTeamPage(t, "11_search_pane_hiring_team.html", card, card+
+		`<a href="https://www.linkedin.com/in/carla-mendes-fictional"><strong>Carla Mendes</strong></a></div>`+card)
+	got, ok, err := s.HiringTeam(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != (messages.Recipient{Name: "Bruno Tavares", URL: "https://www.linkedin.com/in/bruno-tavares-fictional"}) {
+		t.Errorf("HiringTeam = %+v, %v", got, ok)
+	}
+}
+
 // TestHiringTeamWithoutAMessageButtonOrWithoutAHirer finds no recipient.
 func TestHiringTeamWithoutAMessageButtonOrWithoutAHirer(t *testing.T) {
 	for name, s := range map[string]*Session{
 		"an empty hiring team slot": hiringTeamPage(t, "10_no_hiring_team.html"),
 		"a hirer with no Message control": hiringTeamPage(t, "07_hiring_team.html",
 			`aria-label="Message"`, `aria-label="Connect"`),
+		"a search pane hirer with no Message button": hiringTeamPage(t, "11_search_pane_hiring_team.html",
+			`data-test-icon="send-privately-small"`, `data-test-icon="connect-small"`),
 	} {
 		got, ok, err := s.HiringTeam(context.Background())
 		if err != nil || ok || got != (messages.Recipient{}) {

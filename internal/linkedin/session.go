@@ -570,11 +570,17 @@ const (
 	SendBlocked     SendResult = "blocked"      // a restriction or CAPTCHA: stop sending
 )
 
-// HiringTeam reads the job page's hiring team: the first hirer whose card holds
-// both a profile link and a free Message control (HirerCardXPath). It clicks
-// nothing. ok is false, with no error, when the section is missing or empty or
-// no card has a Message control.
+// HiringTeam reads the hiring team of the job shown, on its job page or in the
+// search page's details pane: the first hirer whose card holds both a profile
+// link and a free Message control (HirerCardXPath). It waits up to
+// hiringTeamWait for the section, which the pane may draw after the job, and
+// clicks nothing. ok is false, with no error, when the section is missing or
+// empty or no card has a Message control.
 func (s *Session) HiringTeam(ctx context.Context) (messages.Recipient, bool, error) {
+	_, _ = s.Page.WaitElement(ctx, HiringTeamSectionXPath, hiringTeamWait) // a missing section is read below
+	if ctx.Err() != nil {
+		return messages.Recipient{}, false, ctx.Err()
+	}
 	to, _, ok, err := s.hirer()
 	return to, ok, err
 }
@@ -604,7 +610,7 @@ func (s *Session) hirer() (messages.Recipient, browser.Element, bool, error) {
 			continue
 		}
 		var name string
-		if el, err := link.Element(HirerNameXPath); err == nil {
+		if el, err := card.Element(HirerNameXPath); err == nil {
 			name, _ = el.Text()
 		}
 		return messages.Recipient{Name: strings.TrimSpace(name), URL: profile}, card, true, nil
@@ -631,10 +637,11 @@ func NormaliseProfileURL(href string) (string, bool) {
 	return "https://www.linkedin.com/in/" + slug, true
 }
 
-// The bounds of SendMessage's waits; vars so the tests can shorten them.
+// The bounds of HiringTeam's and SendMessage's waits; vars so the tests can shorten them.
 var (
-	composeWait = 20 * time.Second
-	sentWait    = 20 * time.Second
+	hiringTeamWait = 3 * time.Second
+	composeWait    = 20 * time.Second
+	sentWait       = 20 * time.Second
 )
 
 // SendMessage sends text to the hirer of the job jobID, only for free: a

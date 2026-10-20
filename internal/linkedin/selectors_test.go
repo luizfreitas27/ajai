@@ -217,7 +217,7 @@ func TestModalAndFormAnchors(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------ hiring team (07, 10)
+// ------------------------------------------------------------ hiring team (07, 10, 11)
 func TestHiringTeamSelectorsMatchTheCapturedSection(t *testing.T) {
 	team := fixture(t, "07_hiring_team.html")
 	if count(t, team, HiringTeamSectionXPath) != 1 {
@@ -228,9 +228,6 @@ func TestHiringTeamSelectorsMatchTheCapturedSection(t *testing.T) {
 	if htmlquery.SelectAttr(link, "href") != "https://www.linkedin.com/in/ana-ribeiro-fictional/" {
 		t.Errorf("hirer profile href %q", htmlquery.SelectAttr(link, "href"))
 	}
-	if text(one(t, link, HirerNameXPath)) != "Ana Ribeiro" {
-		t.Errorf("hirer name %q", text(one(t, link, HirerNameXPath)))
-	}
 	msg := one(t, section, HirerMessageXPath)
 	if htmlquery.SelectAttr(msg, "aria-label") != "Message" || !strings.HasPrefix(htmlquery.SelectAttr(msg, "href"), "/messaging/compose/") {
 		t.Error("the free Message control")
@@ -238,6 +235,35 @@ func TestHiringTeamSelectorsMatchTheCapturedSection(t *testing.T) {
 	card := one(t, section, HirerCardXPath)
 	if count(t, card, HirerProfileLinkXPath) != 1 || count(t, card, HirerMessageXPath) != 1 {
 		t.Error("the card does not hold the hirer's profile and its Message control together")
+	}
+	if text(one(t, card, HirerNameXPath)) != "Ana Ribeiro" {
+		t.Errorf("hirer name %q", text(one(t, card, HirerNameXPath)))
+	}
+}
+
+// The search page's details pane draws the hiring team in its older layout: no
+// slot id, a Message button with no href, and two profile links per hirer (the
+// photo and the name).
+func TestHiringTeamSelectorsMatchTheSearchPane(t *testing.T) {
+	pane := fixture(t, "11_search_pane_hiring_team.html")
+	if count(t, pane, HiringTeamSectionXPath) != 1 {
+		t.Fatal("the 'Meet the hiring team' section is not found")
+	}
+	section := one(t, pane, HiringTeamSectionXPath)
+	if count(t, section, HirerMessageXPath) != 1 {
+		t.Fatal("the Message button is not found")
+	}
+	card := one(t, section, HirerCardXPath)
+	if count(t, card, HirerMessageXPath) != 1 {
+		t.Error("the card does not hold the Message button")
+	}
+	for _, link := range htmlquery.Find(card, HirerProfileLinkXPath) { // the photo and the name
+		if href := htmlquery.SelectAttr(link, "href"); href != "https://www.linkedin.com/in/bruno-tavares-fictional" {
+			t.Errorf("hirer profile href %q", href)
+		}
+	}
+	if text(one(t, card, HirerNameXPath)) != "Bruno Tavares" {
+		t.Errorf("hirer name %q", text(one(t, card, HirerNameXPath)))
 	}
 }
 

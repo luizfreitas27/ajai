@@ -100,16 +100,20 @@ const (
 	DailyLimitPhrase      = "exceeded the daily application limit"
 )
 
-// The job page's hiring team ("Meet the hiring team"), captured in fixtures 07 and 10.
-// HirerCardXPath, within the section, is the nearest element holding a Message
-// control and exactly one hirer profile, so a profile is never paired with another
-// hirer's button. HirerNameXPath is applied inside the profile link.
+// The hiring team ("Meet the hiring team") in its two layouts: the job page's
+// slot (fixtures 07 and 10), with an aria-label="Message" link to
+// /messaging/compose/, and the search page's details pane (fixture 11), an older
+// layout with no slot id whose Message control is a button with the
+// send-privately icon and no href. HirerCardXPath, within the section, is the
+// nearest element holding a Message control whose profile links all go to one
+// hirer (the pane links the photo and the name), so a profile is never paired
+// with another hirer's button. HirerNameXPath is applied inside the card.
 const (
-	HiringTeamSectionXPath = `//div[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_")]`
+	HiringTeamSectionXPath = `//div[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_")] | //div[contains(@class,"job-details-people-who-can-help__section")]`
 	HirerProfileLinkXPath  = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]`
-	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")]`
-	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")]][count(.//a[starts-with(@href,"https://www.linkedin.com/in/")])=1][1]`
-	HirerNameXPath         = `(.//p)[1]`
+	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] | .//button[.//*[@data-test-icon="send-privately-small"]]`
+	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] or .//button[.//*[@data-test-icon="send-privately-small"]]][not(.//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href != .//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href)][1]`
+	HirerNameXPath         = `(.//a[starts-with(@href,"https://www.linkedin.com/in/")]//p | .//a[starts-with(@href,"https://www.linkedin.com/in/")]//strong)[1]`
 )
 
 // The messaging overlay the hirer's Message link opens in place (fixtures 08 and
