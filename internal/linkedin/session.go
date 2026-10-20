@@ -703,6 +703,18 @@ func (s *Session) SendHere(ctx context.Context, to messages.Recipient, text stri
 // to's, and sends text only if the compose is free, before typing and again
 // before the send.
 func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to messages.Recipient, text string) (SendResult, error) {
+	// Every compose the click opened is closed on the way out, whatever the
+	// result, except a sent one, which closes itself below. The bubbles stay
+	// on the page otherwise, and draw over the job list.
+	var seen []browser.Element
+	sent := false
+	defer func() {
+		if !sent {
+			for _, b := range seen {
+				closeBubble(b)
+			}
+		}
+	}()
 	link, err := card.Element(HirerMessageXPath)
 	if err != nil {
 		return "", err
@@ -711,7 +723,7 @@ func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to m
 	if err := link.ScriptClick(); err != nil {
 		return "", err
 	}
-	host, bubble, err := s.waitCompose(ctx, to)
+	host, bubble, seen, err := s.waitCompose(ctx, to)
 	if err != nil {
 		return "", err
 	}
@@ -719,7 +731,6 @@ func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to m
 		return SendNoRecipient, nil
 	}
 	if !freeCompose(bubble) {
-		closeBubble(bubble)
 		return SendNoRecipient, nil
 	}
 	box, err := bubble.Element(MessageBoxXPath)
@@ -733,11 +744,9 @@ func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to m
 		return "", err
 	}
 	if typed, _ := box.Text(); squash(typed) != squash(text) {
-		closeBubble(bubble)
 		return "", errors.New("the message box does not hold the approved text; nothing was sent")
 	}
 	if !freeCompose(bubble) { // LinkedIn may have shown the credits once typing began
-		closeBubble(bubble)
 		return SendNoRecipient, nil
 	}
 	send, err := bubble.Element(MessageSendButtonXPath)
@@ -745,20 +754,20 @@ func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to m
 		return "", err
 	}
 	if _, disabled := send.Attr("disabled"); disabled {
-		closeBubble(bubble)
 		return "", errors.New("the send button stayed disabled; nothing was sent")
 	}
 	if err := send.ScriptClick(); err != nil {
 		return "", fmt.Errorf("clicking send: %w", err)
 	}
-	sent, err := s.waitSent(ctx, host, box, text)
+	result, err := s.waitSent(ctx, host, box, text)
 	if err != nil {
 		return "", err
 	}
-	if sent == SendSent {
+	if result == SendSent {
+		sent = true
 		closeBubble(bubble)
 	}
-	return sent, nil
+	return result, nil
 }
 
 // blocked: LinkedIn sent the tab to a checkpoint (a CAPTCHA or a restriction).
@@ -770,10 +779,10 @@ func (s *Session) blocked() bool {
 
 // waitCompose waits, up to composeWait, for the overlay the Message link opens:
 // the compose bubble to to, or the Premium upsell, which it dismisses and
-// reports as a nil bubble. A compose to another member, or one without its
-// profile link, is not ours and is left alone; when none turns up the result is
-// a nil bubble too. host is the overlay's shadow host.
-func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host, bubble browser.Element, err error) {
+// reports as a nil bubble. seen lists every compose box the overlay showed up
+// to the match, to's or another member's, so the caller can close them; when
+// none turns up the bubble is nil too. host is the overlay's shadow host.
+func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host, bubble browser.Element, seen []browser.Element, err error) {
 	err = poll(ctx, composeWait, "the compose box did not open", func() bool {
 		if host, err = s.Page.Element(MessageOutletXPath); err != nil {
 			return false
@@ -784,11 +793,13 @@ func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host,
 			}
 			return true
 		}
+		seen = seen[:0]
 		bubbles, _ := host.ShadowElements(ComposeBubbleXPath)
 		for _, b := range bubbles {
 			if _, err := b.Element(MessageBoxXPath); err != nil {
 				continue
 			}
+			seen = append(seen, b)
 			link, err := b.Element(ComposeRecipientXPath)
 			if err != nil {
 				continue
@@ -803,9 +814,9 @@ func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host,
 		return false
 	})
 	if err != nil && ctx.Err() == nil { // never opened: no recipient to send to
-		return host, nil, nil
+		return host, nil, seen, nil
 	}
-	return host, bubble, err
+	return host, bubble, seen, err
 }
 
 // freeCompose: the compose costs nothing. An InMail shows what it costs

@@ -107,12 +107,14 @@ const (
 // send-privately icon and no href. HirerCardXPath, within the section, is the
 // nearest element holding a Message control whose profile links all go to one
 // hirer (the pane links the photo and the name), so a profile is never paired
-// with another hirer's button. HirerNameXPath is applied inside the card.
+// with another hirer's button. The card is also kept inside the section, so
+// the climb never reaches a Message button outside it. HirerNameXPath is
+// applied inside the card.
 const (
 	HiringTeamSectionXPath = `//div[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_")] | //div[contains(@class,"job-details-people-who-can-help__section")]`
 	HirerProfileLinkXPath  = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]`
 	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] | .//button[.//*[@data-test-icon="send-privately-small"]]`
-	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] or .//button[.//*[@data-test-icon="send-privately-small"]]][not(.//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href != .//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href)][1]`
+	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] or .//button[.//*[@data-test-icon="send-privately-small"]]][not(.//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href != .//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href)][ancestor-or-self::*[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_") or contains(@class,"job-details-people-who-can-help__section")]][1]`
 	HirerNameXPath         = `(.//a[starts-with(@href,"https://www.linkedin.com/in/")]//p | .//a[starts-with(@href,"https://www.linkedin.com/in/")]//strong)[1]`
 )
 

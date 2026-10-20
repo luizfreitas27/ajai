@@ -35,8 +35,10 @@ these rules:
   so the same person is never messaged twice for the same job.
 - **Once per recruiter, ever.** A staffing recruiter is often the hirer on many jobs; live
   data showed three messages queued in an hour for one profile. When the profile URL already
-  has a message `approved`, `sending` or `sent`, on any job and any day, a new application
-  records a `no_recipient` row ("already messaged this recruiter") and sends nothing. At the
+  has a message `approved`, `sending`, `sent` or `failed`, on any job and any day, a new
+  application records a `no_recipient` row ("already messaged this recruiter") and sends
+  nothing. `failed` counts too: a send that failed after its click may still have reached
+  the recruiter, so the conservative choice is to send them nothing more. At the
   end of a run, an approved message whose recruiter already got one, or has an older approved
   one, is moved to `no_recipient` the same way, so the oldest goes out. We chose this over
   "once a day": it is simpler, and a second message to the same person is the pattern most
@@ -68,7 +70,7 @@ A send that may have gone through but was not confirmed (a crash, a lost page) s
 a message is lost rather than sent a second time. A missed message costs one contact. A
 repeated one costs a second message to the same person, the pattern most likely to get the
 account flagged. A failed send that may have gone out does not count toward
-`messages.max_per_day`.
+`messages.max_per_day`, but it does count toward the recruiter's one message.
 
 ## Considered options
 

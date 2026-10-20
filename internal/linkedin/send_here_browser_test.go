@@ -97,3 +97,34 @@ func TestSendHereToSomeoneElse(t *testing.T) {
 		t.Error("the compose was opened for another hirer")
 	}
 }
+
+// TestSendHereLeavesNoBubbleWhenTheSendNeverShowsAsSent: the send is clicked
+// but LinkedIn shows nothing sent. That is an error, the bubble is closed, and
+// the next card still opens.
+func TestSendHereLeavesNoBubbleWhenTheSendNeverShowsAsSent(t *testing.T) {
+	s := panePage(t, "08_message_overlay.html", "silent", "ana-ribeiro-fictional", "bruno-tavares-fictional")
+	got, err := s.SendHere(context.Background(), bruno, note)
+	if err == nil {
+		t.Fatalf("SendHere = %q, nil; want an error: the send was clicked and never showed as sent", got)
+	}
+	if n := recorded(t, s, "sends"); n != "1" {
+		t.Errorf("send clicked %q times, want 1", n)
+	}
+	host, err := s.Page.Element(MessageOutletXPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := host.ShadowElements(ComposeBubbleXPath); len(left) != 0 {
+		t.Errorf("%d compose bubbles left open on the search page", len(left))
+	}
+	cards, err := s.Cards()
+	if err != nil || len(cards) != 1 {
+		t.Fatalf("cards %d, %v", len(cards), err)
+	}
+	if err := s.OpenCard(context.Background(), cards[0]); err != nil {
+		t.Errorf("the next card could not be opened: %v", err)
+	}
+	if recorded(t, s, "next-card") != "yes" {
+		t.Error("the click on the next card never reached it")
+	}
+}

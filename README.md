@@ -577,9 +577,10 @@ paid InMail. These rows stay in `ajai messages list --state no_recipient`.
 
 Each recruiter gets one message, ever. A staffing recruiter can be the hirer on many jobs, and
 several messages from you in a row look like spam. When the hirer's profile already has a
-message approved, being sent or sent, for any job on any day, a new application to one of their
-jobs is recorded as `no_recipient` with the reason "already messaged this recruiter", and
-nothing is sent. Of two approved messages to the same recruiter, only the older one goes out.
+message approved, being sent, sent or failed, for any job on any day, a new application to one of
+their jobs is recorded as `no_recipient` with the reason "already messaged this recruiter", and
+nothing is sent. A failed message counts too, since a send that failed after its click may still
+have reached them. Of two approved messages to the same recruiter, only the older one goes out.
 
 Messaging carries more risk than applying. LinkedIn watches messages more closely than
 applications, and a restriction on the account would affect the applications too. Keep

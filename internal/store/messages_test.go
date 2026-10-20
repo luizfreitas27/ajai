@@ -409,3 +409,21 @@ func TestABusyDatabaseErrorIsRecognisedWhateverItsExtendedCode(t *testing.T) {
 		})
 	}
 }
+
+func TestAFailedAttemptStillBlocksTheRecruiter(t *testing.T) {
+	const ana = "https://www.linkedin.com/in/ana"
+	s := open(t)
+	seedJob(t, s, "1")
+	seedJob(t, s, "2")
+	id, err := s.InsertMessage(Message{JobID: "1", RecipientURL: ana, Text: "Oi", State: MessageSending})
+	must(t, err)
+	if ok, err := s.MarkFailed(id, "the send may have gone out"); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	// A failed send may have reached the recruiter, so no later message goes to her.
+	ok, err := s.HasMessaged(ana, 0)
+	must(t, err)
+	if !ok {
+		t.Error("a failed attempt does not count: the next job by this recruiter would be messaged again")
+	}
+}

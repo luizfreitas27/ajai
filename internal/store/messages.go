@@ -217,17 +217,19 @@ func (s *Store) MarkSending(id int64) (bool, error) {
 }
 
 // HasMessaged reports whether the recruiter at profile url, on any job, already
-// has a message sent or sending, or an approved one older than message except
-// (0 for a message not recorded yet). Each recruiter gets one message, ever; the
-// oldest approved one is the one that goes out.
+// has a message sent, sending or failed, or an approved one older than message
+// except (0 for a message not recorded yet). Each recruiter gets one message,
+// ever; the oldest approved one is the one that goes out. A failed message
+// counts too: a send that failed after its click may still have reached the
+// recruiter, so none more goes to them.
 func (s *Store) HasMessaged(url string, except int64) (bool, error) {
 	if url == "" {
 		return false, nil
 	}
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM recruiter_messages WHERE recipient_url = ? AND id != ?
-		AND (state IN (?, ?) OR (state = ? AND (? = 0 OR id < ?)))`,
-		url, except, MessageSent, MessageSending, MessageApproved, except, except).Scan(&n)
+		AND (state IN (?, ?, ?) OR (state = ? AND (? = 0 OR id < ?)))`,
+		url, except, MessageSent, MessageSending, MessageFailed, MessageApproved, except, except).Scan(&n)
 	return n > 0, err
 }
 

@@ -380,7 +380,7 @@ func TestACancelledContextSendsNothingMore(t *testing.T) {
 	}
 }
 
-func TestASendErrorMarksTheMessageFailedAndSendsTheNext(t *testing.T) {
+func TestASendErrorMarksTheMessageFailedAndBlocksTheRecruitersNext(t *testing.T) {
 	site := liveSite()
 	n := 0
 	site.sendFunc = func(sendCall) (linkedin.SendResult, error) {
@@ -399,8 +399,11 @@ func TestASendErrorMarksTheMessageFailedAndSendsTheNext(t *testing.T) {
 	if got := stateOf(t, st, first.ID); got.State != store.MessageFailed || got.Error != "the send button moved" {
 		t.Errorf("failed message: %+v", got)
 	}
-	if got := stateOf(t, st, second.ID); got.State != store.MessageSent {
-		t.Errorf("next message is %q, want sent", got.State)
+	if len(site.sends) != 1 {
+		t.Errorf("sends %+v, want only the failed one: a failed send may have reached the recruiter", site.sends)
+	}
+	if got := stateOf(t, st, second.ID); got.State != store.MessageNoRecipient || got.Error != reasonMessaged {
+		t.Errorf("next message: %+v, want no_recipient, already messaged this recruiter", got)
 	}
 }
 
@@ -416,7 +419,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func TestASendingRowLeftByADeadProcessEndsFailedAtTheNextRunAndIsNotSent(t *testing.T) {
+func TestASendingRowLeftByADeadProcessEndsFailedAndBlocksTheRecruiterNext(t *testing.T) {
 	site := liveSite()
 	r, st, _ := runner(t, site, messagesCfg())
 	orphan := approvedMessage(t, st, "1", ana, "orphan")
@@ -427,14 +430,14 @@ func TestASendingRowLeftByADeadProcessEndsFailedAtTheNextRunAndIsNotSent(t *test
 	if _, err := r.Run(context.Background(), Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(site.sends) != 1 || site.sends[0].text != "next" {
-		t.Errorf("sends %+v, want only the approved message", site.sends)
+	if len(site.sends) != 0 {
+		t.Errorf("sends %+v, want none: the orphaned send may have reached the recruiter", site.sends)
 	}
 	if got := stateOf(t, st, orphan.ID); got.State != store.MessageFailed || got.Error != store.InterruptedSend || got.SentAt != "" {
 		t.Errorf("orphaned message: %+v, want failed with the interrupted reason", got)
 	}
-	if got := stateOf(t, st, next.ID); got.State != store.MessageSent {
-		t.Errorf("next message is %q, want sent", got.State)
+	if got := stateOf(t, st, next.ID); got.State != store.MessageNoRecipient || got.Error != reasonMessaged {
+		t.Errorf("next message: %+v, want no_recipient, already messaged this recruiter", got)
 	}
 }
 
@@ -745,6 +748,23 @@ func TestAutoSendErrorFailsTheMessageAndTheRunGoesOn(t *testing.T) {
 	msgs := allMessages(t, st)
 	if len(msgs) != 2 || msgs[0].State != store.MessageFailed || msgs[0].Error != "the box did not open" || msgs[1].State != store.MessageSent {
 		t.Errorf("messages %+v, want the first failed with its error and the second sent", msgs)
+	}
+}
+
+func TestAFailedSendStillStopsTheRecruiterFromBeingMessagedAgain(t *testing.T) {
+	site := sameRecruiter()
+	site.hereFunc = func(hereCall) (linkedin.SendResult, error) { return "", errors.New("sent, but never shown") }
+	r, st, _ := runner(t, site, autoSendCfg())
+	if sum, err := r.Run(context.Background(), Options{}); err != nil || sum.Applied != 2 {
+		t.Fatalf("applied %d, err %v", sum.Applied, err)
+	}
+	if len(site.here) != 1 || site.here[0].opened != "1" {
+		t.Errorf("here %+v; want one send, on job 1, and none on job 2", site.here)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 2 || msgs[0].State != store.MessageFailed || msgs[1].State != store.MessageNoRecipient ||
+		msgs[1].Error != "already messaged this recruiter" {
+		t.Errorf("messages %+v, want job 1 failed and job 2 no_recipient, already messaged", msgs)
 	}
 }
 

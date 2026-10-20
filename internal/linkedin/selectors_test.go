@@ -280,6 +280,23 @@ func TestHiringTeamSelectorsOnAnEmptySlot(t *testing.T) {
 	}
 }
 
+// A hirer card never climbs out of the hiring team section. Here the only hirer
+// has no Message control in its section, but a send-privately button sits
+// elsewhere in the pane: that button must not be paired with the hirer.
+func TestAHirerCardStaysInsideTheHiringTeamSection(t *testing.T) {
+	doc, err := htmlquery.Parse(strings.NewReader(`<body><div class="pane">
+		<div id="JobDetailsPeopleWhoCanHelpSlot_1"><div class="hirer"><a href="https://www.linkedin.com/in/ana-ribeiro-fictional/"><p>Ana Ribeiro</p></a></div></div>
+		<div class="actions"><button><span data-test-icon="send-privately-small"></span></button></div>
+		</div></body>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := one(t, doc, HiringTeamSectionXPath)
+	if n := count(t, section, HirerCardXPath); n != 0 {
+		t.Errorf("%d hirer cards inside a section with no Message control; want none", n)
+	}
+}
+
 // ------------------------------------------------------------ message overlay (08, 09)
 // In the live page the overlay sits in the open shadow root of #interop-outlet;
 // the fixtures hold its markup alone, so the selectors inside it are checked
