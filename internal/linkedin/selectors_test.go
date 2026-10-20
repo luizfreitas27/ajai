@@ -139,7 +139,7 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 		HiddenTitleXPath, ResumeUploadInputXPath, TodayButtonXPath, NextButtonXPath, ReviewButtonXPath, SubmitButtonXPath,
 		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
 		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, InlineErrorXPath, FormProgressXPath, AppliedOnPageXPath, PaginationActiveXPath,
-		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
+		OptionLabelXPath("x"), OptionWrapLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
 		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath),
 		MessageOutletXPath, ComposeBubbleXPath, ComposeRecipientXPath, MessageBoxXPath, MessageSendButtonXPath,
 		MessageSubjectXPath, InMailCreditsXPath, BubbleCloseButtonXPath, UpsellModalXPath, UpsellDismissXPath, SentMessageBodyXPath}

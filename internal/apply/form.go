@@ -18,8 +18,13 @@ type Control struct {
 	Question questions.Question
 	// Element is the <select>, <input> or <textarea>; for a radio group, the fieldset.
 	Element browser.Element
-	// RadioInputs are the group's <input type="radio"> in option order.
+	// RadioInputs are the group's <input type="radio"> (or checkbox, for a
+	// multipleChoice question) in option order.
 	RadioInputs []browser.Element
+	// RadioLabels are each option's <label> in option order, nil where there is none.
+	RadioLabels []browser.Element
+	// BoxLabel is the <label> of a single checkbox, nil when there is none.
+	BoxLabel browser.Element
 	// FollowCompany marks LinkedIn's own "Follow <company>" box, which the applier
 	// sets from the follow_companies setting instead of answering.
 	FollowCompany bool
@@ -62,25 +67,8 @@ func readBlock(block browser.Element) (Control, bool) {
 		return Control{Question: q, Element: sel}, true
 	}
 	if fieldset, err := block.Element(linkedin.RadioFieldsetXPath); err == nil {
-		q := questions.Question{Kind: questions.Radio, Label: titleOf(fieldset, linkedin.RadioTitleXPath, true)}
 		inputs, _ := fieldset.Elements(linkedin.RadioInputsXPath)
-		for _, in := range inputs {
-			label := ""
-			if id, ok := in.Attr("id"); ok {
-				if l, err := fieldset.Element(linkedin.OptionLabelXPath(id)); err == nil {
-					label, _ = l.Text()
-				}
-			}
-			if label == "" {
-				label, _ = in.Attr("value")
-			}
-			label = strings.TrimSpace(label)
-			q.Options = append(q.Options, label)
-			if checked, _ := in.Property("checked"); checked == "true" {
-				q.Current = label
-			}
-		}
-		return Control{Question: q, Element: fieldset, RadioInputs: inputs}, true
+		return choice(fieldset, titleOf(fieldset, linkedin.RadioTitleXPath, true), inputs), true
 	}
 	if text, err := block.Element(linkedin.TextInputXPath); err == nil {
 		value, _ := text.Property("value")
@@ -96,6 +84,10 @@ func readBlock(block browser.Element) (Control, bool) {
 			c.FollowCompany = true
 			return c, true
 		}
+		if boxes, _ := block.Elements(linkedin.CheckboxXPath); len(boxes) > 1 {
+			// Several boxes in one question are a multipleChoice group: one answer, picked by option.
+			return choice(block, titleOf(block, linkedin.RadioTitleXPath, true), boxes), true
+		}
 		q := questions.Question{Kind: questions.Checkbox, GroupTitle: questions.UnknownTitle, Label: questions.UnknownTitle}
 		if title, err := block.Element(linkedin.HiddenTitleXPath); err == nil {
 			if t, _ := title.Text(); strings.TrimSpace(t) != "" {
@@ -103,6 +95,7 @@ func readBlock(block browser.Element) (Control, bool) {
 			}
 		}
 		if visible, err := block.Element(linkedin.LabelForXPath); err == nil {
+			c.BoxLabel = visible
 			if t, _ := visible.Text(); strings.TrimSpace(t) != "" {
 				q.Label = strings.TrimSpace(t)
 			}
@@ -114,6 +107,37 @@ func readBlock(block browser.Element) (Control, bool) {
 		return c, true
 	}
 	return Control{}, false
+}
+
+// choice reads a group of inputs (a radio group, or the boxes of a multipleChoice
+// question) as a choice question. An option's text is its label: the one with the
+// input's for id, else the label wrapping the input, else the input's value.
+func choice(scope browser.Element, title string, inputs []browser.Element) Control {
+	c := Control{Question: questions.Question{Kind: questions.Radio, Label: title}, Element: scope, RadioInputs: inputs}
+	for _, in := range inputs {
+		var label browser.Element
+		if id, ok := in.Attr("id"); ok {
+			if l, err := scope.Element(linkedin.OptionLabelXPath(id)); err == nil {
+				label = l
+			} else if l, err := scope.Element(linkedin.OptionWrapLabelXPath(id)); err == nil {
+				label = l
+			}
+		}
+		text := ""
+		if label != nil {
+			text, _ = label.Text()
+		}
+		if strings.TrimSpace(text) == "" {
+			text, _ = in.Attr("value")
+		}
+		text = strings.TrimSpace(text)
+		c.Question.Options = append(c.Question.Options, text)
+		c.RadioLabels = append(c.RadioLabels, label)
+		if checked, _ := in.Property("checked"); checked == "true" {
+			c.Question.Current = text
+		}
+	}
+	return c
 }
 
 // titleOf reads a control's visible title, preferring the visually-hidden copy

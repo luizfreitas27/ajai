@@ -458,15 +458,79 @@ func (a *Applier) applyDecision(ctx context.Context, c Control, d questions.Deci
 		if d.Option < 0 || d.Option >= len(c.RadioInputs) {
 			return fmt.Errorf("radio option %d out of range", d.Option)
 		}
-		return c.RadioInputs[d.Option].Click()
+		return chooseOption(c, d.Option)
 	case questions.Tick:
-		return c.Element.Click()
+		return clickThrough(c.Element, c.BoxLabel, true)
 	case questions.Blocked:
 		if d.Clear {
 			return c.Element.Clear()
 		}
 	}
 	return nil
+}
+
+// chooseOption picks option i of a choice and no other, so a single-answer group
+// never ends with two options ticked.
+func chooseOption(c Control, i int) error {
+	if err := clickThrough(c.RadioInputs[i], labelAt(c.RadioLabels, i), true); err != nil {
+		return err
+	}
+	for j, in := range c.RadioInputs {
+		if j != i && ticked(in) {
+			if err := clickThrough(in, labelAt(c.RadioLabels, j), false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// clickThrough clicks in. When the page refuses the click (LinkedIn draws its
+// checkboxes with pointer-events none, the label takes the click), it clicks the
+// label instead and checks that the input reached the wanted state.
+func clickThrough(in, label browser.Element, want bool) error {
+	err := in.Click()
+	if err == nil || label == nil {
+		return err
+	}
+	if lerr := label.Click(); lerr != nil {
+		return fmt.Errorf("%w (its label: %v)", err, lerr)
+	}
+	if !reached(in, want) {
+		return fmt.Errorf("%w (its label did not set it)", err)
+	}
+	return nil
+}
+
+// settleWait bounds how long a box gets to show its new state after a label
+// click: a page may re-render the question a moment later. A var so tests can
+// shorten it.
+var settleWait = time.Second
+
+// reached says whether the box is in the wanted state, looking again for up to
+// settleWait. It reads the live checked property, never the attribute.
+func reached(in browser.Element, want bool) bool {
+	for deadline := time.Now().Add(settleWait); ; {
+		if ticked(in) == want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func labelAt(labels []browser.Element, i int) browser.Element {
+	if i < len(labels) {
+		return labels[i]
+	}
+	return nil
+}
+
+func ticked(in browser.Element) bool {
+	v, _ := in.Property("checked")
+	return v == "true"
 }
 
 // TypeaheadSettle is how long suggestions get to appear before the first is picked.

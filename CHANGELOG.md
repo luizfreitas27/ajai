@@ -47,6 +47,10 @@ no such section the notes are the commit list.
   - That error now names what is drawn over the card (tag, id, class, role, aria-label,
     into LinkedIn's messaging overlay's shadow root) and saves a screenshot.
   - Two cards in a row covered end the run, instead of waiting 10 s on every card left.
+- A multiple-choice question drawn with checkboxes (LinkedIn's "Yes" / "No" sponsorship
+  questions) failed with "element's pointer-events is none": the boxes take no pointer events,
+  and the click never reached them. ajai now picks the option through its label, then unticks
+  any other option of the question that was ticked.
 
 ### Docs
 
