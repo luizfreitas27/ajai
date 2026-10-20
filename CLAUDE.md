@@ -49,7 +49,7 @@ to the tag before tagging and the workflow publishes that section as the release
   shadow root of `#interop-outlet` (`ShadowElements`, `ScriptClick`), re-checks the hirer by
   normalised `/in/` URL before the send, and is free only: a Premium upsell or an InMail without
   "Free message" is `SendNoRecipient`, a `/checkpoint/` page is `SendBlocked`.
-- `internal/messages`: pure rendering of a market's `message_template` (`Render`), and the
+- `internal/messages`: pure rendering of a market's `message_template` (`Render`), `DetectLanguage` (stopword counts that pick the `messages.templates` language, or "" when unsure), and the
   digests an approval quotes back: `Digest` for one text, `ListDigest` for a queue listing.
   `internal/remote` approves answers with the same `Digest`.
 - `internal/screening`: the pure skip rules (card, company, description).

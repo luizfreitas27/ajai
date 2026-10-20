@@ -125,6 +125,15 @@ func (c *Config) Validate() error {
 			add("markets."+string(name)+".message_template", problem, MessagePlaceholders...)
 		}
 	}
+	for _, t := range []struct{ key, text string }{
+		{"messages.templates.en", c.Messages.Templates.En},
+		{"messages.templates.pt", c.Messages.Templates.Pt},
+		{"messages.templates.es", c.Messages.Templates.Es},
+	} {
+		if problem := templateProblem(t.text); problem != "" {
+			add(t.key, problem, MessagePlaceholders...)
+		}
+	}
 	p := c.Pacing
 	for _, pair := range []struct {
 		lo, hi int

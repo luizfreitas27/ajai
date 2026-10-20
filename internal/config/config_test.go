@@ -448,6 +448,15 @@ func TestMessagesAreOffByDefaultWithTheDocumentedLimitsAndTemplates(t *testing.T
 	if got := c.Markets.Internacional.MessageTemplate; got != "Hi {first_name}, I just applied for the {title} role at {company}. I'd be glad to talk whenever it suits you, and I look forward to hearing from you. Thanks!" {
 		t.Errorf("internacional template = %q", got)
 	}
+	if c.Messages.Templates.En != "Hi {first_name}, I just applied for the {title} role at {company}. I'm available for any further information and would be glad to talk whenever it suits you. Looking forward to hearing from you!" {
+		t.Errorf("en template = %q", c.Messages.Templates.En)
+	}
+	if c.Messages.Templates.Pt != "Olá {first_name}, acabei de me candidatar à vaga de {title} na {company}. Fico à disposição para mais informações e para conversarmos quando for melhor para você. No aguardo do seu contato!" {
+		t.Errorf("pt template = %q", c.Messages.Templates.Pt)
+	}
+	if c.Messages.Templates.Es != "Hola {first_name}, acabo de postularme a la vacante de {title} en {company}. Quedo a disposición para cualquier información adicional y para conversar cuando te venga bien. ¡Quedo atento a tu respuesta!" {
+		t.Errorf("es template = %q", c.Messages.Templates.Es)
+	}
 	v := valid()
 	if err := v.Validate(); err != nil {
 		t.Errorf("defaults with a name and terms rejected: %v", err)
@@ -470,6 +479,9 @@ func TestMessageSettingsAreValidated(t *testing.T) {
 			c.Markets.Brasil.MessageTemplate = "{first_name} {title} {company}"
 		}, ""},
 		{"blank template", func(c *Config) { c.Markets.Brasil.MessageTemplate = "" }, ""},
+		{"unknown placeholder in the spanish template", func(c *Config) { c.Messages.Templates.Es = "Hola {name}" }, "messages.templates.es"},
+		{"unclosed brace in the portuguese template", func(c *Config) { c.Messages.Templates.Pt = "Olá {title" }, "messages.templates.pt"},
+		{"blank language templates", func(c *Config) { c.Messages.Templates = MessageTemplates{} }, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := valid()

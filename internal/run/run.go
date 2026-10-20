@@ -625,7 +625,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, err
 	}
 	if row.Outcome == store.Applied && !opts.DryRun {
-		r.queueMessage(ctx, c, sum.RunID)
+		r.queueMessage(ctx, c, job.Description, sum.RunID)
 	}
 	if ctx.Err() != nil {
 		return cardPassed, ctx.Err()

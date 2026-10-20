@@ -22,6 +22,7 @@ these rules:
 - **Sent from the run, not by a timer.** Sending happens only at the end of a live run:
   `Runner.Run` sends the approved messages once the run loop ends without an error. Only
   `launch` builds the runner, and a dry run never sends.
+- **Written in the posting's language.** The message uses `messages.templates.en`, `pt` or `es`, chosen by `DetectLanguage` from the job's title and description, and the market's `message_template` when the language is unsure.
 - **Capped and paced.** At most `messages.max_per_day` sends per local day (default 3),
   with a jittered pause of `between_min_seconds` to `between_max_seconds` before each one.
 - **Free messages only.** The tool clicks the hirer's **Message** button and sends only

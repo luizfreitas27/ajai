@@ -142,10 +142,19 @@ type Pacing struct {
 
 // Messages mirrors the recruiter message settings; see ADR 0002.
 type Messages struct {
-	Enabled           bool `yaml:"enabled" doc:"After each submitted application, queue a message to the hirer shown on the job page, when a free Message button is there. Nothing is sent until you approve it (ajai messages list, ajai messages approve). Off by default."`
-	MaxPerDay         int  `yaml:"max_per_day" doc:"Most messages sent per local day." min:"1"`
-	BetweenMinSeconds int  `yaml:"between_min_seconds" doc:"Shortest pause before a message is sent, seconds." min:"0"`
-	BetweenMaxSeconds int  `yaml:"between_max_seconds" doc:"Longest pause before a message is sent, seconds." min:"0"`
+	Enabled           bool             `yaml:"enabled" doc:"After each submitted application, queue a message to the hirer shown on the job page, when a free Message button is there. Nothing is sent until you approve it (ajai messages list, ajai messages approve). Off by default."`
+	MaxPerDay         int              `yaml:"max_per_day" doc:"Most messages sent per local day." min:"1"`
+	BetweenMinSeconds int              `yaml:"between_min_seconds" doc:"Shortest pause before a message is sent, seconds." min:"0"`
+	BetweenMaxSeconds int              `yaml:"between_max_seconds" doc:"Longest pause before a message is sent, seconds." min:"0"`
+	Templates         MessageTemplates `yaml:"templates" doc:"Recruiter message in the job posting's language, detected from its title and description. A blank one falls back to the active market's message_template."`
+}
+
+// MessageTemplates holds one recruiter message template per language. The same
+// placeholders as a market's message_template apply.
+type MessageTemplates struct {
+	En string `yaml:"en" doc:"Template for postings in English. Placeholders: {first_name}, {title}, {company}."`
+	Pt string `yaml:"pt" doc:"Template for postings in Portuguese. Placeholders: {first_name}, {title}, {company}."`
+	Es string `yaml:"es" doc:"Template for postings in Spanish. Placeholders: {first_name}, {title}, {company}."`
 }
 
 // AI selects the model. Every provider speaks the OpenAI-compatible chat API.
@@ -187,8 +196,12 @@ func Defaults() Config {
 		},
 		Pacing: Pacing{MaxPerHour: 15, MaxPerRun: 50, BetweenJobsMin: 30, BetweenJobsMax: 90,
 			BetweenActionsMin: 1, BetweenActionsMax: 4, TypingDelayMinMs: 40, TypingDelayMaxMs: 160},
-		Messages: Messages{MaxPerDay: 3, BetweenMinSeconds: 90, BetweenMaxSeconds: 300},
-		AI:       AI{Provider: "openai", Model: "gpt-5.6-sol"},
+		Messages: Messages{MaxPerDay: 3, BetweenMinSeconds: 90, BetweenMaxSeconds: 300, Templates: MessageTemplates{
+			En: "Hi {first_name}, I just applied for the {title} role at {company}. I'm available for any further information and would be glad to talk whenever it suits you. Looking forward to hearing from you!",
+			Pt: "Olá {first_name}, acabei de me candidatar à vaga de {title} na {company}. Fico à disposição para mais informações e para conversarmos quando for melhor para você. No aguardo do seu contato!",
+			Es: "Hola {first_name}, acabo de postularme a la vacante de {title} en {company}. Quedo a disposición para cualquier información adicional y para conversar cuando te venga bien. ¡Quedo atento a tu respuesta!",
+		}},
+		AI: AI{Provider: "openai", Model: "gpt-5.6-sol"},
 	}
 }
 

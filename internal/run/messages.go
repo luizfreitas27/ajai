@@ -12,8 +12,12 @@ import (
 // queueMessage queues the recruiter message for a job just applied to, or records
 // that the job had no hirer to message. A problem is logged and never fails the
 // application: the job is already recorded as applied.
-func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, runID int64) {
-	if !r.Cfg.Messages.Enabled || strings.TrimSpace(r.Market.MessageTemplate) == "" {
+func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description string, runID int64) {
+	if !r.Cfg.Messages.Enabled {
+		return
+	}
+	template := r.templateFor(messages.DetectLanguage(c.Title + "\n" + description))
+	if strings.TrimSpace(template) == "" {
 		return
 	}
 	to, ok, err := r.Site.HiringTeam(ctx)
@@ -24,7 +28,7 @@ func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, runID int64)
 	m := store.Message{JobID: c.ID, RunID: runID, State: store.MessageNoRecipient}
 	if ok && to.URL != "" { // a hirer without a profile URL cannot be keyed, so it is no recipient
 		m = store.Message{JobID: c.ID, RunID: runID, RecipientName: to.Name, RecipientURL: to.URL,
-			Text: messages.Render(r.Market.MessageTemplate, to, messages.Job{Title: c.Title, Company: c.Company})}
+			Text: messages.Render(template, to, messages.Job{Title: c.Title, Company: c.Company})}
 		if m.Text == "" {
 			return
 		}
@@ -32,6 +36,26 @@ func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, runID int64)
 	if _, err := r.Store.QueueMessage(m); err != nil {
 		r.Logger.Warn("could not queue the recruiter message", "job", c.ID, "error", err)
 	}
+}
+
+// templateFor is the template for a posting in lang ("en", "pt", "es"): that
+// language's messages.templates entry when it is not blank, else the active
+// market's message_template. "" (unsure) always takes the market's.
+func (r *Runner) templateFor(lang string) string {
+	t := r.Cfg.Messages.Templates
+	own := ""
+	switch lang {
+	case "en":
+		own = t.En
+	case "pt":
+		own = t.Pt
+	case "es":
+		own = t.Es
+	}
+	if strings.TrimSpace(own) != "" {
+		return own
+	}
+	return r.Market.MessageTemplate
 }
 
 // Why a message did not go out, as the store records it.

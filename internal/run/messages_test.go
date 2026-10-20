@@ -544,3 +544,68 @@ func TestAPanicInsideASendLeavesTheRowOutOfTheNextRunsSends(t *testing.T) {
 		t.Errorf("after the next run: %+v, want failed as interrupted", got)
 	}
 }
+
+// Postings in each language, long enough for messages.DetectLanguage to be sure.
+const (
+	englishPosting    = "We are looking for a Senior Python Developer to join our team. You will design and build APIs, work with the data platform, and collaborate with product managers. Experience with Django is a plus. We offer remote work and a flexible schedule."
+	portuguesePosting = "Procuramos um Desenvolvedor Python Sênior para integrar nossa equipe. Você irá projetar e desenvolver APIs, trabalhar com a plataforma de dados e colaborar com os times de produto. Experiência com Django é um diferencial. Oferecemos trabalho remoto para você."
+	spanishPosting    = "Buscamos un Desarrollador Python Senior para unirse a nuestro equipo. Usted diseñará y construirá APIs, trabajará con la plataforma de datos y colaborará con los equipos de producto. La experiencia con Django es un plus. Ofrecemos trabajo remoto para los que se postulen."
+)
+
+// languageCfg sets a marker template per language and a market template of its
+// own, so the text queued shows which one was chosen.
+func languageCfg() config.Config {
+	c := messagesCfg()
+	c.Messages.Templates = config.MessageTemplates{En: "EN {first_name} {title} at {company}",
+		Pt: "PT {first_name} {title} at {company}", Es: "ES {first_name} {title} at {company}"}
+	c.Markets.Internacional.MessageTemplate = "MARKET {first_name} {title} at {company}"
+	return c
+}
+
+func queuedTextFor(t *testing.T, description string, c config.Config) string {
+	t.Helper()
+	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Developer", "Acme", description)},
+		pages: [][]string{{"1"}}, hirers: map[string]hirer{"1": {to: ana, ok: true}}}
+	r, st, _ := runner(t, site, c)
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 1 {
+		t.Fatalf("%d messages queued, want 1", len(msgs))
+	}
+	return msgs[0].Text
+}
+
+func TestTheMessageIsWrittenInTheLanguageOfThePosting(t *testing.T) {
+	for _, tc := range []struct {
+		name, description, want string
+	}{
+		{"an English posting", englishPosting, "EN Ana Go Developer at Acme"},
+		{"a Portuguese posting", portuguesePosting, "PT Ana Go Developer at Acme"},
+		{"a Spanish posting", spanishPosting, "ES Ana Go Developer at Acme"},
+		{"a posting in no clear language", "desc", "MARKET Ana Go Developer at Acme"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := queuedTextFor(t, tc.description, languageCfg()); got != tc.want {
+				t.Errorf("text %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestABlankLanguageTemplateFallsBackToTheMarketTemplate(t *testing.T) {
+	c := languageCfg()
+	c.Messages.Templates.Pt = "  "
+	if got, want := queuedTextFor(t, portuguesePosting, c), "MARKET Ana Go Developer at Acme"; got != want {
+		t.Errorf("text %q, want %q", got, want)
+	}
+}
+
+func TestALanguageTemplateIsUsedEvenWhenTheMarketTemplateIsBlank(t *testing.T) {
+	c := languageCfg()
+	c.Markets.Internacional.MessageTemplate = ""
+	if got, want := queuedTextFor(t, englishPosting, c), "EN Ana Go Developer at Acme"; got != want {
+		t.Errorf("text %q, want %q", got, want)
+	}
+}

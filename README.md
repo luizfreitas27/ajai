@@ -522,14 +522,24 @@ ajai config set messages.enabled true
 ```
 
 When the job page shows a hirer under "Meet the hiring team" with a free **Message** button,
-ajai queues a message built from the market's `message_template` (`markets.brasil` or
-`markets.internacional` in `config.yaml`). The template can use three placeholders:
+ajai queues a message in the language of the job posting. It reads the job's title and
+description and picks one of three templates under `messages.templates` in `config.yaml`:
+
+- `messages.templates.en` for English postings.
+- `messages.templates.pt` for Portuguese postings.
+- `messages.templates.es` for Spanish postings.
+
+The default templates are written in those languages. ajai decides the language from common
+function words ("the", "você", "com"). When it is not sure, for a short or mixed text, it uses
+the active market's `message_template` (`markets.brasil` or `markets.internacional`), as it did
+before the language templates existed. A language template left blank also falls back to the
+market's. Every template can use three placeholders:
 
 - `{first_name}`: the hirer's first name. With no name, the greeting goes without it.
 - `{title}`: the job's title.
 - `{company}`: the company.
 
-A blank template queues nothing.
+A blank market template and an unsure language queue nothing.
 
 Nothing is sent until you approve it. `ajai messages list` prints every message with its id,
 state, job, company, the hirer's name and profile URL, and the full text, followed by a digest
