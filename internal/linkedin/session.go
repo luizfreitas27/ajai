@@ -662,7 +662,7 @@ func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID,
 	if err != nil {
 		return "", err
 	}
-	if bubble == nil { // the Premium upsell, dismissed
+	if bubble == nil { // the Premium upsell, dismissed, or no compose to the hirer opened
 		return SendNoRecipient, nil
 	}
 	if !freeCompose(bubble) {
@@ -682,6 +682,10 @@ func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID,
 	if typed, _ := box.Text(); squash(typed) != squash(text) {
 		closeBubble(bubble)
 		return "", errors.New("the message box does not hold the approved text; nothing was sent")
+	}
+	if !freeCompose(bubble) { // LinkedIn may have shown the credits once typing began
+		closeBubble(bubble)
+		return SendNoRecipient, nil
 	}
 	send, err := bubble.Element(MessageSendButtonXPath)
 	if err != nil {
@@ -713,8 +717,9 @@ func (s *Session) blocked() bool {
 
 // waitCompose waits, up to composeWait, for the overlay the Message link opens:
 // the compose bubble to to, or the Premium upsell, which it dismisses and
-// reports as a nil bubble. A compose to another member is not ours and is
-// left alone. host is the overlay's shadow host.
+// reports as a nil bubble. A compose to another member, or one without its
+// profile link, is not ours and is left alone; when none turns up the result is
+// a nil bubble too. host is the overlay's shadow host.
 func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host, bubble browser.Element, err error) {
 	err = poll(ctx, composeWait, "the compose box did not open", func() bool {
 		if host, err = s.Page.Element(MessageOutletXPath); err != nil {
@@ -731,17 +736,22 @@ func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host,
 			if _, err := b.Element(MessageBoxXPath); err != nil {
 				continue
 			}
-			if link, err := b.Element(ComposeRecipientXPath); err == nil {
-				href, _ := link.Attr("href")
-				if u, _ := NormaliseProfileURL(href); u != to.URL {
-					continue
-				}
+			link, err := b.Element(ComposeRecipientXPath)
+			if err != nil {
+				continue
+			}
+			href, _ := link.Attr("href")
+			if u, _ := NormaliseProfileURL(href); u != to.URL {
+				continue
 			}
 			bubble = b
 			return true
 		}
 		return false
 	})
+	if err != nil && ctx.Err() == nil { // never opened: no recipient to send to
+		return host, nil, nil
+	}
 	return host, bubble, err
 }
 

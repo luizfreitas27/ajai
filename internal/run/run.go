@@ -269,7 +269,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	if errors.Is(err, errInvalidOptions) {
 		return sum, err // a mistake on the command line, not a run
 	}
-	if err == nil && !opts.DryRun {
+	// Only a cancel that lands during the send phase is reclassified here; a run
+	// the loop already stopped has emitted its limit and must not stop twice.
+	if err == nil && !opts.DryRun && r.Cfg.Messages.Enabled && ctx.Err() == nil {
 		r.sendMessages(ctx)
 		if ctx.Err() != nil { // stopped while sending: the cause is recorded as an in-run stop's is
 			sum, err = r.stop(ctx, &sum, ctx.Err())

@@ -19,8 +19,9 @@ these rules:
   text, either one message at a time (`ajai messages approve <id> <digest>`) or the whole
   list at once (`ajai messages approve --all <digest-of-list>`). The digest is of the text
   or list the user was shown, so a changed message or a changed list is refused.
-- **Sent from the run, not by a timer.** Sending happens only at the end of a live run,
-  through the hook that `launch.Plan.Open` wires, never on a dry run.
+- **Sent from the run, not by a timer.** Sending happens only at the end of a live run:
+  `Runner.Run` sends the approved messages once the run loop ends without an error. Only
+  `launch` builds the runner, and a dry run never sends.
 - **Capped and paced.** At most `messages.max_per_day` sends per local day (default 3),
   with a jittered pause of `between_min_seconds` to `between_max_seconds` before each one.
 - **Free messages only.** The tool clicks the hirer's **Message** button and sends only
@@ -41,10 +42,12 @@ a new kind of traffic to an account that already applies to jobs. The daily cap,
 pauses and the approval step keep that traffic small and reviewed, but they do not remove
 it. An opt-in user takes that risk knowingly.
 
-A send that may have gone through but was not confirmed (a crash, a lost page) is marked
-`sending` and stays there. We accept that such a message is lost rather than sent a second
-time. A missed message costs one contact. A repeated one costs a second message to the
-same person, the pattern most likely to get the account flagged.
+A send that may have gone through but was not confirmed (a crash, a lost page) stays
+`sending` until the next run marks it `failed`, and is never sent again. We accept that such
+a message is lost rather than sent a second time. A missed message costs one contact. A
+repeated one costs a second message to the same person, the pattern most likely to get the
+account flagged. A failed send that may have gone out does not count toward
+`messages.max_per_day`.
 
 ## Considered options
 

@@ -46,6 +46,13 @@ document.addEventListener("click", e => {
   const bubble = root.querySelector('[role="dialog"]');
   if (box && MODE === "draft") box.innerText = "Draft: ";
   if (box) box.addEventListener("input", () => { send.disabled = box.innerText.trim() === ""; });
+  // MODE "late": the first keystroke makes the compose an InMail, as if LinkedIn
+  // showed its credits only once the box was in use.
+  if (box && MODE === "late") box.addEventListener("input", () => {
+    if (bubble.querySelector(".msg-inmail-credits-display")) return;
+    bubble.insertAdjacentHTML("afterbegin", '<section class="msg-inmail-credits-display">Use 1 of 5 InMail credits</section><input name="subject">');
+    mark("late", "yes");
+  });
   if (form) form.addEventListener("submit", ev => {
     ev.preventDefault();
     mark("sends", String(Number(document.body.dataset.sends || 0) + 1));
@@ -170,6 +177,41 @@ func TestSendMessageNeverPays(t *testing.T) {
 		if recorded(t, c.s, c.after) != "yes" {
 			t.Errorf("%s: not %s", name, c.after)
 		}
+	}
+}
+
+// TestSendMessageRechecksFreeBeforeSending: a compose that shows as free when it
+// opens, and an InMail once typing starts, is closed unsent.
+func TestSendMessageRechecksFreeBeforeSending(t *testing.T) {
+	s := messagePage(t, "08_message_overlay.html", "late", false,
+		"msg-inmail-credits-display", "gone", `name="subject"`, `name="other"`)
+	got, err := s.SendMessage(context.Background(), ana, "4100000001", note)
+	if err != nil || got != SendNoRecipient {
+		t.Errorf("SendMessage = %q, %v; want no recipient", got, err)
+	}
+	if recorded(t, s, "late") != "yes" {
+		t.Error("the InMail marker was never injected, so the recheck was not tested")
+	}
+	if n := recorded(t, s, "sends"); n != "" {
+		t.Errorf("send clicked %q times", n)
+	}
+	if recorded(t, s, "closed") != "yes" {
+		t.Error("the bubble was left open")
+	}
+}
+
+// TestSendMessageNeedsTheRecipientLink: a compose without the profile link to the
+// hirer is not theirs to send to; nothing is sent.
+func TestSendMessageNeedsTheRecipientLink(t *testing.T) {
+	defer func(d time.Duration) { composeWait = d }(composeWait)
+	composeWait = 2 * time.Second
+	s := messagePage(t, "08_message_overlay.html", "", false, "msg-compose__profile-link", "gone")
+	got, err := s.SendMessage(context.Background(), ana, "4100000001", note)
+	if err != nil || got != SendNoRecipient {
+		t.Errorf("SendMessage = %q, %v; want no recipient", got, err)
+	}
+	if n := recorded(t, s, "sends"); n != "" {
+		t.Errorf("send clicked %q times", n)
 	}
 }
 

@@ -662,3 +662,36 @@ func TestARunThatCannotBeRecordedStillEndsWithASummary(t *testing.T) {
 		t.Errorf("--json and the terminal need the run-end event: %+v", *events)
 	}
 }
+
+// stoppingSite cancels the run with a stop request as its first search starts.
+type stoppingSite struct {
+	*fakeSite
+	cancel context.CancelCauseFunc
+}
+
+func (s stoppingSite) Search(ctx context.Context, term string) error {
+	s.cancel(&StopRequested{Reason: "stopped from the TUI"})
+	return ctx.Err()
+}
+
+func TestAStopWithMessagesOffEmitsOneLimitAndRecordsTheReasonOnce(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{}, pages: [][]string{{}}}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	c := cfg()
+	c.Messages.Enabled = false
+	r, st, events := runner(t, site, c)
+	r.Site = stoppingSite{fakeSite: site, cancel: cancel}
+	sum, err := r.Run(ctx, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limits := kinds(*events, EventLimit); len(limits) != 1 {
+		t.Errorf("%d limit events, want exactly 1: %+v", len(limits), *events)
+	}
+	if sum.End != EndStopped || sum.Reason != "stopped from the TUI" {
+		t.Errorf("summary ended %q %q, want stopped with the stop request's reason", sum.End, sum.Reason)
+	}
+	if run, err := st.GetRun(sum.RunID); err != nil || run == nil || run.Reason != "stopped from the TUI" {
+		t.Errorf("recorded run: %+v, %v", run, err)
+	}
+}

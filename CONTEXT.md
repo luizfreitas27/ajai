@@ -115,7 +115,7 @@ A short message to a member of a job's hiring team, sent through LinkedIn's free
 _Avoid_: InMail, DM, cold message, follow-up
 
 **Message queue**:
-The recruiter messages the tool holds, each in one state: **queued** (waiting for approval), **approved** (the user approved this exact text), **sending** (the click was made; never retried), **sent**, or **failed**. A job whose hiring team offers no free Message button, or whose recipient changed before sending, is recorded as **no_recipient** and nothing is sent. At most `messages.max_per_day` (default 3) are sent per local day. Managed with `ajai messages`. Not the review queue: the message queue holds outgoing messages to recruiters, the review queue holds answers to form questions.
+The recruiter messages the tool holds, each in one state: **queued** (waiting for approval), **approved** (the user approved this exact text), **sending** (saved just before the send click; never retried), **sent**, or **failed**. A job whose hiring team offers no free Message button, or whose recipient changed before sending, is recorded as **no_recipient** and nothing is sent. At most `messages.max_per_day` (default 3) are sent per local day. Managed with `ajai messages`. Not the review queue: the message queue holds outgoing messages to recruiters, the review queue holds answers to form questions.
 _Avoid_: outbox, inbox, send queue
 
 ### Scheduling and notifications
