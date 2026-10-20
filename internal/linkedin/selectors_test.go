@@ -138,7 +138,7 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 		RadioFieldsetXPath, RadioTitleXPath, RadioInputsXPath, TextInputXPath, TextareaXPath, CheckboxXPath, LabelForXPath,
 		HiddenTitleXPath, ResumeUploadInputXPath, TodayButtonXPath, NextButtonXPath, ReviewButtonXPath, SubmitButtonXPath,
 		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
-		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, InlineErrorXPath, FormProgressXPath, AppliedOnPageXPath, PaginationActiveXPath,
+		FilterSwitchXPath, PostedAgoXPath, DailyLimitXPath, InlineErrorXPath, FormProgressXPath, AppliedOnPageXPath, PaginationActiveXPath,
 		OptionLabelXPath("x"), OptionWrapLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
 		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath),
 		MessageOutletXPath, ComposeBubbleXPath, ComposeRecipientXPath, MessageBoxXPath, MessageSendButtonXPath,
@@ -150,6 +150,27 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 	for _, xp := range all {
 		if _, err := htmlquery.QueryAll(doc, strings.TrimPrefix(xp, ".")); err != nil {
 			t.Errorf("%s: %v", xp, err)
+		}
+	}
+}
+
+// TestTheDailyLimitNoticeIsFoundInEitherWording: the old inline notice and the one
+// seen on 2026-10-20 under a disabled Easy Apply button (12, synthetic), in any case,
+// and never on the captured job pages.
+func TestTheDailyLimitNoticeIsFoundInEitherWording(t *testing.T) {
+	if n := count(t, fixture(t, "12_daily_limit_notice.html"), DailyLimitXPath); n != 1 {
+		t.Errorf("the 2026-10-20 notice matched %d times, want 1", n)
+	}
+	old, err := htmlquery.Parse(strings.NewReader(`<div class="artdeco-inline-feedback__message">You've Exceeded the Daily Application Limit</div>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, old, DailyLimitXPath); n != 1 {
+		t.Errorf("the old notice matched %d times, want 1", n)
+	}
+	for _, page := range []string{"01_job_card.html", "03_job_details_top_card.html", "04_apply_button.html", "06_easy_apply_modal.html"} {
+		if n := count(t, fixture(t, page), DailyLimitXPath); n != 0 {
+			t.Errorf("%s: matched %d times on a page without the notice", page, n)
 		}
 	}
 }

@@ -51,6 +51,10 @@ no such section the notes are the commit list.
   questions) failed with "element's pointer-events is none": the boxes take no pointer events,
   and the click never reached them. ajai now picks the option through its label, then unticks
   any other option of the question that was ticked.
+- ajai recognises LinkedIn's new daily limit notice ("We limit daily submissions … apply
+  tomorrow."), shown under a disabled Easy Apply button. The run used to go on and record
+  every job left as failed at "clicking the apply button"; it now ends at the daily limit,
+  as with the old notice, and records nothing for the job, so the next run tries it again.
 
 ### Docs
 

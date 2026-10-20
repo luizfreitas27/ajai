@@ -87,7 +87,6 @@ const (
 	AddCompanyInputXPath     = `(.//input[@placeholder='Add a company'])[1]`
 	FilterSwitchXPath        = `.//input[@role="switch"]`
 	PostedAgoXPath           = `//*[contains(@class,'jobs-unified-top-card') or contains(@class,'job-details-jobs-unified-top-card')]//span[contains(normalize-space(), " ago")]`
-	InlineFeedbackXPath      = `//*[contains(@class,'artdeco-inline-feedback__message')]`
 	// InlineErrorXPath, within a form question, is the message LinkedIn shows when
 	// it refuses the question's answer ("Please enter a valid answer"). Not in a
 	// capture yet (see testdata/fixtures/README.md).
@@ -97,7 +96,12 @@ const (
 	FormProgressXPath     = `.//*[@role='region' and contains(@aria-label, 'progress is at')]`
 	AppliedOnPageXPath    = `//*[contains(@class,'jobs-s-apply__application-link')]`
 	PaginationActiveXPath = `.//button[contains(@class, 'active')]`
-	DailyLimitPhrase      = "exceeded the daily application limit"
+	// DailyLimitXPath is any element whose own text holds LinkedIn's notice that the
+	// daily Easy Apply limit is reached, in any case: the inline one the Python bot
+	// knew ("…exceeded the daily application limit…") or the one under a disabled
+	// Easy Apply button since 2026-10 ("We limit daily submissions … apply tomorrow.").
+	DailyLimitXPath = `//*[text()[contains(` + lowered + `, "exceeded the daily application limit") or contains(` + lowered + `, "limit daily submissions")]]`
+	lowered         = `translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")`
 )
 
 // The hiring team ("Meet the hiring team") in its two layouts: the job page's

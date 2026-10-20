@@ -518,14 +518,10 @@ func (s *Session) ExternalLink(ctx context.Context, button browser.Element) (str
 	return link, nil
 }
 
-// DailyLimitReached reads LinkedIn's inline notice about the Easy Apply cap.
+// DailyLimitReached reads LinkedIn's notice about the daily Easy Apply cap.
 func (s *Session) DailyLimitReached() bool {
-	el, err := s.Page.Element(InlineFeedbackXPath)
-	if err != nil {
-		return false
-	}
-	t, _ := el.Text()
-	return strings.Contains(t, DailyLimitPhrase)
+	_, err := s.Page.Element(DailyLimitXPath)
+	return err == nil
 }
 
 // NextPage moves to the following results page; false at the last page.

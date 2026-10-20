@@ -594,6 +594,39 @@ func TestPacingCapsMaxAndTheDailyLimitEndTheRunCleanly(t *testing.T) {
 	}
 }
 
+// TestTheDailyLimitBehindAnEasyApplyButtonEndsTheRunAndTheJobIsTriedAgain: on
+// 2026-10-20 LinkedIn kept the Easy Apply button, disabled, with its daily limit
+// notice under it. Seen before applying or once the click failed, it ends the run
+// cleanly, records nothing for the job, and the next run applies to it.
+func TestTheDailyLimitBehindAnEasyApplyButtonEndsTheRunAndTheJobIsTriedAgain(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go"), "2": job("2", "Go Dev", "Initech", "Go")},
+			pages: [][]string{{"1", "2"}}, dailyLimit: before}
+		r, st, events := runner(t, site, cfg())
+		calls := 0
+		r.Applier = applierFunc(func() (apply.Outcome, error) {
+			calls++
+			site.dailyLimit = true // the button stayed disabled: the notice is on the page
+			return apply.Outcome{Kind: apply.Failed, Stage: "clicking the apply button"}, errors.New("clicking the apply button: gave up after 10s: it stayed disabled")
+		})
+		sum, err := r.Run(context.Background(), Options{})
+		if err != nil || sum.End != EndDailyLimit || sum.Failed != 0 || len(kinds(*events, EventFailed)) != 0 {
+			t.Fatalf("notice before applying %v: %+v %v", before, sum, err)
+		}
+		if want := map[bool]int{true: 0, false: 1}[before]; calls != want {
+			t.Errorf("notice before applying %v: %d applications tried, want %d", before, calls, want)
+		}
+		if j, err := st.GetJob("1"); err != nil || j != nil {
+			t.Errorf("notice before applying %v: job recorded as %+v (%v)", before, j, err)
+		}
+		next := &fakeSite{jobs: site.jobs, pages: site.pages}
+		r.Site, r.Applier, r.Pacer = next, &fakeApplier{}, newPacer(cfg())
+		if sum, err = r.Run(context.Background(), Options{}); err != nil || sum.Applied != 2 {
+			t.Errorf("notice before applying %v: next run %+v %v", before, sum, err)
+		}
+	}
+}
+
 func TestAnApplicationSubmittedJustBeforeCtrlCIsStillRecorded(t *testing.T) {
 	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
 	r, st, _ := runner(t, site, cfg())

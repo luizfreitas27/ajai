@@ -249,6 +249,21 @@ func TestApprovedMessagesAreSentAtTheEndOfALiveRun(t *testing.T) {
 	}
 }
 
+// TestTheDailyLimitStillSendsTheApprovedMessages: LinkedIn's daily Easy Apply limit
+// ends a run cleanly, so the approved messages still go out at its end.
+func TestTheDailyLimitStillSendsTheApprovedMessages(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"9": job("9", "Go Dev", "ACME", "Go")}, pages: [][]string{{"9"}}, dailyLimit: true}
+	r, st, _ := runner(t, site, messagesCfg())
+	m := approvedMessage(t, st, "1", ana, "Oi Ana")
+	sum, err := r.Run(context.Background(), Options{})
+	if err != nil || sum.End != EndDailyLimit {
+		t.Fatalf("run: %+v %v", sum, err)
+	}
+	if len(site.sends) != 1 || stateOf(t, st, m.ID).State != store.MessageSent {
+		t.Errorf("sends %+v, message %+v", site.sends, stateOf(t, st, m.ID))
+	}
+}
+
 func TestADryRunNeverSends(t *testing.T) {
 	site := liveSite()
 	r, st, _ := runner(t, site, messagesCfg())

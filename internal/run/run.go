@@ -536,14 +536,12 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, r.skip(sum, c, v)
 	}
 	button, kind, how := r.Site.FindApplyButton()
+	// The notice comes without a button, or (since 2026-10) under a disabled Easy Apply one.
+	if kind != linkedin.ExternalApply && r.Site.DailyLimitReached() {
+		return r.dailyLimit(sum, c), nil
+	}
 	switch kind {
 	case linkedin.NoApplyButton:
-		if r.Site.DailyLimitReached() {
-			sum.ended(EndDailyLimit, "LinkedIn's daily Easy Apply limit reached")
-			_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
-			r.emit(EventLimit, sum.Reason, &c)
-			return cardEndsRun, nil
-		}
 		return cardPassed, r.skip(sum, c, screening.Verdict{Reason: "no apply button on the job page"})
 	case linkedin.ExternalApply:
 		if r.Cfg.Search.EasyApplyOnly {
@@ -621,6 +619,10 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	case apply.Stopped:
 		return cardPassed, ctx.Err()
 	default: // Failed
+		if r.Site.DailyLimitReached() {
+			// Not the job's fault: nothing recorded, so a later run tries it again.
+			return r.dailyLimit(sum, c), nil
+		}
 		sum.Failed++
 		row.Outcome, row.Reason = store.Failed, outcome.Stage
 		if err != nil {
@@ -662,6 +664,14 @@ func ResolveResume(p paths.Paths, market markets.Resolved, general string) (path
 		note += full + " not found; "
 	}
 	return "", strings.TrimSuffix(note, "; ") + "; LinkedIn's previously uploaded resume will be used"
+}
+
+// dailyLimit ends the run at LinkedIn's daily Easy Apply limit, recording nothing for the job.
+func (r *Runner) dailyLimit(sum *Summary, c linkedin.Card) cardOutcome {
+	sum.ended(EndDailyLimit, "LinkedIn's daily Easy Apply limit reached")
+	_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
+	r.emit(EventLimit, sum.Reason, &c)
+	return cardEndsRun
 }
 
 func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error {
