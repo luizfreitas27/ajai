@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,9 +9,14 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	"github.com/spf13/cobra"
 
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/launch"
 	"github.com/luizfreitas27/ajai/internal/messages"
+	"github.com/luizfreitas27/ajai/internal/run"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
@@ -42,7 +48,7 @@ message by the digest of the text you read, so an edited text is refused; approv
 whole queue by the list digest that "list" prints, so a queue that changed since is
 refused too.`,
 	}
-	cmd.AddCommand(a.messagesListCmd(), a.messagesApproveCmd(), a.messagesDeleteCmd())
+	cmd.AddCommand(a.messagesListCmd(), a.messagesApproveCmd(), a.messagesDeleteCmd(), a.messagesSendCmd())
 	return cmd
 }
 
@@ -225,4 +231,84 @@ func (a *App) messagesDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func (a *App) messagesSendCmd() *cobra.Command {
+	var since string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "send",
+		Short: "Send the approved recruiter messages now, without searching or applying",
+		Long: `Opens Chrome and LinkedIn as ajai run does, under the same run lock, and sends every
+approved message with the same checks: free messages only, one per recruiter, at most
+messages.max_per_day a local day and a pause before each send. It never searches or applies,
+so it works after LinkedIn's daily application limit.
+
+With --applied-since YYYY-MM-DD it then backfills: for every job applied to on or after that
+date with no hirer recorded, newest first, it opens the job page, reads the hirer and, when a
+free Message button is offered to a recruiter not messaged before, writes the message in the
+job's language and sends it right away, as messages.auto_send would. The daily cap counts
+both steps; what it leaves is printed, for another day.
+
+--dry-run reads the hirers and prints what would be sent; it sends and records nothing.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			opts := run.PendingOptions{DryRun: dryRun}
+			if since != "" {
+				t, err := time.ParseInLocation("2006-01-02", since, time.Local)
+				if err != nil {
+					return fmt.Errorf("--applied-since takes a date as YYYY-MM-DD, not %q", since)
+				}
+				opts.AppliedSince = t
+			}
+			l, err := config.Load(a.paths, a.Env, nil)
+			a.openLog(logLevel(l))
+			if err := a.configProblem(l, err); err != nil {
+				return err
+			}
+			if !l.Config.Messages.Enabled {
+				return errors.New("recruiter messages are off; turn them on with ajai config set messages.enabled true")
+			}
+			st, err := a.openStore()
+			if err != nil {
+				return err
+			}
+			plan, err := launch.NewPlan(l, a.paths, a.logger)
+			if err != nil {
+				return err
+			}
+			m, err := plan.OpenMessaging(ctx, launch.Deps{Paths: a.paths, Store: st, Logger: a.logger, Events: a.report, OpenBrowser: OpenBrowser})
+			if err != nil {
+				return err
+			}
+			defer m.Close()
+			sum, err := m.Send(ctx, opts, func(l run.SendLine) {
+				text := fmt.Sprintf("%-16s %s  %s | %s", l.Outcome, l.JobID, l.Title, l.Company)
+				if l.Detail != "" {
+					text += "  (" + l.Detail + ")"
+				}
+				a.ui.Println(text)
+			})
+			verb := "sent"
+			if dryRun {
+				verb = "would send"
+			}
+			a.ui.Printf("%s %d message(s)", verb, sum.Sent)
+			if sum.Left > 0 {
+				a.ui.Printf(", %d left for tomorrow at messages.max_per_day", sum.Left)
+			}
+			a.ui.Println()
+			if sum.Blocked {
+				a.ui.Warn("blocked", "LinkedIn blocked a message; nothing more was sent")
+			}
+			if errors.Is(err, context.Canceled) {
+				return nil // Ctrl-C or ajai stop: what was done is printed
+			}
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&since, "applied-since", "", "also message the hirers of jobs applied to on or after this date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "read the hirers and print what would be sent; send and record nothing")
+	return cmd
 }

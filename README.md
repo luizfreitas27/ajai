@@ -556,6 +556,24 @@ Approved messages go out at the end of a live run, never on a dry run. At most
 `messages.between_min_seconds` to `messages.between_max_seconds` (90 to 300 by default). An
 approved message that a run does not reach waits for the next one.
 
+To send them without a run, for example after LinkedIn's daily application limit, use
+`ajai messages send`. It opens Chrome and LinkedIn as `ajai run` does, under the same run lock,
+and sends the approved messages with the same cap, pauses and checks. It never searches or
+applies.
+
+```bash
+ajai messages send --applied-since 2026-10-20 --dry-run
+ajai messages send --applied-since 2026-10-20
+```
+
+With `--applied-since`, it also backfills the jobs applied to on or after that date that have
+no hirer recorded, newest first. For each one it opens the job page and reads the hirer. A free
+**Message** button to a recruiter not messaged before gets a message in the job's language,
+sent right away. Otherwise the job is recorded as `no_recipient`. The daily cap counts both
+steps: when it is reached, ajai stops and prints how many are left for another day.
+`--dry-run` reads the hirers and prints what would be sent, and sends and records nothing. Each
+job gets one line: sent, would send, no free message, already messaged, cap reached or failed.
+
 To skip the approval step, turn on `messages.auto_send` (it needs `messages.enabled`):
 
 ```bash

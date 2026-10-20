@@ -58,6 +58,10 @@ past it stays approved for a later run), once per recruiter, mark before clickin
 and a block stops sending for the rest of the run. A failed send never fails the
 application or the run.
 
+`ajai messages send` sends the approved messages, and with `--applied-since` backfills the
+applied jobs with no hirer recorded, outside a run and with the same checks, so messages are
+not lost to a run that was stopped or to LinkedIn's daily application limit.
+
 ## Accepted risk
 
 LinkedIn's anti-spam checks look at messaging volume and repetition, and this feature adds

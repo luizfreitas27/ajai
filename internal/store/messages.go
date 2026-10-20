@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/luizfreitas27/ajai/internal/messages"
 )
@@ -315,4 +316,13 @@ const sqliteBusy = 5
 func isBusy(err error) bool {
 	var coded interface{ Code() int }
 	return errors.As(err, &coded) && coded.Code()&0xff == sqliteBusy
+}
+
+// AppliedWithoutRecipient returns the jobs applied to on or after since, newest
+// first, that have no recruiter message row naming a hirer: never read, or read
+// with nobody to message (a blank no_recipient row). ajai messages send reads
+// their hirers again.
+func (s *Store) AppliedWithoutRecipient(since time.Time) ([]Job, error) {
+	return s.listJobs(`outcome = ? AND recorded_at >= ? AND NOT EXISTS (SELECT 1 FROM recruiter_messages m
+		WHERE m.job_id = jobs.job_id AND m.recipient_url != '')`, []any{string(Applied), Timestamp(since)}, 0, 0)
 }

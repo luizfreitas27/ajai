@@ -76,6 +76,7 @@ type fakeSite struct {
 	log      []string                                    // "pause" and "send", in order
 	here     []hereCall                                  // every SendHere call, in order
 	hereFunc func(hereCall) (linkedin.SendResult, error) // nil: every send here goes out
+	visited  []string                                    // every JobHiringTeam job id, in order
 }
 
 // hereCall is one SendHere: whom, what, and the card open at the time.
@@ -112,6 +113,12 @@ func (f *fakeSite) HiringTeam(context.Context) (messages.Recipient, bool, error)
 	}
 	h := f.hirers[f.opened]
 	return h.to, h.ok, nil
+}
+
+func (f *fakeSite) JobHiringTeam(ctx context.Context, jobID string) (messages.Recipient, bool, error) {
+	f.visited = append(f.visited, jobID)
+	f.opened = jobID
+	return f.HiringTeam(ctx)
 }
 
 func (f *fakeSite) SendMessage(_ context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error) {

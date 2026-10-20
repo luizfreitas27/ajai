@@ -46,6 +46,9 @@ type Site interface {
 	// HiringTeam reads the hirer a free Message button is offered for on the job
 	// page; ok is false when there is none.
 	HiringTeam(ctx context.Context) (messages.Recipient, bool, error)
+	// JobHiringTeam opens the job page of jobID and reads its hirer there, as
+	// HiringTeam does; SendHere then sends on that page.
+	JobHiringTeam(ctx context.Context, jobID string) (messages.Recipient, bool, error)
 	// SendMessage sends text to the hirer of job jobID, after checking that the hirer
 	// is still to (see linkedin.SendResult).
 	SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error)

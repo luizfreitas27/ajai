@@ -427,3 +427,33 @@ func TestAFailedAttemptStillBlocksTheRecruiter(t *testing.T) {
 		t.Error("a failed attempt does not count: the next job by this recruiter would be messaged again")
 	}
 }
+
+func TestAppliedWithoutRecipientListsAppliedJobsSinceADateWithNoHirerRecorded(t *testing.T) {
+	s := open(t)
+	at := func(day int) string { return Timestamp(time.Date(2026, 10, day, 10, 0, 0, 0, time.Local)) }
+	for _, j := range []Job{
+		{JobID: "old", Outcome: Applied, RecordedAt: at(18)},     // before the date
+		{JobID: "none", Outcome: Applied, RecordedAt: at(19)},    // no message row
+		{JobID: "blank", Outcome: Applied, RecordedAt: at(20)},   // a blank no_recipient row
+		{JobID: "hirer", Outcome: Applied, RecordedAt: at(20)},   // a row with a recipient
+		{JobID: "skipped", Outcome: Skipped, RecordedAt: at(20)}, // not applied
+		{JobID: "newest", Outcome: Applied, RecordedAt: at(20)},  // no message row, newest
+	} {
+		must(t, s.UpsertJob(j))
+	}
+	must(t, s.UpsertJob(Job{JobID: "newest", Outcome: Applied, RecordedAt: Timestamp(time.Date(2026, 10, 20, 11, 0, 0, 0, time.Local))}))
+	_, err := s.InsertMessage(Message{JobID: "blank", State: MessageNoRecipient})
+	must(t, err)
+	_, err = s.InsertMessage(Message{JobID: "hirer", RecipientURL: "https://www.linkedin.com/in/ana", State: MessageNoRecipient})
+	must(t, err)
+
+	jobs, err := s.AppliedWithoutRecipient(time.Date(2026, 10, 19, 0, 0, 0, 0, time.Local))
+	must(t, err)
+	var ids []string
+	for _, j := range jobs {
+		ids = append(ids, j.JobID)
+	}
+	if want := []string{"newest", "blank", "none"}; fmt.Sprint(ids) != fmt.Sprint(want) {
+		t.Errorf("jobs %v, want %v (newest first)", ids, want)
+	}
+}

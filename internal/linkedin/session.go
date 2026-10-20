@@ -653,20 +653,11 @@ var (
 // not hold exactly text (nothing sent), or the send was clicked and never seen
 // through.
 func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (SendResult, error) {
-	base := s.jobBase
-	if base == "" {
-		base = JobURL
-	}
-	if err := s.Page.Navigate(ctx, base+jobID+"/"); err != nil {
+	if blocked, err := s.openJobPage(ctx, jobID); err != nil || blocked {
+		if blocked {
+			return SendBlocked, nil
+		}
 		return "", err
-	}
-	if s.blocked() {
-		return SendBlocked, nil
-	}
-	if _, err := s.Page.WaitElement(ctx, HiringTeamSectionXPath, 15*time.Second); ctx.Err() != nil {
-		return "", ctx.Err()
-	} else if err != nil {
-		s.Logger.Info("no hiring team on the job page", "job", jobID)
 	}
 	found, card, ok, err := s.hirer()
 	if err != nil {
@@ -676,6 +667,45 @@ func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID,
 		return SendNoRecipient, nil
 	}
 	return s.composeAndSend(ctx, card, to, text)
+}
+
+// ErrBlocked is JobHiringTeam on a checkpoint page: LinkedIn restricted the
+// account or asks for a CAPTCHA, so nothing more is sent.
+var ErrBlocked = errors.New("LinkedIn showed a checkpoint page")
+
+// openJobPage opens the job page of jobID and waits for its hiring team, which
+// may be missing. blocked is true on a checkpoint page.
+func (s *Session) openJobPage(ctx context.Context, jobID string) (blocked bool, err error) {
+	base := s.jobBase
+	if base == "" {
+		base = JobURL
+	}
+	if err := s.Page.Navigate(ctx, base+jobID+"/"); err != nil {
+		return false, err
+	}
+	if s.blocked() {
+		return true, nil
+	}
+	if _, err := s.Page.WaitElement(ctx, HiringTeamSectionXPath, 15*time.Second); ctx.Err() != nil {
+		return false, ctx.Err()
+	} else if err != nil {
+		s.Logger.Info("no hiring team on the job page", "job", jobID)
+	}
+	return false, nil
+}
+
+// JobHiringTeam opens the job page of jobID and reads its hirer, as
+// HiringTeam does; SendHere then sends on that page. A checkpoint page has no
+// hirer to read: it is ErrBlocked.
+func (s *Session) JobHiringTeam(ctx context.Context, jobID string) (messages.Recipient, bool, error) {
+	if blocked, err := s.openJobPage(ctx, jobID); err != nil || blocked {
+		if blocked {
+			err = ErrBlocked
+		}
+		return messages.Recipient{}, false, err
+	}
+	to, _, ok, err := s.hirer()
+	return to, ok, err
 }
 
 // SendHere is SendMessage on the page shown, the search page with the details

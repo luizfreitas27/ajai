@@ -26,6 +26,10 @@ no such section the notes are the commit list.
     place. Off by default.
   - Each recruiter gets one message, ever: an application to another job of a recruiter
     already messaged records "already messaged this recruiter" and sends nothing.
+  - `ajai messages send` sends the approved messages without a run, so they go out after
+    LinkedIn's daily application limit too. `--applied-since YYYY-MM-DD` also reads the hirer
+    of each job applied to since then with no hirer recorded and sends it a message, within the
+    daily cap. `--dry-run` only prints what would be sent.
 
 ### Fixed
 

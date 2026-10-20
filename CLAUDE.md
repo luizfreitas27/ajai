@@ -28,6 +28,8 @@ to the tag before tagging and the workflow publishes that section as the release
 ## Architecture (target; see issue #1 for the spec)
 
 - `cmd/ajai`: cobra command tree only. No business logic.
+- `internal/cli`: the commands. `ajai messages send` opens Chrome only through
+  `launch.Plan.OpenMessaging`, never `Plan.Open`, so it cannot search or apply.
 - `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
   Secrets never live in the YAML.
 - `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
@@ -197,7 +199,9 @@ to the tag before tagging and the workflow publishes that section as the release
 - `internal/launch`: the one place a loaded configuration becomes a run: `NewPlan` (market,
   AI client, resume, Chrome; no side effects, so the caller can print it first) then
   `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `ajai run`
-  and the daemon both use it; never wire a runner anywhere else. It decides attended-only
+  and the daemon both use it; never wire a runner anywhere else. `Plan.OpenMessaging` is its one
+  other entry: the run lock (`run.OriginMessages`), Chrome and a session with no applier, for
+  `ajai messages send` (`Runner.SendPending`). It decides attended-only
   hooks (help pause, filter pause) from `run.Options`: the terminal always passes them,
   the daemon has none (its runs are unattended).
 - `internal/config/wired_test.go` fails when a config field is read nowhere outside the

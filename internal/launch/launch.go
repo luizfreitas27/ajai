@@ -134,6 +134,50 @@ func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, err
 	}}, nil
 }
 
+// Messaging is Chrome and a LinkedIn session for ajai messages send, under the
+// run lock: Send sends, Close releases both.
+type Messaging struct {
+	Runner *run.Runner
+	lock   *run.Lock
+	close  func()
+}
+
+// Send sends the pending recruiter messages (run.Runner.SendPending), ending
+// cleanly, with the request's reason, when a stop request arrives.
+func (m *Messaging) Send(ctx context.Context, opts run.PendingOptions, report func(run.SendLine)) (run.PendingSummary, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	go m.lock.WatchStops(ctx, cancel)
+	return m.Runner.SendPending(ctx, opts, report)
+}
+
+// Close closes Chrome and releases the run lock, as Opened.Close does.
+func (m *Messaging) Close() { m.close() }
+
+// OpenMessaging is Open for ajai messages send: the run lock (with
+// run.OriginMessages), Chrome on the configured profile and a session, with
+// no applier, so nothing can search or apply.
+func (p *Plan) OpenMessaging(ctx context.Context, d Deps) (*Messaging, error) {
+	cfg := p.Config
+	lock, err := run.AcquireLock(d.Paths.DataDir, run.Holder{Origin: run.OriginMessages, Started: time.Now()})
+	if err != nil {
+		return nil, err
+	}
+	br, _, err := OpenChrome(ctx, cfg, d.Paths, d.OpenBrowser, d.Logger)
+	if err != nil {
+		lock.Release()
+		return nil, err
+	}
+	pacer := pacing.New(cfg.Pacing, false)
+	session := linkedin.NewSession(br.Main(), br, pacer, d.Logger)
+	session.CloseTabs, session.ScreenshotDir = cfg.Settings.CloseTabs, d.Paths.ScreenshotDir
+	runner := &run.Runner{Cfg: cfg, Market: p.Market, Site: session, Store: d.Store, Pacer: pacer, Logger: d.Logger, Events: d.Events}
+	return &Messaging{Runner: runner, lock: lock, close: func() {
+		_ = br.Close()
+		lock.Release()
+	}}, nil
+}
+
 // ErrOwnProfileInUse: the ajai profile is open in another Chrome window. It is
 // also a browser.ErrProfileInUse for errors.Is.
 var ErrOwnProfileInUse error = ownProfileInUse{}
