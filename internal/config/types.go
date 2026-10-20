@@ -16,6 +16,7 @@ type Config struct {
 	Settings  Settings  `yaml:"settings" doc:"How the tool behaves: Chrome, tabs, pacing of the search itself."`
 	Markets   Markets   `yaml:"markets" doc:"Values that differ between applying in Brazil and abroad. One market is active per run."`
 	Pacing    Pacing    `yaml:"pacing" doc:"Limits that keep a run at a human rhythm. Reaching one ends the run cleanly."`
+	Messages  Messages  `yaml:"messages" doc:"Recruiter messages sent after an application. Each one waits in a queue until you approve it with ajai messages approve."`
 	AI        AI        `yaml:"ai" doc:"The language model that answers unrecognised questions. The API key is AJAI_AI_API_KEY in the environment or .env, never here."`
 }
 
@@ -118,12 +119,13 @@ type Markets struct {
 
 // Market is one market's values. Zero or blank means "fall back".
 type Market struct {
-	Currency      string   `yaml:"currency" doc:"ISO 4217 code typed when a form asks for the currency." example:"BRL"`
-	DesiredSalary int      `yaml:"desired_salary" doc:"Desired salary in this market's period, 0 to fall back." min:"0"`
-	CurrentSalary int      `yaml:"current_salary" doc:"Current salary in this market's period, 0 to fall back." min:"0"`
-	Location      string   `yaml:"location" doc:"Search location for this market, blank to fall back."`
-	Terms         []string `yaml:"terms" doc:"Search terms for this market, empty to fall back."`
-	Resume        string   `yaml:"resume" doc:"Resume to upload in this market, blank to use questions.resume."`
+	Currency        string   `yaml:"currency" doc:"ISO 4217 code typed when a form asks for the currency." example:"BRL"`
+	DesiredSalary   int      `yaml:"desired_salary" doc:"Desired salary in this market's period, 0 to fall back." min:"0"`
+	CurrentSalary   int      `yaml:"current_salary" doc:"Current salary in this market's period, 0 to fall back." min:"0"`
+	Location        string   `yaml:"location" doc:"Search location for this market, blank to fall back."`
+	Terms           []string `yaml:"terms" doc:"Search terms for this market, empty to fall back."`
+	Resume          string   `yaml:"resume" doc:"Resume to upload in this market, blank to use questions.resume."`
+	MessageTemplate string   `yaml:"message_template" doc:"Recruiter message for this market. Placeholders: {first_name} (blank name drops the name from the greeting), {title}, {company}. Blank sends nothing."`
 }
 
 // Pacing is new in ajai; see ADR 0001.
@@ -136,6 +138,14 @@ type Pacing struct {
 	BetweenActionsMax int `yaml:"between_actions_max_seconds" doc:"Longest pause between two form actions, seconds." min:"0"`
 	TypingDelayMinMs  int `yaml:"typing_delay_min_ms" doc:"Shortest delay between typed characters, milliseconds." min:"0"`
 	TypingDelayMaxMs  int `yaml:"typing_delay_max_ms" doc:"Longest delay between typed characters, milliseconds." min:"0"`
+}
+
+// Messages mirrors the recruiter message settings; see ADR 0002.
+type Messages struct {
+	Enabled           bool `yaml:"enabled" doc:"After each submitted application, queue a message to the hirer shown on the job page, when a free Message button is there. Nothing is sent until you approve it (ajai messages list, ajai messages approve). Off by default."`
+	MaxPerDay         int  `yaml:"max_per_day" doc:"Most messages sent per local day." min:"1"`
+	BetweenMinSeconds int  `yaml:"between_min_seconds" doc:"Shortest pause before a message is sent, seconds." min:"0"`
+	BetweenMaxSeconds int  `yaml:"between_max_seconds" doc:"Longest pause before a message is sent, seconds." min:"0"`
 }
 
 // AI selects the model. Every provider speaks the OpenAI-compatible chat API.
@@ -169,13 +179,16 @@ func Defaults() Config {
 		},
 		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, LogLevel: "INFO"},
 		Markets: Markets{
-			Active:        string(MarketInternacional),
-			Brasil:        Market{Currency: "BRL", Location: "Brasil", Terms: []string{}},
-			Internacional: Market{Currency: "USD", Terms: []string{}},
+			Active: string(MarketInternacional),
+			Brasil: Market{Currency: "BRL", Location: "Brasil", Terms: []string{},
+				MessageTemplate: "Olá {first_name}, acabei de me candidatar à vaga de {title} na {company}. Fico à disposição para conversar e no aguardo de um contato. Obrigado!"},
+			Internacional: Market{Currency: "USD", Terms: []string{},
+				MessageTemplate: "Hi {first_name}, I just applied for the {title} role at {company}. I'd be glad to talk whenever it suits you, and I look forward to hearing from you. Thanks!"},
 		},
 		Pacing: Pacing{MaxPerHour: 15, MaxPerRun: 50, BetweenJobsMin: 30, BetweenJobsMax: 90,
 			BetweenActionsMin: 1, BetweenActionsMax: 4, TypingDelayMinMs: 40, TypingDelayMaxMs: 160},
-		AI: AI{Provider: "openai", Model: "gpt-5.6-sol"},
+		Messages: Messages{MaxPerDay: 3, BetweenMinSeconds: 90, BetweenMaxSeconds: 300},
+		AI:       AI{Provider: "openai", Model: "gpt-5.6-sol"},
 	}
 }
 

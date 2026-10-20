@@ -105,6 +105,31 @@ func TestParsePosted(t *testing.T) {
 	}
 }
 
+func TestNormaliseProfileURL(t *testing.T) {
+	for _, tc := range []struct {
+		href, want string
+		ok         bool
+	}{
+		{"https://www.linkedin.com/in/ana-ribeiro-fictional/", "https://www.linkedin.com/in/ana-ribeiro-fictional", true},
+		{"https://www.linkedin.com/in/ana-ribeiro-fictional", "https://www.linkedin.com/in/ana-ribeiro-fictional", true},
+		{"/in/ana-ribeiro-fictional/?miniProfileUrn=urn%3Ali%3Afs", "https://www.linkedin.com/in/ana-ribeiro-fictional", true},
+		{"https://www.linkedin.com/in/ana#top", "https://www.linkedin.com/in/ana", true},
+		{" https://www.linkedin.com/in/ana?trk=x ", "https://www.linkedin.com/in/ana", true},
+		{"https://www.linkedin.com/company/acme/", "", false},
+		{"/messaging/compose/?recipient=x", "", false},
+		{"https://evil.example.com/in/ana", "", false},
+		{"http://www.linkedin.com/in/ana", "", false},
+		{"https://www.linkedin.com/in/", "", false},
+		{"https://www.linkedin.com/in/ana/details", "", false},
+		{"", "", false},
+	} {
+		got, ok := NormaliseProfileURL(tc.href)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("NormaliseProfileURL(%q) = %q, %v; want %q, %v", tc.href, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 // shotPage records the screenshots taken.
 type shotPage struct {
 	browser.Page

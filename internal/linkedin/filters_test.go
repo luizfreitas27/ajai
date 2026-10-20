@@ -35,6 +35,10 @@ func (e *fakeElement) Focus() error                               { return e.stu
 func (e *fakeElement) Elements(string) ([]browser.Element, error) { return e.stub.Elements("") }
 func (e *fakeElement) SelectOption(string) error                  { return e.stub.SelectOption("") }
 func (e *fakeElement) SetFiles([]string) error                    { return e.stub.SetFiles(nil) }
+func (e *fakeElement) ShadowElements(string) ([]browser.Element, error) {
+	return e.stub.ShadowElements("")
+}
+func (e *fakeElement) ScriptClick() error { return e.stub.ScriptClick() }
 
 func (e *fakeElement) Click() error { e.page.clicks = append(e.page.clicks, e.name); return nil }
 func (e *fakeElement) ClickAtCentre() error {

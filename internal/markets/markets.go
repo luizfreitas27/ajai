@@ -33,6 +33,8 @@ type Resolved struct {
 	Location       string
 	Terms          []string
 	Resume         string // the market's own resume, else questions.resume
+	// MessageTemplate is the recruiter message for this market, unfilled; blank sends nothing.
+	MessageTemplate string
 }
 
 // DesiredAsEntered is the desired salary in the period the user typed it in.
@@ -66,11 +68,12 @@ func Resolve(c config.Config) Resolved {
 	legacyDesired := float64(c.Questions.DesiredSalary)
 	legacyCurrent := float64(c.Questions.CurrentSalary)
 	r := Resolved{
-		Name:     name,
-		Currency: firstNonBlank(m.Currency, defaultCurrency(name)),
-		Location: firstNonBlank(m.Location, c.Search.Location),
-		Terms:    firstNonEmpty(m.Terms, c.Search.Terms),
-		Resume:   firstNonBlank(m.Resume, c.Questions.Resume),
+		Name:            name,
+		Currency:        firstNonBlank(m.Currency, defaultCurrency(name)),
+		Location:        firstNonBlank(m.Location, c.Search.Location),
+		Terms:           firstNonEmpty(m.Terms, c.Search.Terms),
+		Resume:          firstNonBlank(m.Resume, c.Questions.Resume),
+		MessageTemplate: m.MessageTemplate,
 	}
 	if name == config.MarketBrasil {
 		r.SalaryPeriod = Monthly

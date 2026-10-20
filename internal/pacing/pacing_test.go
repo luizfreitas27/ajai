@@ -89,3 +89,23 @@ func TestACancelledContextEndsAPauseEarly(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestPauseSecondsStaysWithinItsBoundsAndIsExactWhenEqual(t *testing.T) {
+	p, _, slept := testPacer(t, config.Defaults().Pacing)
+	for i := 0; i < 200; i++ {
+		if err := p.PauseSeconds(context.Background(), 90, 300); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range *slept {
+		if d < 90*time.Second || d > 300*time.Second {
+			t.Fatalf("pause %v outside 90s..300s", d)
+		}
+	}
+	if err := p.PauseSeconds(context.Background(), 5, 5); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*slept)[len(*slept)-1]; got != 5*time.Second {
+		t.Errorf("equal bounds paused %v, want 5s", got)
+	}
+}

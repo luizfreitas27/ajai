@@ -93,7 +93,7 @@ try "ajai run --dry-run". In a terminal, "ajai" with no command opens the TUI.`,
 	root.SetIn(a.Stdin)
 	root.PersistentFlags().StringVar(&a.configFlag, "config", "", "config file (default: the OS config dir, or $AJAI_HOME/config.yaml)")
 	root.PersistentFlags().BoolVar(&a.noColor, "no-color", false, "plain output (also honours NO_COLOR)")
-	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.loginCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd(), a.scheduleCmd(), a.daemonCmd())
+	root.AddCommand(a.versionCmd(), a.initCmd(), a.configCmd(), a.doctorCmd(), a.importCmd(), a.jobsCmd(), a.exportCmd(), a.answersCmd(), a.messagesCmd(), a.loginCmd(), a.runCmd(), a.stopCmd(), a.statusCmd(), a.logsCmd(), a.scheduleCmd(), a.daemonCmd())
 	return root
 }
 

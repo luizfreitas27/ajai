@@ -140,7 +140,9 @@ func TestEverySelectorIsValidXPath(t *testing.T) {
 		DiscardButtonXPath, SearchLocationInputXPath, AllFiltersButtonXPath, ShowResultsButtonXPath, AddCompanyInputXPath,
 		FilterSwitchXPath, PostedAgoXPath, InlineFeedbackXPath, InlineErrorXPath, FormProgressXPath, AppliedOnPageXPath, PaginationActiveXPath,
 		OptionLabelXPath("x"), PageButtonXPath(2), ClassXPath("a"), SelectOptionsXPath, VisuallyHiddenAnyXPath,
-		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath)}
+		FollowCompanyInputXPath, FollowCompanyLabelXPath, FromDocument(ModalCloseXPath),
+		MessageOutletXPath, ComposeBubbleXPath, ComposeRecipientXPath, MessageBoxXPath, MessageSendButtonXPath,
+		MessageSubjectXPath, InMailCreditsXPath, BubbleCloseButtonXPath, UpsellModalXPath, UpsellDismissXPath, SentMessageBodyXPath}
 	for _, loc := range EasyApplyLocators {
 		all = append(all, loc.XPath)
 	}
@@ -215,6 +217,96 @@ func TestModalAndFormAnchors(t *testing.T) {
 	}
 }
 
+// ------------------------------------------------------------ hiring team (07, 10)
+func TestHiringTeamSelectorsMatchTheCapturedSection(t *testing.T) {
+	team := fixture(t, "07_hiring_team.html")
+	if count(t, team, HiringTeamSectionXPath) != 1 {
+		t.Fatal("the 'People you can reach out to' section is not found")
+	}
+	section := one(t, team, HiringTeamSectionXPath)
+	link := one(t, section, HirerProfileLinkXPath)
+	if htmlquery.SelectAttr(link, "href") != "https://www.linkedin.com/in/ana-ribeiro-fictional/" {
+		t.Errorf("hirer profile href %q", htmlquery.SelectAttr(link, "href"))
+	}
+	if text(one(t, link, HirerNameXPath)) != "Ana Ribeiro" {
+		t.Errorf("hirer name %q", text(one(t, link, HirerNameXPath)))
+	}
+	msg := one(t, section, HirerMessageXPath)
+	if htmlquery.SelectAttr(msg, "aria-label") != "Message" || !strings.HasPrefix(htmlquery.SelectAttr(msg, "href"), "/messaging/compose/") {
+		t.Error("the free Message control")
+	}
+	card := one(t, section, HirerCardXPath)
+	if count(t, card, HirerProfileLinkXPath) != 1 || count(t, card, HirerMessageXPath) != 1 {
+		t.Error("the card does not hold the hirer's profile and its Message control together")
+	}
+}
+
+func TestHiringTeamSelectorsOnAnEmptySlot(t *testing.T) {
+	team := fixture(t, "10_no_hiring_team.html")
+	if count(t, team, HiringTeamSectionXPath) != 1 {
+		t.Fatal("the empty section is not found")
+	}
+	section := one(t, team, HiringTeamSectionXPath)
+	for _, xp := range []string{HirerProfileLinkXPath, HirerMessageXPath, HirerCardXPath} {
+		if count(t, section, xp) != 0 {
+			t.Errorf("%s matches an empty hiring team", xp)
+		}
+	}
+}
+
+// ------------------------------------------------------------ message overlay (08, 09)
+// In the live page the overlay sits in the open shadow root of #interop-outlet;
+// the fixtures hold its markup alone, so the selectors inside it are checked
+// here directly and the host on a page like LinkedIn's.
+func TestMessageOutletSelectorFindsTheShadowHost(t *testing.T) {
+	doc, err := htmlquery.Parse(strings.NewReader(`<body><div id="interop-outlet" data-testid="interop-shadowdom"></div><div id="other"></div></body>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count(t, doc, MessageOutletXPath) != 1 {
+		t.Error("the messaging overlay's shadow host")
+	}
+}
+
+func TestComposeSelectorsMatchTheCapturedFreeInMail(t *testing.T) {
+	overlay := fixture(t, "08_message_overlay.html")
+	bubble := one(t, overlay, ComposeBubbleXPath)
+	if htmlquery.SelectAttr(one(t, bubble, ComposeRecipientXPath), "href") != "/in/ana-ribeiro-fictional/" {
+		t.Error("the compose bubble's recipient link")
+	}
+	box := one(t, bubble, MessageBoxXPath)
+	if htmlquery.SelectAttr(box, "aria-label") != "Write a message…" {
+		t.Errorf("message box %q", htmlquery.SelectAttr(box, "aria-label"))
+	}
+	send := one(t, bubble, MessageSendButtonXPath)
+	if _, disabled := attr(send, "disabled"); !disabled {
+		t.Error("the send button is disabled before anything is typed")
+	}
+	if !strings.Contains(text(one(t, bubble, InMailCreditsXPath)), FreeMessageText) {
+		t.Errorf("credits display %q does not say %q", text(one(t, bubble, InMailCreditsXPath)), FreeMessageText)
+	}
+	if htmlquery.SelectAttr(one(t, bubble, MessageSubjectXPath), "placeholder") != "Subject (optional)" {
+		t.Error("the optional subject")
+	}
+	if text(one(t, bubble, BubbleCloseButtonXPath)) != "Close your draft conversation" {
+		t.Error("the draft's close button")
+	}
+	if count(t, overlay, UpsellModalXPath) != 0 {
+		t.Error("the upsell selector matches a compose")
+	}
+}
+
+func TestUpsellSelectorsMatchTheCapturedPremiumModal(t *testing.T) {
+	upsell := fixture(t, "09_inmail_compose.html")
+	modal := one(t, upsell, UpsellModalXPath)
+	one(t, modal, UpsellDismissXPath)
+	for _, xp := range []string{ComposeBubbleXPath, MessageBoxXPath, MessageSendButtonXPath} {
+		if count(t, upsell, FromDocument(xp)) != 0 {
+			t.Errorf("%s matches the upsell", xp)
+		}
+	}
+}
+
 // ------------------------------------------------------------ after Submit
 func TestTheDoneButtonIsOnlyLookedForInADialog(t *testing.T) {
 	doc, err := htmlquery.Parse(strings.NewReader(`<ul><li><span>Software Delivery Done Right</span></li></ul>
@@ -228,4 +320,14 @@ func TestTheDoneButtonIsOnlyLookedForInADialog(t *testing.T) {
 	if count(t, doc, FromDocument(ModalCloseXPath)) != 1 {
 		t.Error("the dialog's close button is not found")
 	}
+}
+
+// attr is an attribute and whether it is there.
+func attr(n *html.Node, name string) (string, bool) {
+	for _, a := range n.Attr {
+		if a.Key == name {
+			return a.Val, true
+		}
+	}
+	return "", false
 }

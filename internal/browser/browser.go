@@ -41,6 +41,15 @@ type Element interface {
 	SelectOption(text string) error
 	// SetFiles sets the files of an <input type="file">.
 	SetFiles(paths []string) error
+	// ShadowElements finds the elements matching xpath inside the element's open
+	// shadow root, which a document-wide XPath never reaches. The xpath is
+	// absolute ("//x"): it is evaluated from the root of the shadow tree. An
+	// element without a shadow root is an error; an empty one matches nothing.
+	ShadowElements(xpath string) ([]Element, error)
+	// ScriptClick calls the element's click() in the page: no mouse, no wait for
+	// it to be shown. For a control whose real click hangs, as LinkedIn's hirer
+	// Message link does.
+	ScriptClick() error
 }
 
 // Page is one tab.
@@ -52,7 +61,8 @@ type Page interface {
 	// WaitElement waits up to timeout for a VISIBLE element matching xpath.
 	WaitElement(ctx context.Context, xpath string, timeout time.Duration) (Element, error)
 	Screenshot(path string) error
-	// Press sends a keyboard key to the page, e.g. "Escape", "Enter", "ArrowDown", "Tab".
+	// Press sends a keyboard key to the page, e.g. "Escape", "Enter", "ArrowDown", "Tab",
+	// or "Shift+Enter".
 	Press(key string) error
 	Close() error
 }

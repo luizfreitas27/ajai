@@ -258,6 +258,9 @@ func (p *rodPage) Screenshot(path string) error {
 }
 
 func (p *rodPage) Press(key string) error {
+	if key == "Shift+Enter" { // a line break in a text box where Enter sends
+		return p.p.KeyActions().Press(input.ShiftLeft).Type(input.Enter).Do()
+	}
 	k, ok := keys[key]
 	if !ok {
 		return fmt.Errorf("unknown key %q", key)
@@ -512,3 +515,27 @@ func (e *rodElement) SelectOption(text string) error {
 }
 
 func (e *rodElement) SetFiles(paths []string) error { return e.el.SetFiles(paths) }
+
+// ShadowElements: XPath refuses the shadow root itself as its context node, but
+// from any element inside the shadow tree "//" starts at the shadow root, so the
+// root's first element is the context.
+func (e *rodElement) ShadowElements(xpath string) ([]Element, error) {
+	root, err := e.el.ShadowRoot()
+	if err != nil {
+		return nil, err
+	}
+	inside, err := root.Elements("*") // querySelectorAll: no wait, unlike root.Element
+	if err != nil || len(inside) == 0 {
+		return nil, err
+	}
+	els, err := inside[0].ElementsX(xpath)
+	if err != nil {
+		return nil, err
+	}
+	return wrap(els, e.smooth), nil
+}
+
+func (e *rodElement) ScriptClick() error {
+	_, err := e.el.Eval(`() => this.click()`)
+	return err
+}

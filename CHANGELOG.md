@@ -6,6 +6,22 @@ no such section the notes are the commit list.
 
 ## Unreleased
 
+### Added
+
+- Recruiter messages after a submitted application. Off by default; turn them on with
+  `messages.enabled: true`. When the job page shows a hirer with a free Message button, ajai
+  queues one message written from the market's `message_template`. Nothing is sent until you
+  approve its exact text: `ajai messages list` shows each queued message with a digest of its
+  text, `ajai messages approve <id> <digest>` approves one, `ajai messages approve --all
+  <list-digest>` approves the whole queue as listed, and `ajai messages delete <id>` removes one.
+  - Messages go out at the end of live runs only, never on a dry run: at most
+    `messages.max_per_day` (3) a local day, each after a pause of
+    `messages.between_min_seconds` to `between_max_seconds` (90 to 300).
+  - `message_template` takes `{first_name}`, `{title}` and `{company}`. A blank template
+    queues nothing.
+  - Free messages only: a connection's message, or LinkedIn's free message to an open profile.
+    Premium and paid InMail are never used; that hirer is recorded and skipped.
+
 ### Fixed
 
 - ajai's files are now readable only by you. They used to be 0755 and 0644, so other users

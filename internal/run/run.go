@@ -19,6 +19,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
 	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/screening"
@@ -42,6 +43,12 @@ type Site interface {
 	ExternalLink(ctx context.Context, button browser.Element) (string, error)
 	DailyLimitReached() bool
 	NextPage(ctx context.Context) (bool, error)
+	// HiringTeam reads the hirer a free Message button is offered for on the job
+	// page; ok is false when there is none.
+	HiringTeam(ctx context.Context) (messages.Recipient, bool, error)
+	// SendMessage sends text to the hirer of job jobID, after checking that the hirer
+	// is still to (see linkedin.SendResult).
+	SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error)
 }
 
 // Applier works one Easy Apply modal; apply.Applier in production.
@@ -267,6 +274,14 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	if errors.Is(err, errInvalidOptions) {
 		return sum, err // a mistake on the command line, not a run
 	}
+	// Only a cancel that lands during the send phase is reclassified here; a run
+	// the loop already stopped has emitted its limit and must not stop twice.
+	if err == nil && !opts.DryRun && r.Cfg.Messages.Enabled && ctx.Err() == nil {
+		r.sendMessages(ctx)
+		if ctx.Err() != nil { // stopped while sending: the cause is recorded as an in-run stop's is
+			sum, err = r.stop(ctx, &sum, ctx.Err())
+		}
+	}
 	r.record(&sum)
 	r.notifyEnd(sum, err)
 	ended := sum
@@ -290,9 +305,9 @@ func (r *Runner) record(sum *Summary) {
 	}
 }
 
-// endAbandoned ends the runs dead processes left in progress (killed,
-// crashed). A run holds the run lock and has no row yet, so no run is in
-// progress: the run a state file names, if it has no end, was left by a dead
+// endAbandoned ends the runs and sending messages dead processes left in
+// progress (killed, crashed). A run holds the run lock and has no row yet, so no
+// run is in progress: the run a state file names, if it has no end, was left by a dead
 // process and ends with the counts it last saved (the file stays: this run
 // writes its own next), and any other run left without an end ends too.
 func (r *Runner) endAbandoned() {
@@ -307,6 +322,13 @@ func (r *Runner) endAbandoned() {
 		r.Logger.Warn("could not end the runs dead processes left in progress", "error", err)
 	case n > 0:
 		r.Logger.Info("ended runs dead processes left in progress", "runs", n)
+	}
+	// A message left sending died mid-send: it may have gone out, so it ends
+	// failed, never approved.
+	if m, err := r.Store.FailSendingMessages(store.InterruptedSend); err != nil {
+		r.Logger.Warn("could not end the messages a dead process left sending", "error", err)
+	} else if m > 0 {
+		r.Logger.Warn("ended messages a dead process left sending", "messages", m)
 	}
 }
 
@@ -601,6 +623,9 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	if err := r.Store.UpsertJob(row); err != nil {
 		return cardPassed, err
+	}
+	if row.Outcome == store.Applied && !opts.DryRun {
+		r.queueMessage(ctx, c, sum.RunID)
 	}
 	if ctx.Err() != nil {
 		return cardPassed, ctx.Err()
