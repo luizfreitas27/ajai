@@ -512,6 +512,50 @@ minutes. With `--unattended`, or when stdin or stdout is not a terminal (a scrip
 scheduler, a run started from the TUI), the job is skipped instead and the question waits for
 your answer in `ajai answers review`.
 
+## Recruiter messages
+
+After a submitted application, ajai can write to one of the job's hirers. It is off by
+default:
+
+```bash
+ajai config set messages.enabled true
+```
+
+When the job page shows a hirer under "Meet the hiring team" with a free **Message** button,
+ajai queues a message built from the market's `message_template` (`markets.brasil` or
+`markets.internacional` in `config.yaml`). The template can use three placeholders:
+
+- `{first_name}`: the hirer's first name. With no name, the greeting goes without it.
+- `{title}`: the job's title.
+- `{company}`: the company.
+
+A blank template queues nothing.
+
+Nothing is sent until you approve it. `ajai messages list` prints every message with its id,
+state, job, company, the hirer's name and profile URL, and the full text, followed by a digest
+of that text. The queued ones end with the commands to approve them: one `approve --all` line
+with the digest of the whole list, and one `approve <id> <digest>` line per message.
+
+- `ajai messages approve <id> <digest>` approves one message, if its text still has that digest.
+- `ajai messages approve --all <list-digest>` approves every queued message, if the queue is
+  still the one that list showed. Any change to the queue refuses it, so run `list` again.
+- `ajai messages delete <id>` removes a message. A message being sent cannot be deleted.
+
+Approved messages go out at the end of a live run, never on a dry run. At most
+`messages.max_per_day` (3 by default) are sent per local day, each after a pause of
+`messages.between_min_seconds` to `messages.between_max_seconds` (90 to 300 by default). An
+approved message that a run does not reach waits for the next one.
+
+Some hirers cannot be messaged for free. When the job page shows no hirer with a free
+**Message** button, ajai records the job as `no_recipient` and sends nothing. The same happens
+when the hirer has changed by the time of sending, or when LinkedIn offers only Premium or a
+paid InMail. These rows stay in `ajai messages list --state no_recipient`.
+
+Messaging carries more risk than applying. LinkedIn watches messages more closely than
+applications, and a restriction on the account would affect the applications too. Keep
+`max_per_day` low and read each text before you approve it. A message is never sent twice: if
+ajai stops in the middle of a send, that message is marked `failed` at the next run.
+
 ## Markets
 
 `markets.active` is `internacional` (foreign currency, annual salaries) or `brasil` (BRL,
