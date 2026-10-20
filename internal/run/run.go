@@ -19,6 +19,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
 	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/screening"
@@ -42,6 +43,12 @@ type Site interface {
 	ExternalLink(ctx context.Context, button browser.Element) (string, error)
 	DailyLimitReached() bool
 	NextPage(ctx context.Context) (bool, error)
+	// HiringTeam reads the hirer a free Message button is offered for on the job
+	// page; ok is false when there is none.
+	HiringTeam(ctx context.Context) (messages.Recipient, bool, error)
+	// SendMessage sends text to the hirer of job jobID, after checking that the hirer
+	// is still to (see linkedin.SendResult).
+	SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error)
 }
 
 // Applier works one Easy Apply modal; apply.Applier in production.
@@ -261,6 +268,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	}
 	if errors.Is(err, errInvalidOptions) {
 		return sum, err // a mistake on the command line, not a run
+	}
+	if err == nil && !opts.DryRun {
+		r.sendMessages(ctx)
 	}
 	r.record(&sum)
 	r.notifyEnd(sum, err)
@@ -589,6 +599,9 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	if err := r.Store.UpsertJob(row); err != nil {
 		return cardPassed, err
+	}
+	if row.Outcome == store.Applied && !opts.DryRun {
+		r.queueMessage(ctx, c, sum.RunID)
 	}
 	if ctx.Err() != nil {
 		return cardPassed, ctx.Err()

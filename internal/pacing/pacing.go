@@ -125,6 +125,12 @@ func (p *Pacer) BetweenJobs(ctx context.Context) error {
 	return p.sleep(ctx, d)
 }
 
+// PauseSeconds waits a random whole number of seconds from lo to hi (inclusive):
+// the pause before a recruiter message is sent.
+func (p *Pacer) PauseSeconds(ctx context.Context, lo, hi int) error {
+	return p.sleep(ctx, p.between(lo, hi, time.Second))
+}
+
 // BetweenActions pauses between two form actions.
 func (p *Pacer) BetweenActions(ctx context.Context) error {
 	return p.sleep(ctx, p.between(p.cfg.BetweenActionsMin, p.cfg.BetweenActionsMax, time.Second))

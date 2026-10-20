@@ -15,6 +15,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
 	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/store"
@@ -64,6 +65,41 @@ type fakeSite struct {
 	dailyLimit bool
 	loginWaits int
 	linkFails  bool // the external application's tab does not open
+
+	hirers   map[string]hirer                            // per job id: the hiring team its page shows
+	hirerErr error                                       // HiringTeam fails
+	sends    []sendCall                                  // every SendMessage call, in order
+	sendFunc func(sendCall) (linkedin.SendResult, error) // nil: every send goes out
+	log      []string                                    // "pause" and "send", in order
+}
+
+type hirer struct {
+	to messages.Recipient
+	ok bool
+}
+
+type sendCall struct {
+	to    messages.Recipient
+	jobID string
+	text  string
+}
+
+func (f *fakeSite) HiringTeam(context.Context) (messages.Recipient, bool, error) {
+	if f.hirerErr != nil {
+		return messages.Recipient{}, false, f.hirerErr
+	}
+	h := f.hirers[f.opened]
+	return h.to, h.ok, nil
+}
+
+func (f *fakeSite) SendMessage(_ context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error) {
+	call := sendCall{to: to, jobID: jobID, text: text}
+	f.sends = append(f.sends, call)
+	f.log = append(f.log, "send")
+	if f.sendFunc != nil {
+		return f.sendFunc(call)
+	}
+	return linkedin.SendSent, nil
 }
 
 func (f *fakeSite) EnsureLoggedIn(ctx context.Context, _ time.Duration, onWait func()) error {

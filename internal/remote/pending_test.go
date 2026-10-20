@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/notify"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
@@ -97,7 +98,7 @@ func TestPendingSendsOneMessagePerPendingAnswerWithItsButtons(t *testing.T) {
 			t.Errorf("%q lacks %q", years.Text, want)
 		}
 	}
-	if got := buttonsOf(years); got != "Approve=approve:"+s.years.ID+":"+digest("3")+" Delete=delete:"+s.years.ID {
+	if got := buttonsOf(years); got != "Approve=approve:"+s.years.ID+":"+messages.Digest("3")+" Delete=delete:"+s.years.ID {
 		t.Errorf("buttons %q", got)
 	}
 	relocate := messageFor(t, d.sent, "Relocate?")
@@ -153,7 +154,7 @@ func TestButtonsApproveOrDeleteAndEditTheMessage(t *testing.T) {
 
 	// Approve on a question with no answer (a forged button), a button on a
 	// deleted answer, a press in another chat, and an unknown button.
-	w.tg.press(chat, relocate, "approve:"+s.relocate.ID+":"+digest(""))
+	w.tg.press(chat, relocate, "approve:"+s.relocate.ID+":"+messages.Digest(""))
 	w.tg.press(chat+1, years, "delete:"+s.years.ID)
 	w.tg.press(chat, consent, "delete:"+s.consent.ID)
 	w.tg.press(chat, years, "approve:"+s.years.ID)
@@ -184,7 +185,7 @@ func TestApproveNeverApprovesAnAnswerTheMessageDidNotShow(t *testing.T) {
 	w.tg.press(chat, years, years.Buttons[0].Data)
 	d = w.tg.until(t, "the refusal", func(d did) bool { return len(d.acks) >= 1 })
 	if d.acks[0] != "The answer changed since this message; check it again." || len(d.edits) != 1 ||
-		!strings.Contains(d.edits[0].Text, "Answer: 5 (from the AI)") || buttonsOf(d.edits[0]) != "Approve=approve:"+s.years.ID+":"+digest("5")+" Delete=delete:"+s.years.ID {
+		!strings.Contains(d.edits[0].Text, "Answer: 5 (from the AI)") || buttonsOf(d.edits[0]) != "Approve=approve:"+s.years.ID+":"+messages.Digest("5")+" Delete=delete:"+s.years.ID {
 		t.Errorf("acks %q edits %+v", d.acks, d.edits)
 	}
 	if a, _ := s.mem.Get(s.years.ID); a.State != "pending" {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/luizfreitas27/ajai/internal/browser"
 	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 )
 
@@ -527,4 +528,29 @@ func (s *Session) NextPage(ctx context.Context) (bool, error) {
 	}
 	s.Logger.Info("results page", "page", current+1)
 	return true, s.Pacer.BetweenActions(ctx)
+}
+
+// SendResult says what SendMessage did with a recruiter message.
+type SendResult string
+
+// The outcomes of SendMessage.
+const (
+	SendSent        SendResult = "sent"
+	SendNoRecipient SendResult = "no_recipient" // the hirer changed, or only InMail or Premium is offered
+	SendBlocked     SendResult = "blocked"      // a restriction or CAPTCHA: stop sending
+)
+
+// HiringTeam reads the job page's hiring team: the hirer a free Message button
+// is offered for, ok false when there is none.
+//
+// Not implemented until the hiring-team fixtures are captured (see testdata/fixtures/README.md).
+func (s *Session) HiringTeam(ctx context.Context) (messages.Recipient, bool, error) {
+	return messages.Recipient{}, false, nil
+}
+
+// SendMessage sends text to the hirer of the job jobID.
+//
+// Not implemented until the hiring-team fixtures are captured (see testdata/fixtures/README.md).
+func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (SendResult, error) {
+	return SendNoRecipient, nil
 }

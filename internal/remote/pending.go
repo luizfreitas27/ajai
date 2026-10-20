@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/luizfreitas27/ajai/internal/memory"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/notify"
 	"github.com/luizfreitas27/ajai/internal/questions"
 	"github.com/luizfreitas27/ajai/internal/store"
@@ -123,13 +123,7 @@ func buttons(a memory.Remembered) []notify.Button {
 	if unanswered(a) {
 		return []notify.Button{del}
 	}
-	return []notify.Button{{Text: "Approve", Data: "approve:" + a.ID + ":" + digest(a.Answer)}, del}
-}
-
-func digest(answer string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(answer))
-	return fmt.Sprintf("%08x", h.Sum32())
+	return []notify.Button{{Text: "Approve", Data: "approve:" + a.ID + ":" + messages.Digest(a.Answer)}, del}
 }
 
 // pressed acts on an Approve or Delete button and acknowledges it.
@@ -163,7 +157,7 @@ func (l *Listener) applyButton(ctx context.Context, q *notify.CallbackQuery) str
 		l.edit(ctx, q.Message.MessageID, describe(*a, "Deleted: ajai forgets this answer."), nil)
 		return "Deleted."
 	}
-	if shown != digest(a.Answer) {
+	if shown != messages.Digest(a.Answer) {
 		l.edit(ctx, q.Message.MessageID, describe(*a, ""), buttons(*a))
 		return "The answer changed since this message; check it again."
 	}
