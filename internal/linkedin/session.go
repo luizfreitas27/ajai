@@ -675,6 +675,34 @@ func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID,
 	if !ok || found.URL != to.URL {
 		return SendNoRecipient, nil
 	}
+	return s.composeAndSend(ctx, card, to, text)
+}
+
+// SendHere is SendMessage on the page shown, the search page with the details
+// pane of the job just applied to, without opening the job page: the hirer card
+// there must still be to's. The compose is closed after the send, so the job
+// list stays usable.
+func (s *Session) SendHere(ctx context.Context, to messages.Recipient, text string) (SendResult, error) {
+	if s.blocked() {
+		return SendBlocked, nil
+	}
+	found, card, ok, err := s.hirer()
+	if err != nil {
+		return "", err
+	}
+	if !ok || found.URL != to.URL {
+		return SendNoRecipient, nil
+	}
+	if err := s.Pacer.BetweenActions(ctx); err != nil {
+		return "", err
+	}
+	return s.composeAndSend(ctx, card, to, text)
+}
+
+// composeAndSend clicks the Message control of the hirer card, checked to be
+// to's, and sends text only if the compose is free, before typing and again
+// before the send.
+func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to messages.Recipient, text string) (SendResult, error) {
 	link, err := card.Element(HirerMessageXPath)
 	if err != nil {
 		return "", err

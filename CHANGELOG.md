@@ -21,6 +21,11 @@ no such section the notes are the commit list.
     queues nothing.
   - Free messages only: a connection's message, or LinkedIn's free message to an open profile.
     Premium and paid InMail are never used; that hirer is recorded and skipped.
+  - `messages.auto_send: true` skips the approval: each message is sent right after its
+    application, from the search page, with the daily cap and the free-only checks still in
+    place. Off by default.
+  - Each recruiter gets one message, ever: an application to another job of a recruiter
+    already messaged records "already messaged this recruiter" and sends nothing.
 
 ### Fixed
 

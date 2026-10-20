@@ -556,10 +556,30 @@ Approved messages go out at the end of a live run, never on a dry run. At most
 `messages.between_min_seconds` to `messages.between_max_seconds` (90 to 300 by default). An
 approved message that a run does not reach waits for the next one.
 
+To skip the approval step, turn on `messages.auto_send` (it needs `messages.enabled`):
+
+```bash
+ajai config set messages.auto_send true
+```
+
+Each message is then recorded as approved and sent right after its application, from the
+search page, before the next card is opened. There is no 90 to 300 second pause: the pacing
+between applications already spaces the messages. The daily cap still holds; a message past it
+stays approved and goes out at the end of a later run. The free-only checks still hold, and a
+recruiter still gets one message at most. A block from LinkedIn stops the sends for the rest
+of the run, not the applications. The risk is that every message goes out unseen, with your
+template's text filled in. Read your templates before you turn it on. It is off by default.
+
 Some hirers cannot be messaged for free. When the job page shows no hirer with a free
 **Message** button, ajai records the job as `no_recipient` and sends nothing. The same happens
 when the hirer has changed by the time of sending, or when LinkedIn offers only Premium or a
 paid InMail. These rows stay in `ajai messages list --state no_recipient`.
+
+Each recruiter gets one message, ever. A staffing recruiter can be the hirer on many jobs, and
+several messages from you in a row look like spam. When the hirer's profile already has a
+message approved, being sent or sent, for any job on any day, a new application to one of their
+jobs is recorded as `no_recipient` with the reason "already messaged this recruiter", and
+nothing is sent. Of two approved messages to the same recruiter, only the older one goes out.
 
 Messaging carries more risk than applying. LinkedIn watches messages more closely than
 applications, and a restriction on the account would affect the applications too. Keep

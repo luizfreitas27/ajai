@@ -55,6 +55,82 @@ func TestAMessageIsQueuedOncePerJobAndRecipient(t *testing.T) {
 	}
 }
 
+func TestInsertMessageGivesTheNewRowsIDOnlyWhenItInserts(t *testing.T) {
+	s := open(t)
+	seedJob(t, s, "1")
+	m := queued("1", "https://www.linkedin.com/in/ana", "Oi")
+	m.State = MessageApproved
+	id, err := s.InsertMessage(m)
+	must(t, err)
+	got, err := s.GetMessage(id)
+	must(t, err)
+	if got == nil || got.State != MessageApproved || got.Text != "Oi" {
+		t.Fatalf("message %d = %+v, want the approved row", id, got)
+	}
+	again, err := s.InsertMessage(m)
+	must(t, err)
+	if again != 0 {
+		t.Errorf("a second insert for the same job and recipient gave id %d, want 0", again)
+	}
+}
+
+func TestHasMessagedSeesTheRecruiterOnAnyJob(t *testing.T) {
+	const ana, bia = "https://www.linkedin.com/in/ana", "https://www.linkedin.com/in/bia"
+	s := open(t)
+	for _, j := range []string{"1", "2", "3", "4"} {
+		seedJob(t, s, j)
+	}
+	has := func(url string, except int64) bool {
+		t.Helper()
+		ok, err := s.HasMessaged(url, except)
+		must(t, err)
+		return ok
+	}
+	q, err := s.InsertMessage(queued("1", ana, "Oi"))
+	must(t, err)
+	if has(ana, 0) {
+		t.Error("a queued message counts as messaged")
+	}
+	must(t, s.ApproveMessage(q, messages.Digest("Oi")))
+	if !has(ana, 0) {
+		t.Error("an approved message does not count for a new message")
+	}
+	if has(ana, q) {
+		t.Error("a message counts against itself")
+	}
+	newer, err := s.InsertMessage(Message{JobID: "2", RecipientURL: ana, Text: "Oi", State: MessageApproved})
+	must(t, err)
+	if !has(ana, newer) {
+		t.Error("an older approved message does not count against a newer one")
+	}
+	if has(ana, q) {
+		t.Error("a newer approved message counts against the older one, so neither would be sent")
+	}
+	if ok, err := s.MarkSending(q); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if !has(ana, newer) {
+		t.Error("a sending message does not count")
+	}
+	if ok, err := s.MarkSent(q); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if !has(ana, newer) || has(bia, 0) || has("", 0) {
+		t.Error("a sent message counts only for its own recruiter")
+	}
+	if ok, err := s.DropApproved(newer, "already messaged this recruiter"); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if got, _ := s.GetMessage(newer); got.State != MessageNoRecipient || got.Error != "already messaged this recruiter" {
+		t.Errorf("dropped message %+v", got)
+	}
+	skipped, err := s.InsertMessage(Message{JobID: "3", RecipientURL: ana, State: MessageNoRecipient, Error: "already messaged this recruiter"})
+	must(t, err)
+	if got, _ := s.GetMessage(skipped); got.Error != "already messaged this recruiter" {
+		t.Errorf("inserted %+v, want its reason kept", got)
+	}
+}
+
 func TestANoRecipientRowIsRecordedOncePerJob(t *testing.T) {
 	s := open(t)
 	seedJob(t, s, "1")

@@ -439,6 +439,9 @@ func TestMessagesAreOffByDefaultWithTheDocumentedLimitsAndTemplates(t *testing.T
 	if c.Messages.Enabled {
 		t.Error("messages.enabled defaults to true")
 	}
+	if c.Messages.AutoSend {
+		t.Error("messages.auto_send defaults to true")
+	}
 	if c.Messages.MaxPerDay != 3 || c.Messages.BetweenMinSeconds != 90 || c.Messages.BetweenMaxSeconds != 300 {
 		t.Errorf("messages defaults = %+v, want max_per_day 3, between 90..300", c.Messages)
 	}
@@ -482,6 +485,8 @@ func TestMessageSettingsAreValidated(t *testing.T) {
 		{"unknown placeholder in the spanish template", func(c *Config) { c.Messages.Templates.Es = "Hola {name}" }, "messages.templates.es"},
 		{"unclosed brace in the portuguese template", func(c *Config) { c.Messages.Templates.Pt = "Olá {title" }, "messages.templates.pt"},
 		{"blank language templates", func(c *Config) { c.Messages.Templates = MessageTemplates{} }, ""},
+		{"auto send without messages", func(c *Config) { c.Messages.AutoSend = true }, "messages.auto_send"},
+		{"auto send with messages", func(c *Config) { c.Messages.Enabled, c.Messages.AutoSend = true, true }, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := valid()

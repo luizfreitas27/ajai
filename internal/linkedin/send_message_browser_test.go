@@ -21,10 +21,12 @@ import (
 	"github.com/luizfreitas27/ajai/internal/pacing"
 )
 
-// overlayScript makes the captured hiring team (07) behave as LinkedIn's does:
-// the Message link opens the overlay in place, in the open shadow root of
-// #interop-outlet, from the template. The page records on <body> what happened
-// (data-opened, data-sends, data-sent-text, data-closed, data-dismissed). A send
+// overlayScript makes a captured hiring team (07, or the search pane's 11)
+// behave as LinkedIn's does: the Message link or button opens the overlay in
+// place, in the open shadow root of #interop-outlet, from the template, drawn
+// over the whole page as long as it is open. The page records on <body> what
+// happened (data-opened, data-sends, data-sent-text, data-closed,
+// data-dismissed, data-next-card for a click on the next job card). A send
 // clears the box and lists the message, unless MODE is "silent"; MODE "draft"
 // leaves a draft in the box.
 const overlayScript = `<div id="interop-outlet" data-testid="interop-shadowdom"></div>
@@ -33,13 +35,17 @@ const overlayScript = `<div id="interop-outlet" data-testid="interop-shadowdom">
 const MODE = "SENDMODE";
 const mark = (k, v) => document.body.setAttribute("data-" + k, v);
 document.addEventListener("click", e => {
-  const link = e.target.closest && e.target.closest('a[aria-label="Message"]');
+  if (e.target.closest && e.target.closest("li[data-occludable-job-id] a")) { e.preventDefault(); mark("next-card", "yes"); }
+}, true);
+document.addEventListener("click", e => {
+  const link = e.target.closest && e.target.closest('a[aria-label="Message"], button:has([data-test-icon="send-privately-small"])');
   if (!link) return;
   e.preventDefault();
   mark("opened", "yes");
   const host = document.getElementById("interop-outlet");
   const root = host.shadowRoot || host.attachShadow({mode: "open"});
-  root.innerHTML = '<aside id="msg-overlay">' + document.getElementById("overlay").innerHTML + '</aside>';
+  root.innerHTML = '<style>[role="dialog"], [data-test-modal-id] { position: fixed; inset: 0; z-index: 999; background: #fff; }</style>' +
+    '<aside id="msg-overlay">' + document.getElementById("overlay").innerHTML + '</aside>';
   const box = root.querySelector(".msg-form__contenteditable");
   const send = root.querySelector(".msg-form__send-btn");
   const form = root.querySelector("form.msg-form");
@@ -74,11 +80,21 @@ document.addEventListener("click", e => {
 }, true);
 </script>`
 
+// nextCard is a job card listed after the job shown, for checking the list is
+// still usable once a message went out.
+const nextCard = `<ul><li data-occludable-job-id="4100000002"><div class="artdeco-entity-lockup__title"><a href="/jobs/view/4100000002/">Next job</a></div></li></ul>`
+
 // messagePage serves fixture 07 with the overlay from overlayFixture (edited by
 // replace) at every /jobs/view/ path and returns a Session on a headless Chrome
 // whose job pages are on that server. A blocked server sends the job page to a
 // checkpoint instead.
 func messagePage(t *testing.T, overlayFixture, mode string, blocked bool, replace ...string) *Session {
+	t.Helper()
+	return overlayPage(t, "07_hiring_team.html", overlayFixture, mode, blocked, replace...)
+}
+
+// overlayPage is messagePage over pageFixture, with nextCard listed above it.
+func overlayPage(t *testing.T, pageFixture, overlayFixture, mode string, blocked bool, replace ...string) *Session {
 	t.Helper()
 	bin, err := chrome.Find("")
 	if err != nil {
@@ -96,7 +112,7 @@ func messagePage(t *testing.T, overlayFixture, mode string, blocked bool, replac
 		overlay = strings.ReplaceAll(overlay, replace[i], replace[i+1])
 	}
 	script := strings.NewReplacer("OVERLAY", overlay, "SENDMODE", mode).Replace(overlayScript)
-	page := "<html><body>" + read("07_hiring_team.html") + script + "</body></html>"
+	page := "<html><body>" + nextCard + read(pageFixture) + script + "</body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if blocked && strings.HasPrefix(r.URL.Path, "/jobs/view/") {
 			http.Redirect(w, r, "/checkpoint/challenge/", http.StatusFound)

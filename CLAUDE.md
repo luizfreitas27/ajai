@@ -64,6 +64,10 @@ to the tag before tagging and the workflow publishes that section as the release
   `Lock.WatchStops` (started by `launch.Opened.Session`) polls it and cancels the session's
   context with a `*StopRequested` cause, whose reason the run records instead of "stopped
   by user". A request older than the lock (left as the previous run ended) is discarded.
+  With `messages.auto_send`, `queueMessage` records the message approved and sends it at once
+  through `Site.SendHere` (`sendNow`: the daily cap, then `sendOne` as at the end of a run; a
+  block sets `sendsStopped` for the rest of the run). One message per recruiter, ever:
+  `store.HasMessaged` is checked when queueing and before each end-of-run send.
   After an applied job (never on a dry run) `Runner.queueMessage` queues its recruiter
   message from `Site.HiringTeam`. `Runner.Run` sends the approved messages once a live run's
   loop ends without an error (`sendMessages`); a cancelled context sends nothing more.
@@ -243,7 +247,9 @@ to the tag before tagging and the workflow publishes that section as the release
   (`Answerer.RememberUnanswered`). Unattended = `--unattended`, or stdin or stdout not a
   terminal (`run.ResolveUnattended`).
 - `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
-  `selectors_test.go`. Update both together when LinkedIn changes.
+  `selectors_test.go`. Update both together when LinkedIn changes. `SendMessage` (opens the
+  job page) and `SendHere` (the search pane shown) share `composeAndSend` after re-reading
+  the hirer.
 - `internal/schedule`: the pure window rules. `Window` (weekdays, `Clock` start/end in local
   wall-clock minutes, optional market and dry run), `Validate` (no crossing midnight, no
   overlap with another enabled window on the same weekday), and with an injected time

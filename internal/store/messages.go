@@ -45,17 +45,26 @@ const messageColumns = `id, job_id, COALESCE(run_id, 0), recipient_name, recipie
 // QueueMessage records m unless a row for the same job and recipient exists;
 // inserted reports whether it did. A blank State is queued.
 func (s *Store) QueueMessage(m Message) (inserted bool, err error) {
+	id, err := s.InsertMessage(m)
+	return id > 0, err
+}
+
+// InsertMessage is QueueMessage giving the new row's id, 0 when a row for the
+// same job and recipient exists and nothing was inserted.
+func (s *Store) InsertMessage(m Message) (int64, error) {
 	if m.State == "" {
 		m.State = MessageQueued
 	}
-	res, err := s.db.Exec(`INSERT INTO recruiter_messages (job_id, run_id, recipient_name, recipient_url, text, state, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(job_id, recipient_url) DO NOTHING`,
-		m.JobID, nullInt(m.RunID), m.RecipientName, m.RecipientURL, m.Text, m.State, Timestamp(s.now()))
+	res, err := s.db.Exec(`INSERT INTO recruiter_messages (job_id, run_id, recipient_name, recipient_url, text, state, created_at, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(job_id, recipient_url) DO NOTHING`,
+		m.JobID, nullInt(m.RunID), m.RecipientName, m.RecipientURL, m.Text, m.State, Timestamp(s.now()), m.Error)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	n, err := res.RowsAffected()
-	return n > 0, err
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 // ListMessages returns messages oldest first; state "" means all.
@@ -205,6 +214,27 @@ func placeholders(n int) string {
 // approved: a message is offered for sending once.
 func (s *Store) MarkSending(id int64) (bool, error) {
 	return s.move(id, MessageApproved, MessageSending, "")
+}
+
+// HasMessaged reports whether the recruiter at profile url, on any job, already
+// has a message sent or sending, or an approved one older than message except
+// (0 for a message not recorded yet). Each recruiter gets one message, ever; the
+// oldest approved one is the one that goes out.
+func (s *Store) HasMessaged(url string, except int64) (bool, error) {
+	if url == "" {
+		return false, nil
+	}
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM recruiter_messages WHERE recipient_url = ? AND id != ?
+		AND (state IN (?, ?) OR (state = ? AND (? = 0 OR id < ?)))`,
+		url, except, MessageSent, MessageSending, MessageApproved, except, except).Scan(&n)
+	return n > 0, err
+}
+
+// DropApproved records that an approved message will not be sent, and why, as
+// no_recipient; false when it was not approved.
+func (s *Store) DropApproved(id int64, reason string) (bool, error) {
+	return s.move(id, MessageApproved, MessageNoRecipient, reason)
 }
 
 // MarkSent records that a sending message went out, stamped in local time.

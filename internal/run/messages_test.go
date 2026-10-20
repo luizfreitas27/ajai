@@ -200,10 +200,21 @@ func approvedMessage(t *testing.T, st *store.Store, jobID string, to messages.Re
 	return m
 }
 
-// sentEarlierToday records a message as sent today, through the same transitions a send takes.
+// recruiter is a hirer of its own, one per name: each recruiter gets one message, ever.
+func recruiter(name string) messages.Recipient {
+	return messages.Recipient{Name: name, URL: "https://www.linkedin.com/in/" + name}
+}
+
+// sentEarlierToday records a message to a recruiter of its own as sent today,
+// through the same transitions a send takes.
 func sentEarlierToday(t *testing.T, st *store.Store, jobID string) {
 	t.Helper()
-	m := approvedMessage(t, st, jobID, ana, "Earlier")
+	sentEarlierTodayTo(t, st, jobID, recruiter("earlier-"+jobID))
+}
+
+func sentEarlierTodayTo(t *testing.T, st *store.Store, jobID string, to messages.Recipient) {
+	t.Helper()
+	m := approvedMessage(t, st, jobID, to, "Earlier")
 	for _, step := range []func(int64) (bool, error){st.MarkSending, st.MarkSent} {
 		if ok, err := step(m.ID); err != nil || !ok {
 			t.Fatalf("sent earlier today: ok=%v err=%v", ok, err)
@@ -257,8 +268,8 @@ func TestSendingStopsAtMaxPerDayCountingWhatWasSentToday(t *testing.T) {
 	r, st, _ := runner(t, site, c)
 	sentEarlierToday(t, st, "1")
 	sentEarlierToday(t, st, "2")
-	approvedMessage(t, st, "3", ana, "one")
-	approvedMessage(t, st, "4", ana, "two")
+	approvedMessage(t, st, "3", recruiter("c"), "one")
+	approvedMessage(t, st, "4", recruiter("d"), "two")
 	if _, err := r.Run(context.Background(), Options{}); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +287,7 @@ func TestEachSendIsPrecededByAPauseWithinTheBounds(t *testing.T) {
 	c.Messages.BetweenMinSeconds, c.Messages.BetweenMaxSeconds = 90, 300
 	r, st, _ := runner(t, site, c)
 	approvedMessage(t, st, "1", ana, "one")
-	approvedMessage(t, st, "2", ana, "two")
+	approvedMessage(t, st, "2", recruiter("bia"), "two")
 	pauses := pausesRecorded(r, site)
 	if _, err := r.Run(context.Background(), Options{}); err != nil {
 		t.Fatal(err)
@@ -500,7 +511,7 @@ func TestANonStopSessionSendsApprovedMessagesAtTheEndOfEachRun(t *testing.T) {
 	waits := 0
 	r.Sleep = func(ctx context.Context, d time.Duration) error {
 		if waits++; waits == 1 {
-			approvedMessage(t, st, "2", ana, "second") // queued and approved while the session waits
+			approvedMessage(t, st, "2", recruiter("bia"), "second") // queued and approved while the session waits
 			return nil
 		}
 		return errors.New("end the session") // a session ending during the wait returns cleanly
@@ -607,5 +618,188 @@ func TestALanguageTemplateIsUsedEvenWhenTheMarketTemplateIsBlank(t *testing.T) {
 	c.Markets.Internacional.MessageTemplate = ""
 	if got, want := queuedTextFor(t, englishPosting, c), "EN Ana Go Developer at Acme"; got != want {
 		t.Errorf("text %q, want %q", got, want)
+	}
+}
+
+// autoSendCfg is messagesCfg with messages.auto_send on.
+func autoSendCfg() config.Config {
+	c := messagesCfg()
+	c.Messages.AutoSend = true
+	return c
+}
+
+// twoJobs is a page of two applicable jobs whose hirers are ana and bia.
+func twoJobs() *fakeSite {
+	bia := messages.Recipient{Name: "Bia Costa", URL: "https://www.linkedin.com/in/bia"}
+	return &fakeSite{jobs: map[string]fakeJob{
+		"1": job("1", "Go Developer", "Acme", "desc"),
+		"2": job("2", "Go Engineer", "Initech", "desc"),
+	}, pages: [][]string{{"1", "2"}}, hirers: map[string]hirer{"1": {to: ana, ok: true}, "2": {to: bia, ok: true}}}
+}
+
+func TestAutoSendSendsEachMessageRightAfterItsApplication(t *testing.T) {
+	site := twoJobs()
+	r, st, _ := runner(t, site, autoSendCfg())
+	sum, err := r.Run(context.Background(), Options{})
+	if err != nil || sum.Applied != 2 {
+		t.Fatalf("applied %d, err %v", sum.Applied, err)
+	}
+	if len(site.here) != 2 {
+		t.Fatalf("SendHere calls %+v, want 2", site.here)
+	}
+	for i, want := range []struct {
+		opened string
+		cards  int
+		text   string
+	}{{"1", 1, "Hi Ana, I applied for Go Developer at Acme."}, {"2", 2, "Hi Bia, I applied for Go Engineer at Initech."}} {
+		if got := site.here[i]; got.opened != want.opened || got.cards != want.cards || got.text != want.text {
+			t.Errorf("send %d = %+v, want on job %s with %d cards opened, text %q", i, got, want.opened, want.cards, want.text)
+		}
+	}
+	if len(site.sends) != 0 {
+		t.Errorf("SendMessage called %+v; an auto-sent message is sent where it was applied", site.sends)
+	}
+	for _, m := range allMessages(t, st) {
+		if m.State != store.MessageSent {
+			t.Errorf("message %+v, want sent", m)
+		}
+	}
+}
+
+func TestAutoSendAtTheDailyCapLeavesTheMessageApproved(t *testing.T) {
+	site := twoJobs()
+	c := autoSendCfg()
+	c.Messages.MaxPerDay = 1
+	r, st, _ := runner(t, site, c)
+	sentEarlierToday(t, st, "9")
+	sum, err := r.Run(context.Background(), Options{})
+	if err != nil || sum.Applied != 2 {
+		t.Fatalf("applied %d, err %v", sum.Applied, err)
+	}
+	if len(site.here) != 0 || len(site.sends) != 0 {
+		t.Errorf("sent past the cap: here %+v, end of run %+v", site.here, site.sends)
+	}
+	for _, m := range allMessages(t, st) {
+		if m.JobID != "9" && m.State != store.MessageApproved {
+			t.Errorf("message %+v, want approved", m)
+		}
+	}
+}
+
+func TestAutoSendOffQueuesAsBefore(t *testing.T) {
+	site := twoJobs()
+	r, st, _ := runner(t, site, messagesCfg())
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(site.here) != 0 || len(site.sends) != 0 {
+		t.Errorf("sent without auto_send: here %+v, end of run %+v", site.here, site.sends)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 2 || msgs[0].State != store.MessageQueued || msgs[1].State != store.MessageQueued {
+		t.Errorf("messages %+v, want two queued", msgs)
+	}
+}
+
+func TestAutoSendInADryRunSendsAndRecordsNothing(t *testing.T) {
+	site := twoJobs()
+	r, st, _ := runner(t, site, autoSendCfg())
+	if _, err := r.Run(context.Background(), Options{DryRun: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(site.here) != 0 || len(site.sends) != 0 || len(allMessages(t, st)) != 0 {
+		t.Errorf("a dry run sent or recorded: here %+v, sends %+v, rows %+v", site.here, site.sends, allMessages(t, st))
+	}
+}
+
+func TestAutoSendBlockedSendsNoMoreButKeepsApplying(t *testing.T) {
+	site := twoJobs()
+	site.hereFunc = func(hereCall) (linkedin.SendResult, error) { return linkedin.SendBlocked, nil }
+	r, st, _ := runner(t, site, autoSendCfg())
+	sum, err := r.Run(context.Background(), Options{})
+	if err != nil || sum.Applied != 2 {
+		t.Fatalf("applied %d, err %v; a block must not stop the applications", sum.Applied, err)
+	}
+	if len(site.here) != 1 || len(site.sends) != 0 {
+		t.Errorf("sends after a block: here %+v, end of run %+v; want the one blocked", site.here, site.sends)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 2 || msgs[0].State != store.MessageFailed || msgs[1].State != store.MessageApproved {
+		t.Errorf("messages %+v, want the first failed and the second approved", msgs)
+	}
+}
+
+func TestAutoSendErrorFailsTheMessageAndTheRunGoesOn(t *testing.T) {
+	site := twoJobs()
+	site.hereFunc = func(c hereCall) (linkedin.SendResult, error) {
+		if c.opened == "1" {
+			return "", errors.New("the box did not open")
+		}
+		return linkedin.SendSent, nil
+	}
+	r, st, _ := runner(t, site, autoSendCfg())
+	sum, err := r.Run(context.Background(), Options{})
+	if err != nil || sum.Applied != 2 || sum.Failed != 0 {
+		t.Fatalf("applied %d failed %d, err %v", sum.Applied, sum.Failed, err)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 2 || msgs[0].State != store.MessageFailed || msgs[0].Error != "the box did not open" || msgs[1].State != store.MessageSent {
+		t.Errorf("messages %+v, want the first failed with its error and the second sent", msgs)
+	}
+}
+
+// sameRecruiter is a page of two applicable jobs with ana as the hirer of both.
+func sameRecruiter() *fakeSite {
+	site := twoJobs()
+	site.hirers["2"] = hirer{to: ana, ok: true}
+	return site
+}
+
+func TestAutoSendMessagesARecruiterOnce(t *testing.T) {
+	site := sameRecruiter()
+	r, st, _ := runner(t, site, autoSendCfg())
+	if sum, err := r.Run(context.Background(), Options{}); err != nil || sum.Applied != 2 {
+		t.Fatalf("applied %d, err %v", sum.Applied, err)
+	}
+	if len(site.here) != 1 || site.here[0].opened != "1" || len(site.sends) != 0 {
+		t.Errorf("here %+v, end of run %+v; want one send, on job 1", site.here, site.sends)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 2 || msgs[0].State != store.MessageSent || msgs[1].State != store.MessageNoRecipient ||
+		msgs[1].Error != "already messaged this recruiter" || msgs[1].RecipientURL != ana.URL {
+		t.Errorf("messages %+v, want job 1 sent and job 2 no_recipient for ana, already messaged", msgs)
+	}
+}
+
+func TestARecruiterAlreadyMessagedIsNotQueuedAgain(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Developer", "Acme", "desc")},
+		pages: [][]string{{"1"}}, hirers: map[string]hirer{"1": {to: ana, ok: true}}}
+	r, st, _ := runner(t, site, messagesCfg())
+	sentEarlierTodayTo(t, st, "9", ana)
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 2 || msgs[1].JobID != "1" || msgs[1].State != store.MessageNoRecipient || msgs[1].Error != "already messaged this recruiter" {
+		t.Errorf("messages %+v, want job 1 recorded as already messaged", msgs)
+	}
+}
+
+func TestTheEndOfARunSendsOneMessagePerRecruiter(t *testing.T) {
+	site := liveSite()
+	r, st, _ := runner(t, site, messagesCfg())
+	first := approvedMessage(t, st, "1", ana, "first")
+	second := approvedMessage(t, st, "2", ana, "second")
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(site.sends) != 1 || site.sends[0].text != "first" {
+		t.Errorf("sends %+v, want only the first", site.sends)
+	}
+	if got := stateOf(t, st, first.ID); got.State != store.MessageSent {
+		t.Errorf("first: %+v, want sent", got)
+	}
+	if got := stateOf(t, st, second.ID); got.State != store.MessageNoRecipient || got.Error != "already messaged this recruiter" {
+		t.Errorf("second: %+v, want no_recipient, already messaged", got)
 	}
 }

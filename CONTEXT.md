@@ -111,11 +111,11 @@ _Avoid_: user info, context, persona
 ### Recruiter messages
 
 **Recruiter message**:
-A short message to a member of a job's hiring team, sent through LinkedIn's free **Message** button after a real Easy Apply application is submitted. The tool queues one in the posting's language (`messages.templates`, or the market's template when unsure), and sends it only after the user approved its exact text. Free messages only (a connection's message, or LinkedIn's free message to an open profile), never Premium or paid InMail credits; the optional subject is left empty. Off by default (`messages.enabled`).
+A short message to a member of a job's hiring team, sent through LinkedIn's free **Message** button after a real Easy Apply application is submitted. The tool queues one in the posting's language (`messages.templates`, or the market's template when unsure), and sends it only after the user approved its exact text, or right after the application when `messages.auto_send` is on. Free messages only (a connection's message, or LinkedIn's free message to an open profile), never Premium or paid InMail credits; the optional subject is left empty. Off by default (`messages.enabled`).
 _Avoid_: InMail, DM, cold message, follow-up
 
 **Message queue**:
-The recruiter messages the tool holds, each in one state: **queued** (waiting for approval), **approved** (the user approved this exact text), **sending** (saved just before the send click; never retried), **sent**, or **failed**. A job whose hiring team offers no free Message button, or whose recipient changed before sending, is recorded as **no_recipient** and nothing is sent. At most `messages.max_per_day` (default 3) are sent per local day. Managed with `ajai messages`. Not the review queue: the message queue holds outgoing messages to recruiters, the review queue holds answers to form questions.
+The recruiter messages the tool holds, each in one state: **queued** (waiting for approval), **approved** (the user approved this exact text, or, with `messages.auto_send`, approved its template in advance), **sending** (saved just before the send click; never retried), **sent**, or **failed**. A job whose hiring team offers no free Message button, or whose recipient changed before sending, or whose recruiter already has a message approved, sending or sent (each recruiter gets one message, ever), is recorded as **no_recipient** and nothing is sent. At most `messages.max_per_day` (default 3) are sent per local day. Managed with `ajai messages`. Not the review queue: the message queue holds outgoing messages to recruiters, the review queue holds answers to form questions.
 _Avoid_: outbox, inbox, send queue
 
 ### Scheduling and notifications

@@ -16,7 +16,7 @@ type Config struct {
 	Settings  Settings  `yaml:"settings" doc:"How the tool behaves: Chrome, tabs, pacing of the search itself."`
 	Markets   Markets   `yaml:"markets" doc:"Values that differ between applying in Brazil and abroad. One market is active per run."`
 	Pacing    Pacing    `yaml:"pacing" doc:"Limits that keep a run at a human rhythm. Reaching one ends the run cleanly."`
-	Messages  Messages  `yaml:"messages" doc:"Recruiter messages sent after an application. Each one waits in a queue until you approve it with ajai messages approve."`
+	Messages  Messages  `yaml:"messages" doc:"Recruiter messages sent after an application. Each one waits in a queue until you approve it with ajai messages approve, unless messages.auto_send is on."`
 	AI        AI        `yaml:"ai" doc:"The language model that answers unrecognised questions. The API key is AJAI_AI_API_KEY in the environment or .env, never here."`
 }
 
@@ -142,7 +142,8 @@ type Pacing struct {
 
 // Messages mirrors the recruiter message settings; see ADR 0002.
 type Messages struct {
-	Enabled           bool             `yaml:"enabled" doc:"After each submitted application, queue a message to the hirer shown on the job page, when a free Message button is there. Nothing is sent until you approve it (ajai messages list, ajai messages approve). Off by default."`
+	Enabled           bool             `yaml:"enabled" doc:"After each submitted application, queue a message to the hirer shown on the job page, when a free Message button is there. Nothing is sent until you approve it (ajai messages list, ajai messages approve), unless auto_send is on. Off by default."`
+	AutoSend          bool             `yaml:"auto_send" doc:"Send each message right after its application, without approval. The text is the template you configured, and nobody reads it first. Free messages only; max_per_day still holds. Needs messages.enabled. Off by default."`
 	MaxPerDay         int              `yaml:"max_per_day" doc:"Most messages sent per local day." min:"1"`
 	BetweenMinSeconds int              `yaml:"between_min_seconds" doc:"Shortest pause before a message is sent, seconds." min:"0"`
 	BetweenMaxSeconds int              `yaml:"between_max_seconds" doc:"Longest pause before a message is sent, seconds." min:"0"`

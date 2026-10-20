@@ -49,6 +49,9 @@ type Site interface {
 	// SendMessage sends text to the hirer of job jobID, after checking that the hirer
 	// is still to (see linkedin.SendResult).
 	SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error)
+	// SendHere is SendMessage on the page shown, the job just applied to, without
+	// opening its job page (messages.auto_send).
+	SendHere(ctx context.Context, to messages.Recipient, text string) (linkedin.SendResult, error)
 }
 
 // Applier works one Easy Apply modal; apply.Applier in production.
@@ -193,6 +196,7 @@ type Runner struct {
 	Sleep func(ctx context.Context, d time.Duration) error
 
 	filtersPaused bool // the user typed "off" at a filter pause
+	sendsStopped  bool // a send was blocked (or cut short) in this run: no more are tried
 
 	started    time.Time
 	inProgress *Summary // the summary run() is filling, for Run's crash path
@@ -344,6 +348,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		return Summary{}, err
 	}
 	r.started = r.Now()
+	r.sendsStopped = false
 	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
 	r.inProgress = &sum
 	r.endAbandoned()

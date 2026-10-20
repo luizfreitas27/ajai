@@ -37,9 +37,10 @@ func (a *App) messagesCmd() *cobra.Command {
 		Use:   "messages",
 		Short: "Recruiter messages: review the queue, approve what may be sent, delete what may not",
 		Long: `After a submitted application, ajai may queue one message to a hirer of that job.
-Nothing is sent until you approve it. Approve a message by the digest of the text you
-read, so an edited text is refused; approve the whole queue by the list digest that
-"list" prints, so a queue that changed since is refused too.`,
+Nothing is sent until you approve it, unless messages.auto_send is on. Approve a
+message by the digest of the text you read, so an edited text is refused; approve the
+whole queue by the list digest that "list" prints, so a queue that changed since is
+refused too.`,
 	}
 	cmd.AddCommand(a.messagesListCmd(), a.messagesApproveCmd(), a.messagesDeleteCmd())
 	return cmd

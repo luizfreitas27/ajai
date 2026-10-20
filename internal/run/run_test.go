@@ -74,6 +74,25 @@ type fakeSite struct {
 	sends    []sendCall                                  // every SendMessage call, in order
 	sendFunc func(sendCall) (linkedin.SendResult, error) // nil: every send goes out
 	log      []string                                    // "pause" and "send", in order
+	here     []hereCall                                  // every SendHere call, in order
+	hereFunc func(hereCall) (linkedin.SendResult, error) // nil: every send here goes out
+}
+
+// hereCall is one SendHere: whom, what, and the card open at the time.
+type hereCall struct {
+	to     messages.Recipient
+	text   string
+	opened string // the card shown when it was called
+	cards  int    // how many cards had been opened by then
+}
+
+func (f *fakeSite) SendHere(_ context.Context, to messages.Recipient, text string) (linkedin.SendResult, error) {
+	call := hereCall{to: to, text: text, opened: f.opened, cards: len(f.openedAll)}
+	f.here = append(f.here, call)
+	if f.hereFunc != nil {
+		return f.hereFunc(call)
+	}
+	return linkedin.SendSent, nil
 }
 
 type hirer struct {

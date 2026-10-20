@@ -148,6 +148,9 @@ func (c *Config) Validate() error {
 			add(pair.key, fmt.Sprintf("must not be below its minimum (%d < %d)", pair.hi, pair.lo))
 		}
 	}
+	if c.Messages.AutoSend && !c.Messages.Enabled {
+		add("messages.auto_send", "only works with messages.enabled true")
+	}
 	if c.AI.Enabled && strings.TrimSpace(c.AI.Model) == "" {
 		add("ai.model", "must be set when ai.enabled is true")
 	}

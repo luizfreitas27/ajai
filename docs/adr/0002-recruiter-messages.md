@@ -33,8 +33,28 @@ these rules:
   use an InMail credit, the message is marked `no_recipient` and not sent.
 - **Once per job and recipient.** A message is keyed by job ID and recipient profile URL,
   so the same person is never messaged twice for the same job.
+- **Once per recruiter, ever.** A staffing recruiter is often the hirer on many jobs; live
+  data showed three messages queued in an hour for one profile. When the profile URL already
+  has a message `approved`, `sending` or `sent`, on any job and any day, a new application
+  records a `no_recipient` row ("already messaged this recruiter") and sends nothing. At the
+  end of a run, an approved message whose recruiter already got one, or has an older approved
+  one, is moved to `no_recipient` the same way, so the oldest goes out. We chose this over
+  "once a day": it is simpler, and a second message to the same person is the pattern most
+  likely to get the account flagged.
 - **Mark before clicking.** A message is saved as `sending` before the send click. A
   crash after that point leaves it `sending`, and it is never sent again.
+
+## Opt-in auto-send
+
+Later we added `messages.auto_send`, off by default and only valid with `messages.enabled`.
+With it on, a message is recorded as approved and sent right after its application, on the
+search page the run is already on (`Session.SendHere`), with no pause of its own: the
+pacing between applications spaces the messages. We accept this because the user approves
+the template in advance, and the template is the only part of the text they do not see
+filled in. Everything else above still holds: free messages only, the daily cap (a message
+past it stays approved for a later run), once per recruiter, mark before clicking,
+and a block stops sending for the rest of the run. A failed send never fails the
+application or the run.
 
 ## Accepted risk
 

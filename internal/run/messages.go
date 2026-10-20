@@ -32,10 +32,51 @@ func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description 
 		if m.Text == "" {
 			return
 		}
+		messaged, err := r.Store.HasMessaged(m.RecipientURL, 0)
+		if err != nil {
+			r.Logger.Warn("could not check the recruiter's earlier messages", "job", c.ID, "error", err)
+			return
+		}
+		if messaged { // one message per recruiter, ever: a staffing recruiter hires for many jobs
+			m.State, m.Error = store.MessageNoRecipient, reasonMessaged
+		}
 	}
-	if _, err := r.Store.QueueMessage(m); err != nil {
+	auto := r.Cfg.Messages.AutoSend && m.State == ""
+	if auto { // the user approved the template in advance
+		m.State = store.MessageApproved
+	}
+	id, err := r.Store.InsertMessage(m)
+	if err != nil {
 		r.Logger.Warn("could not queue the recruiter message", "job", c.ID, "error", err)
+		return
 	}
+	if auto && id > 0 {
+		m.ID = id
+		r.sendNow(ctx, m)
+	}
+}
+
+// sendNow sends an auto-sent message on the page of the job just applied to,
+// with no pause of its own: the application pacing already spaces them. At the
+// daily cap it stays approved, for the end of this run or a later one.
+func (r *Runner) sendNow(ctx context.Context, m store.Message) {
+	if r.sendsStopped || ctx.Err() != nil {
+		return
+	}
+	sent, err := r.Store.SentToday()
+	if err != nil {
+		r.Logger.Warn("could not count the messages sent today", "error", err)
+		return
+	}
+	if sent >= r.Cfg.Messages.MaxPerDay {
+		return
+	}
+	marked, err := r.Store.MarkSending(m.ID) // before the send: a crash after this never sends it again
+	if err != nil || !marked {
+		r.Logger.Warn("could not start sending a message", "message", m.ID, "error", err)
+		return
+	}
+	r.sendOne(ctx, m, true)
 }
 
 // templateFor is the template for a posting in lang ("en", "pt", "es"): that
@@ -62,6 +103,7 @@ func (r *Runner) templateFor(lang string) string {
 const (
 	reasonNoRecipient = "the hirer changed, or only Premium or a paid InMail is offered"
 	reasonBlocked     = "LinkedIn blocked the message (restriction or CAPTCHA)"
+	reasonMessaged    = "already messaged this recruiter"
 )
 
 // sendMessages sends the approved messages at the end of a live run, at most
@@ -69,7 +111,7 @@ const (
 // jittered pause. A block ends sending for this run; so does a cancelled context.
 // A message not sent stays approved for a later run, unless it was tried.
 func (r *Runner) sendMessages(ctx context.Context) {
-	if !r.Cfg.Messages.Enabled {
+	if !r.Cfg.Messages.Enabled || r.sendsStopped {
 		return
 	}
 	sent, err := r.Store.SentToday()
@@ -90,6 +132,17 @@ func (r *Runner) sendMessages(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		messaged, err := r.Store.HasMessaged(m.RecipientURL, m.ID)
+		if err != nil {
+			r.Logger.Warn("could not check the recruiter's earlier messages", "message", m.ID, "error", err)
+			return
+		}
+		if messaged {
+			if _, err := r.Store.DropApproved(m.ID, reasonMessaged); err != nil {
+				r.Logger.Warn("could not record the message's outcome", "message", m.ID, "error", err)
+			}
+			continue
+		}
 		if err := r.Pacer.PauseSeconds(ctx, r.Cfg.Messages.BetweenMinSeconds, r.Cfg.Messages.BetweenMaxSeconds); err != nil {
 			return
 		}
@@ -102,17 +155,24 @@ func (r *Runner) sendMessages(ctx context.Context) {
 			r.Logger.Warn("message left the approved state before its send, skipped", "message", m.ID)
 			continue
 		}
-		if !r.sendOne(ctx, m) {
+		if !r.sendOne(ctx, m, false) {
 			return
 		}
 	}
 }
 
-// sendOne sends one message that is marked sending and records the outcome. It
-// reports false when sending must stop for this run.
-func (r *Runner) sendOne(ctx context.Context, m store.Message) bool {
+// sendOne sends one message that is marked sending, on the page shown when
+// here (SendHere) or on its job page, and records the outcome. It reports
+// false, and stops sending for the rest of the run, when sending must stop.
+func (r *Runner) sendOne(ctx context.Context, m store.Message, here bool) bool {
 	to := messages.Recipient{Name: m.RecipientName, URL: m.RecipientURL}
-	res, err := r.Site.SendMessage(ctx, to, m.JobID, m.Text)
+	var res linkedin.SendResult
+	var err error
+	if here {
+		res, err = r.Site.SendHere(ctx, to, m.Text)
+	} else {
+		res, err = r.Site.SendMessage(ctx, to, m.JobID, m.Text)
+	}
 	keepGoing := ctx.Err() == nil
 	var serr error
 	switch {
@@ -133,5 +193,6 @@ func (r *Runner) sendOne(ctx context.Context, m store.Message) bool {
 	if serr != nil {
 		r.Logger.Warn("could not record the message's outcome", "message", m.ID, "error", serr)
 	}
+	r.sendsStopped = !keepGoing
 	return keepGoing
 }
