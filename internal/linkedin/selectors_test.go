@@ -214,3 +214,18 @@ func TestModalAndFormAnchors(t *testing.T) {
 		t.Error("the dead form class came back")
 	}
 }
+
+// ------------------------------------------------------------ after Submit
+func TestTheDoneButtonIsOnlyLookedForInADialog(t *testing.T) {
+	doc, err := htmlquery.Parse(strings.NewReader(`<ul><li><span>Software Delivery Done Right</span></li></ul>
+<div role="dialog"><h2>Application sent</h2><button aria-label="Dismiss" data-test-modal-close-btn>x</button><button><span>Done</span></button></div>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := text(one(t, doc, DialogButtonXPath(DoneButtonText))); got != "Done" {
+		t.Errorf("matched %q", got)
+	}
+	if count(t, doc, FromDocument(ModalCloseXPath)) != 1 {
+		t.Error("the dialog's close button is not found")
+	}
+}

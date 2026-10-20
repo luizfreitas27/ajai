@@ -79,9 +79,15 @@ func (e *ErrNotFound) Error() string { return "no element matches " + e.XPath }
 type NotReadyError struct {
 	Wait   time.Duration
 	Reason NotReadyReason
+	Over   string // StayedCovered: what is drawn over it, e.g. `div#sent.artdeco-modal[role=dialog]`
 }
 
-func (e *NotReadyError) Error() string { return fmt.Sprintf("gave up after %s: %s", e.Wait, e.Reason) }
+func (e *NotReadyError) Error() string {
+	if e.Over != "" {
+		return fmt.Sprintf("gave up after %s: %s: %s", e.Wait, e.Reason, e.Over)
+	}
+	return fmt.Sprintf("gave up after %s: %s", e.Wait, e.Reason)
+}
 
 // NotReadyReason is why an element was still not ready when the wait ran out.
 type NotReadyReason string

@@ -64,6 +64,7 @@ type fakeSite struct {
 	dailyLimit bool
 	loginWaits int
 	linkFails  bool // the external application's tab does not open
+	openErr    error
 }
 
 func (f *fakeSite) EnsureLoggedIn(ctx context.Context, _ time.Duration, onWait func()) error {
@@ -100,7 +101,7 @@ func (f *fakeSite) ReadCard(card browser.Element) (linkedin.Card, error) {
 func (f *fakeSite) OpenCard(_ context.Context, card browser.Element) error {
 	f.opened = card.(*fakeCard).id
 	f.openedAll = append(f.openedAll, f.opened)
-	return nil
+	return f.openErr
 }
 func (f *fakeSite) AlreadyAppliedOnPage() bool { return f.jobs[f.opened].appliedOnPage }
 func (f *fakeSite) AboutCompany() string       { return f.jobs[f.opened].about }
@@ -623,4 +624,44 @@ func TestARunThatCannotBeRecordedStillEndsWithASummary(t *testing.T) {
 	if ends := kinds(*events, EventRunEnd); len(ends) != 1 || ends[0].Summary == nil || ends[0].Summary.End != EndError {
 		t.Errorf("--json and the terminal need the run-end event: %+v", *events)
 	}
+}
+
+// TestCardsThatStayCoveredEndTheRun: something left drawn over the page (a
+// dialog, the messaging overlay) covers every card that follows, so a second
+// card in a row that cannot be opened for it ends the run with the cause,
+// instead of waiting out every card on the page.
+func TestCardsThatStayCoveredEndTheRun(t *testing.T) {
+	covered := &browser.NotReadyError{Wait: 10 * time.Second, Reason: browser.StayedCovered, Over: "div#sent[role=dialog]"}
+	jobs := map[string]fakeJob{}
+	for _, id := range []string{"1", "2", "3", "4"} {
+		jobs[id] = job(id, "Go Dev "+id, "ACME "+id, "Go")
+	}
+	site := &fakeSite{jobs: jobs, pages: [][]string{{"1", "2", "3", "4"}}, openErr: covered}
+	r, _, _ := runner(t, site, cfg())
+	_, err := r.Run(context.Background(), Options{})
+	if !errors.Is(err, covered) || strings.Join(site.openedAll, ",") != "1,2" {
+		t.Errorf("%v, opened %v", err, site.openedAll)
+	}
+	// One covered card, then cards that open: a passing cover does not end the run.
+	site = &fakeSite{jobs: jobs, pages: [][]string{{"1", "2", "3", "4"}}}
+	r, _, _ = runner(t, site, cfg())
+	r.Site = &coveredOnce{fakeSite: site, err: covered}
+	if sum, err := r.Run(context.Background(), Options{}); err != nil || sum.Applied != 3 {
+		t.Errorf("%+v %v", sum, err)
+	}
+}
+
+// coveredOnce fails the first card it opens as covered.
+type coveredOnce struct {
+	*fakeSite
+	err  error
+	done bool
+}
+
+func (c *coveredOnce) OpenCard(ctx context.Context, card browser.Element) error {
+	if err := c.fakeSite.OpenCard(ctx, card); err != nil || c.done {
+		return err
+	}
+	c.done = true
+	return c.err
 }

@@ -15,6 +15,13 @@ no such section the notes are the commit list.
   - An existing install is tightened the next time ajai starts.
   - A directory you chose is created private when missing, but never changed: `AJAI_HOME`
     itself, the one `--config` points into, an export folder.
+- After an application, ajai closes LinkedIn's "Application sent" dialog. It used to look
+  for any "Done" on the page, so a company name holding the word (Software Delivery Done
+  Right) was clicked instead, the dialog stayed over the page and every card after it
+  failed with "something stayed drawn over it".
+  - That error now names what is drawn over the card (tag, id, class, role, aria-label,
+    into LinkedIn's messaging overlay's shadow root) and saves a screenshot.
+  - Two cards in a row covered end the run, instead of waiting 10 s on every card left.
 
 ### Docs
 

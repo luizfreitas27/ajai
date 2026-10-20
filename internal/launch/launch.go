@@ -103,7 +103,7 @@ func (p *Plan) Open(ctx context.Context, opts run.Options, d Deps) (*Opened, err
 
 	pacer := pacing.New(cfg.Pacing, opts.Fast)
 	session := linkedin.NewSession(br.Main(), br, pacer, d.Logger)
-	session.CloseTabs = cfg.Settings.CloseTabs
+	session.CloseTabs, session.ScreenshotDir = cfg.Settings.CloseTabs, d.Paths.ScreenshotDir
 	answerer := questions.New(cfg, memory.New(d.Store, d.Logger), nil, d.Logger)
 	if p.AI != nil {
 		answerer.AI = p.AI
