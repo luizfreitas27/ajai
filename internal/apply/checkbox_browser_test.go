@@ -20,7 +20,10 @@ import (
 // checkboxGroupPage is a synthetic multipleChoice question as LinkedIn drew it in
 // the failed runs: a single-answer group of checkboxes whose inputs take no
 // pointer events, with their <label for> drawn as the visible options. CHECKED
-// is what a test adds to the first option.
+// is what a test adds to the first option, and SETTLE what it adds to "No": a
+// handler that unticks the box on change and ticks it again a moment later, as a
+// page re-rendering the question can do. Only the property changes, never the
+// attribute.
 const checkboxGroupPage = `<html><body style="margin:0">
 <div role="dialog" class="jobs-easy-apply-modal"><div data-test-form-element>
 <fieldset data-test-form-builder-radio-button-form-component="true">
@@ -30,25 +33,32 @@ const checkboxGroupPage = `<html><body style="margin:0">
   <label for="opt-yes">Yes</label>
 </div>
 <div style="position:relative;padding-left:30px">
-  <input id="opt-no" type="checkbox" class="fb-form-element__checkbox" style="position:absolute;left:0;top:0;width:20px;height:20px;margin:0;pointer-events:none;opacity:0">
+  <input id="opt-no" type="checkbox" class="fb-form-element__checkbox" SETTLE style="position:absolute;left:0;top:0;width:20px;height:20px;margin:0;pointer-events:none;opacity:0">
   <label for="opt-no">No</label>
 </div>
 </fieldset>
 </div></div></body></html>`
 
-// openCheckboxGroup serves the page with the first option checked or not and
-// opens it in a headless Chrome.
-func openCheckboxGroup(t *testing.T, checked bool) browser.Page {
+// settleLate is the SETTLE handler: the box reads unticked right after the
+// click and ticked 300 ms later.
+const settleLate = `onchange="this.checked=false;setTimeout(()=>{this.checked=true},300)"`
+
+// openCheckboxGroup serves the page with the first option checked or not, and
+// "No" settling late or not, and opens it in a headless Chrome.
+func openCheckboxGroup(t *testing.T, checked, settles bool) browser.Page {
 	t.Helper()
 	bin, err := chrome.Find("")
 	if err != nil {
 		t.Skip("no Chrome on this machine:", err)
 	}
-	attr := ""
+	attr, settle := "", ""
 	if checked {
 		attr = "checked"
 	}
-	page := strings.Replace(checkboxGroupPage, "CHECKED", attr, 1)
+	if settles {
+		settle = settleLate
+	}
+	page := strings.Replace(strings.Replace(checkboxGroupPage, "CHECKED", attr, 1), "SETTLE", settle, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, page)
 	}))
@@ -73,11 +83,15 @@ func openCheckboxGroup(t *testing.T, checked bool) browser.Page {
 // a single-answer group never ends with two boxes ticked.
 func TestAChoiceWhoseInputsTakeNoPointerEventsIsPickedThroughItsLabel(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		checked bool
-	}{{"nothing ticked", false}, {"Yes ticked before", true}} {
+		name            string
+		checked, settle bool
+	}{
+		{"nothing ticked", false, false},
+		{"Yes ticked before", true, false},
+		{"No ticks a moment after the click", false, true},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pg := openCheckboxGroup(t, tc.checked)
+			pg := openCheckboxGroup(t, tc.checked, tc.settle)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 			modal, err := pg.WaitElement(ctx, linkedin.ModalXPath, 10*time.Second)

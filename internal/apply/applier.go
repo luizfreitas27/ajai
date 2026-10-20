@@ -496,10 +496,29 @@ func clickThrough(in, label browser.Element, want bool) error {
 	if lerr := label.Click(); lerr != nil {
 		return fmt.Errorf("%w (its label: %v)", err, lerr)
 	}
-	if ticked(in) != want {
+	if !reached(in, want) {
 		return fmt.Errorf("%w (its label did not set it)", err)
 	}
 	return nil
+}
+
+// settleWait bounds how long a box gets to show its new state after a label
+// click: a page may re-render the question a moment later. A var so tests can
+// shorten it.
+var settleWait = time.Second
+
+// reached says whether the box is in the wanted state, looking again for up to
+// settleWait. It reads the live checked property, never the attribute.
+func reached(in browser.Element, want bool) bool {
+	for deadline := time.Now().Add(settleWait); ; {
+		if ticked(in) == want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func labelAt(labels []browser.Element, i int) browser.Element {
