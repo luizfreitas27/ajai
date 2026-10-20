@@ -865,3 +865,35 @@ func TestARefusedFieldTheUserCorrectsInThePauseIsCaptured(t *testing.T) {
 		t.Errorf("the correction is not remembered: %+v", found)
 	}
 }
+
+// Two boxes in one question are a multipleChoice choice. Both refuse the click
+// (pointer-events none), so each is ticked or unticked through its label, and
+// picking Yes leaves No unticked.
+func TestAMultipleChoiceWhoseBoxesRefuseClicksIsPickedThroughTheLabels(t *testing.T) {
+	refused := errors.New("element's pointer-events is none")
+	yes := el("").attr("id", "y").attr("type", "checkbox")
+	no := el("").attr("id", "n").attr("type", "checkbox").prop("checked", "true")
+	yes.clickErr, no.clickErr = refused, refused
+	yesLabel, noLabel := el("Yes"), el("No")
+	yesLabel.onClick = func() { yes.prop("checked", "true") }
+	noLabel.onClick = func() { no.prop("checked", "false") }
+	block := el("").with(linkedin.CheckboxXPath, yes, no).
+		with(linkedin.OptionLabelXPath("y"), yesLabel).with(linkedin.OptionLabelXPath("n"), noLabel)
+	controls, err := ReadForm(modalWith(block))
+	if err != nil || len(controls) != 1 {
+		t.Fatalf("controls %+v: %v", controls, err)
+	}
+	c := controls[0]
+	if c.Question.Kind != questions.Radio || strings.Join(c.Question.Options, "|") != "Yes|No" || c.Question.Current != "No" {
+		t.Fatalf("not read as a choice with its options: %+v", c.Question)
+	}
+	if err := (&Applier{}).applyDecision(context.Background(), c, questions.Decision{Action: questions.Choose, Option: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if yesLabel.clicks != 1 || noLabel.clicks != 1 {
+		t.Errorf("label clicks: yes=%d no=%d, want 1 each", yesLabel.clicks, noLabel.clicks)
+	}
+	if yes.props["checked"] != "true" || no.props["checked"] != "false" {
+		t.Errorf("after picking Yes: yes=%q no=%q", yes.props["checked"], no.props["checked"])
+	}
+}

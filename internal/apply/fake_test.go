@@ -49,14 +49,16 @@ func (n *node) Click() error {
 	}
 	return n.clickErr
 }
-func (n *node) ClickAtCentre() error           { return n.Click() }
-func (n *node) Input(text string) error        { n.typed.WriteString(text); return nil }
-func (n *node) Clear() error                   { n.cleared = true; n.typed.Reset(); return nil }
-func (n *node) Focus() error                   { return nil }
-func (n *node) ScrollIntoView() error          { return nil }
-func (n *node) Visible() bool                  { return n.visible }
-func (n *node) SelectOption(text string) error { n.selected = text; return nil }
-func (n *node) SetFiles(paths []string) error  { n.files = paths; return nil }
+func (n *node) ClickAtCentre() error                             { return n.Click() }
+func (n *node) Input(text string) error                          { n.typed.WriteString(text); return nil }
+func (n *node) Clear() error                                     { n.cleared = true; n.typed.Reset(); return nil }
+func (n *node) Focus() error                                     { return nil }
+func (n *node) ScrollIntoView() error                            { return nil }
+func (n *node) Visible() bool                                    { return n.visible }
+func (n *node) SelectOption(text string) error                   { n.selected = text; return nil }
+func (n *node) SetFiles(paths []string) error                    { n.files = paths; return nil }
+func (n *node) ShadowElements(string) ([]browser.Element, error) { return nil, nil }
+func (n *node) ScriptClick() error                               { return n.Click() }
 func (n *node) Element(xpath string) (browser.Element, error) {
 	kids := n.children[xpath]
 	if len(kids) == 0 {

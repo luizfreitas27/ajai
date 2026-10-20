@@ -15,6 +15,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
 	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/store"
@@ -29,20 +30,22 @@ type fakeCard struct {
 // nullElement satisfies browser.Element with no behaviour; the fake site never touches cards.
 type nullElement struct{}
 
-func (nullElement) Text() (string, error)                      { return "", nil }
-func (nullElement) Attr(string) (string, bool)                 { return "", false }
-func (nullElement) Property(string) (string, error)            { return "", nil }
-func (nullElement) Click() error                               { return nil }
-func (nullElement) ClickAtCentre() error                       { return nil }
-func (nullElement) Input(string) error                         { return nil }
-func (nullElement) Clear() error                               { return nil }
-func (nullElement) Focus() error                               { return nil }
-func (nullElement) ScrollIntoView() error                      { return nil }
-func (nullElement) Visible() bool                              { return true }
-func (nullElement) Element(string) (browser.Element, error)    { return nil, &browser.ErrNotFound{} }
-func (nullElement) Elements(string) ([]browser.Element, error) { return nil, nil }
-func (nullElement) SelectOption(string) error                  { return nil }
-func (nullElement) SetFiles([]string) error                    { return nil }
+func (nullElement) Text() (string, error)                            { return "", nil }
+func (nullElement) Attr(string) (string, bool)                       { return "", false }
+func (nullElement) Property(string) (string, error)                  { return "", nil }
+func (nullElement) Click() error                                     { return nil }
+func (nullElement) ClickAtCentre() error                             { return nil }
+func (nullElement) Input(string) error                               { return nil }
+func (nullElement) Clear() error                                     { return nil }
+func (nullElement) Focus() error                                     { return nil }
+func (nullElement) ScrollIntoView() error                            { return nil }
+func (nullElement) Visible() bool                                    { return true }
+func (nullElement) Element(string) (browser.Element, error)          { return nil, &browser.ErrNotFound{} }
+func (nullElement) Elements(string) ([]browser.Element, error)       { return nil, nil }
+func (nullElement) SelectOption(string) error                        { return nil }
+func (nullElement) SetFiles([]string) error                          { return nil }
+func (nullElement) ShadowElements(string) ([]browser.Element, error) { return nil, nil }
+func (nullElement) ScriptClick() error                               { return nil }
 
 type fakeJob struct {
 	card          linkedin.Card
@@ -65,6 +68,67 @@ type fakeSite struct {
 	loginWaits int
 	linkFails  bool // the external application's tab does not open
 	openErr    error
+
+	hirers   map[string]hirer                            // per job id: the hiring team its page shows
+	hirerErr error                                       // HiringTeam fails
+	sends    []sendCall                                  // every SendMessage call, in order
+	sendFunc func(sendCall) (linkedin.SendResult, error) // nil: every send goes out
+	log      []string                                    // "pause" and "send", in order
+	here     []hereCall                                  // every SendHere call, in order
+	hereFunc func(hereCall) (linkedin.SendResult, error) // nil: every send here goes out
+	visited  []string                                    // every JobHiringTeam job id, in order
+}
+
+// hereCall is one SendHere: whom, what, and the card open at the time.
+type hereCall struct {
+	to     messages.Recipient
+	text   string
+	opened string // the card shown when it was called
+	cards  int    // how many cards had been opened by then
+}
+
+func (f *fakeSite) SendHere(_ context.Context, to messages.Recipient, text string) (linkedin.SendResult, error) {
+	call := hereCall{to: to, text: text, opened: f.opened, cards: len(f.openedAll)}
+	f.here = append(f.here, call)
+	if f.hereFunc != nil {
+		return f.hereFunc(call)
+	}
+	return linkedin.SendSent, nil
+}
+
+type hirer struct {
+	to messages.Recipient
+	ok bool
+}
+
+type sendCall struct {
+	to    messages.Recipient
+	jobID string
+	text  string
+}
+
+func (f *fakeSite) HiringTeam(context.Context) (messages.Recipient, bool, error) {
+	if f.hirerErr != nil {
+		return messages.Recipient{}, false, f.hirerErr
+	}
+	h := f.hirers[f.opened]
+	return h.to, h.ok, nil
+}
+
+func (f *fakeSite) JobHiringTeam(ctx context.Context, jobID string) (messages.Recipient, bool, error) {
+	f.visited = append(f.visited, jobID)
+	f.opened = jobID
+	return f.HiringTeam(ctx)
+}
+
+func (f *fakeSite) SendMessage(_ context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error) {
+	call := sendCall{to: to, jobID: jobID, text: text}
+	f.sends = append(f.sends, call)
+	f.log = append(f.log, "send")
+	if f.sendFunc != nil {
+		return f.sendFunc(call)
+	}
+	return linkedin.SendSent, nil
 }
 
 func (f *fakeSite) EnsureLoggedIn(ctx context.Context, _ time.Duration, onWait func()) error {
@@ -530,6 +594,39 @@ func TestPacingCapsMaxAndTheDailyLimitEndTheRunCleanly(t *testing.T) {
 	}
 }
 
+// TestTheDailyLimitBehindAnEasyApplyButtonEndsTheRunAndTheJobIsTriedAgain: on
+// 2026-10-20 LinkedIn kept the Easy Apply button, disabled, with its daily limit
+// notice under it. Seen before applying or once the click failed, it ends the run
+// cleanly, records nothing for the job, and the next run applies to it.
+func TestTheDailyLimitBehindAnEasyApplyButtonEndsTheRunAndTheJobIsTriedAgain(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go"), "2": job("2", "Go Dev", "Initech", "Go")},
+			pages: [][]string{{"1", "2"}}, dailyLimit: before}
+		r, st, events := runner(t, site, cfg())
+		calls := 0
+		r.Applier = applierFunc(func() (apply.Outcome, error) {
+			calls++
+			site.dailyLimit = true // the button stayed disabled: the notice is on the page
+			return apply.Outcome{Kind: apply.Failed, Stage: "clicking the apply button"}, errors.New("clicking the apply button: gave up after 10s: it stayed disabled")
+		})
+		sum, err := r.Run(context.Background(), Options{})
+		if err != nil || sum.End != EndDailyLimit || sum.Failed != 0 || len(kinds(*events, EventFailed)) != 0 {
+			t.Fatalf("notice before applying %v: %+v %v", before, sum, err)
+		}
+		if want := map[bool]int{true: 0, false: 1}[before]; calls != want {
+			t.Errorf("notice before applying %v: %d applications tried, want %d", before, calls, want)
+		}
+		if j, err := st.GetJob("1"); err != nil || j != nil {
+			t.Errorf("notice before applying %v: job recorded as %+v (%v)", before, j, err)
+		}
+		next := &fakeSite{jobs: site.jobs, pages: site.pages}
+		r.Site, r.Applier, r.Pacer = next, &fakeApplier{}, newPacer(cfg())
+		if sum, err = r.Run(context.Background(), Options{}); err != nil || sum.Applied != 2 {
+			t.Errorf("notice before applying %v: next run %+v %v", before, sum, err)
+		}
+	}
+}
+
 func TestAnApplicationSubmittedJustBeforeCtrlCIsStillRecorded(t *testing.T) {
 	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go")}, pages: [][]string{{"1"}}}
 	r, st, _ := runner(t, site, cfg())
@@ -623,6 +720,39 @@ func TestARunThatCannotBeRecordedStillEndsWithASummary(t *testing.T) {
 	}
 	if ends := kinds(*events, EventRunEnd); len(ends) != 1 || ends[0].Summary == nil || ends[0].Summary.End != EndError {
 		t.Errorf("--json and the terminal need the run-end event: %+v", *events)
+	}
+}
+
+// stoppingSite cancels the run with a stop request as its first search starts.
+type stoppingSite struct {
+	*fakeSite
+	cancel context.CancelCauseFunc
+}
+
+func (s stoppingSite) Search(ctx context.Context, term string) error {
+	s.cancel(&StopRequested{Reason: "stopped from the TUI"})
+	return ctx.Err()
+}
+
+func TestAStopWithMessagesOffEmitsOneLimitAndRecordsTheReasonOnce(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{}, pages: [][]string{{}}}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	c := cfg()
+	c.Messages.Enabled = false
+	r, st, events := runner(t, site, c)
+	r.Site = stoppingSite{fakeSite: site, cancel: cancel}
+	sum, err := r.Run(ctx, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limits := kinds(*events, EventLimit); len(limits) != 1 {
+		t.Errorf("%d limit events, want exactly 1: %+v", len(limits), *events)
+	}
+	if sum.End != EndStopped || sum.Reason != "stopped from the TUI" {
+		t.Errorf("summary ended %q %q, want stopped with the stop request's reason", sum.End, sum.Reason)
+	}
+	if run, err := st.GetRun(sum.RunID); err != nil || run == nil || run.Reason != "stopped from the TUI" {
+		t.Errorf("recorded run: %+v, %v", run, err)
 	}
 }
 

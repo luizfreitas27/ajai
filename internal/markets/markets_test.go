@@ -20,7 +20,8 @@ func TestTheDefaultMarketReproducesTheLegacySettingsExactly(t *testing.T) {
 	m := Resolve(legacy())
 	want := Resolved{Name: "internacional", Currency: "USD", SalaryPeriod: Annual,
 		DesiredAnnual: 120000, DesiredMonthly: 10000, CurrentAnnual: 96000, CurrentMonthly: 8000,
-		Location: "United States", Terms: []string{"Software Engineer"}, Resume: "resume.pdf"}
+		Location: "United States", Terms: []string{"Software Engineer"}, Resume: "resume.pdf",
+		MessageTemplate: config.Defaults().Markets.Internacional.MessageTemplate}
 	if !reflect.DeepEqual(m, want) {
 		t.Errorf("got %+v\nwant %+v", m, want)
 	}

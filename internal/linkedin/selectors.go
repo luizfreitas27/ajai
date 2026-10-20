@@ -87,7 +87,6 @@ const (
 	AddCompanyInputXPath     = `(.//input[@placeholder='Add a company'])[1]`
 	FilterSwitchXPath        = `.//input[@role="switch"]`
 	PostedAgoXPath           = `//*[contains(@class,'jobs-unified-top-card') or contains(@class,'job-details-jobs-unified-top-card')]//span[contains(normalize-space(), " ago")]`
-	InlineFeedbackXPath      = `//*[contains(@class,'artdeco-inline-feedback__message')]`
 	// InlineErrorXPath, within a form question, is the message LinkedIn shows when
 	// it refuses the question's answer ("Please enter a valid answer"). Not in a
 	// capture yet (see testdata/fixtures/README.md).
@@ -97,7 +96,63 @@ const (
 	FormProgressXPath     = `.//*[@role='region' and contains(@aria-label, 'progress is at')]`
 	AppliedOnPageXPath    = `//*[contains(@class,'jobs-s-apply__application-link')]`
 	PaginationActiveXPath = `.//button[contains(@class, 'active')]`
-	DailyLimitPhrase      = "exceeded the daily application limit"
+	// DailyLimitXPath is any element whose own text holds LinkedIn's notice that the
+	// daily Easy Apply limit is reached, in any case: the inline one the Python bot
+	// knew ("…exceeded the daily application limit…") or the one under a disabled
+	// Easy Apply button since 2026-10 ("We limit daily submissions … apply tomorrow.").
+	DailyLimitXPath = `//*[text()[contains(` + lowered + `, "exceeded the daily application limit") or contains(` + lowered + `, "limit daily submissions")]]`
+	lowered         = `translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")`
+)
+
+// The hiring team ("Meet the hiring team") in its two layouts: the job page's
+// slot (fixtures 07 and 10), with an aria-label="Message" link to
+// /messaging/compose/, and the search page's details pane (fixture 11), an older
+// layout with no slot id whose Message control is a button with the
+// send-privately icon and no href. HirerCardXPath, within the section, is the
+// nearest element holding a Message control whose profile links all go to one
+// hirer (the pane links the photo and the name), so a profile is never paired
+// with another hirer's button. The card is also kept inside the section, so
+// the climb never reaches a Message button outside it. HirerNameXPath is
+// applied inside the card.
+const (
+	HiringTeamSectionXPath = `//div[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_")] | //div[contains(@class,"job-details-people-who-can-help__section")]`
+	HirerProfileLinkXPath  = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]`
+	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] | .//button[.//*[@data-test-icon="send-privately-small"]]`
+	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] or .//button[.//*[@data-test-icon="send-privately-small"]]][not(.//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href != .//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href)][ancestor-or-self::*[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_") or contains(@class,"job-details-people-who-can-help__section")]][1]`
+	HirerNameXPath         = `(.//a[starts-with(@href,"https://www.linkedin.com/in/")]//p | .//a[starts-with(@href,"https://www.linkedin.com/in/")]//strong)[1]`
+)
+
+// HirerInSectionXPath is a hirer's profile link inside the hiring team, which
+// is what to wait for: the job page draws the slot before LinkedIn fills it,
+// and leaves it empty on a job without a hiring team (fixture 10).
+const HirerInSectionXPath = "(" + HiringTeamSectionXPath + `)//a[starts-with(@href,"https://www.linkedin.com/in/")]`
+
+// The messaging overlay the hirer's Message link opens in place (fixtures 08 and
+// 09). It lives in the open shadow root of MessageOutletXPath, out of reach of a
+// document-wide XPath: the absolute selectors below are evaluated from that
+// shadow root (browser.Element.ShadowElements), the relative ones inside the
+// compose bubble or the upsell.
+const (
+	MessageOutletXPath = `//div[@id="interop-outlet"]`
+	ComposeBubbleXPath = `//div[@role="dialog" and contains(@class,"msg-overlay-conversation-bubble--is-compose")]`
+	// ComposeRecipientXPath is the profile link of the member the compose is to.
+	ComposeRecipientXPath  = `.//a[contains(@class,"msg-compose__profile-link")]`
+	MessageBoxXPath        = `.//div[contains(@class,"msg-form__contenteditable") and @contenteditable="true" and @role="textbox"]`
+	MessageSendButtonXPath = `.//button[contains(@class,"msg-form__send-btn") and @type="submit"]`
+	// MessageSubjectXPath is the subject of an InMail; a connection's compose has none.
+	MessageSubjectXPath = `.//input[@name="subject"]`
+	// InMailCreditsXPath says what an InMail costs; FreeMessageText in it means it costs nothing.
+	InMailCreditsXPath = `.//section[contains(@class,"msg-inmail-credits-display")]`
+	FreeMessageText    = "Free message"
+	// BubbleCloseButtonXPath closes the bubble by its icon: the draft's button says
+	// "Close your draft conversation", a conversation's names the member.
+	BubbleCloseButtonXPath = `.//button[.//*[@data-test-icon="close-small"]]`
+	UpsellModalXPath       = `//div[@data-test-modal-id="modal-upsell"]`
+	UpsellDismissXPath     = `.//button[@aria-label="Dismiss" and @data-test-modal-close-btn]`
+	// SentMessageBodyXPath is a message in a conversation's list. Not in a capture
+	// yet (see testdata/fixtures/README.md): the send is confirmed by the box
+	// emptying as well.
+	SentMessageBodyXPath = `//*[contains(@class,"msg-s-event-listitem__body")]`
 )
 
 // PaginationClasses are tried in order to find the results pager.
@@ -131,3 +186,7 @@ func FromDocument(xpath string) string { return strings.TrimPrefix(xpath, ".") }
 
 // OptionLabelXPath is the label of a radio option with this input id.
 func OptionLabelXPath(inputID string) string { return `.//label[@for="` + inputID + `"]` }
+
+// OptionWrapLabelXPath is the label wrapping the input with this id, for an option
+// whose label has no for attribute.
+func OptionWrapLabelXPath(inputID string) string { return `.//label[.//input[@id="` + inputID + `"]]` }

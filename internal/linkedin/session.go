@@ -14,6 +14,7 @@ import (
 
 	"github.com/luizfreitas27/ajai/internal/browser"
 	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 )
 
@@ -28,6 +29,7 @@ type Session struct {
 	CloseTabs bool // close the tab an external application opened (settings.close_tabs)
 	// ScreenshotDir receives a screenshot of a card something stays drawn over; "" disables it.
 	ScreenshotDir string
+	jobBase       string // where job pages are, JobURL when blank; tests serve their own
 }
 
 // NewSession wires a session; br and logger may be nil.
@@ -95,10 +97,21 @@ func (s *Session) Search(ctx context.Context, term string) error {
 	return s.Page.Navigate(ctx, SearchURL+url.QueryEscape(term))
 }
 
-// TypeHuman types text one character at a time with the pacer's delays.
+// TypeHuman types text one character at a time with the pacer's delays. A
+// line break is Shift+Enter, which breaks the line in a message box where Enter
+// may send.
 func (s *Session) TypeHuman(ctx context.Context, el browser.Element, text string) error {
 	for _, r := range text {
-		if err := el.Input(string(r)); err != nil {
+		var err error
+		switch r {
+		case '\r':
+			continue
+		case '\n':
+			err = s.Page.Press("Shift+Enter")
+		default:
+			err = el.Input(string(r))
+		}
+		if err != nil {
 			return err
 		}
 		select {
@@ -505,14 +518,10 @@ func (s *Session) ExternalLink(ctx context.Context, button browser.Element) (str
 	return link, nil
 }
 
-// DailyLimitReached reads LinkedIn's inline notice about the Easy Apply cap.
+// DailyLimitReached reads LinkedIn's notice about the daily Easy Apply cap.
 func (s *Session) DailyLimitReached() bool {
-	el, err := s.Page.Element(InlineFeedbackXPath)
-	if err != nil {
-		return false
-	}
-	t, _ := el.Text()
-	return strings.Contains(t, DailyLimitPhrase)
+	_, err := s.Page.Element(DailyLimitXPath)
+	return err == nil
 }
 
 // NextPage moves to the following results page; false at the last page.
@@ -545,4 +554,375 @@ func (s *Session) NextPage(ctx context.Context) (bool, error) {
 	}
 	s.Logger.Info("results page", "page", current+1)
 	return true, s.Pacer.BetweenActions(ctx)
+}
+
+// SendResult says what SendMessage did with a recruiter message.
+type SendResult string
+
+// The outcomes of SendMessage.
+const (
+	SendSent        SendResult = "sent"
+	SendNoRecipient SendResult = "no_recipient" // the hirer changed, or only Premium or a paid InMail is offered
+	SendBlocked     SendResult = "blocked"      // a restriction or CAPTCHA: stop sending
+)
+
+// HiringTeam reads the hiring team of the job shown, on its job page or in the
+// search page's details pane: the first hirer whose card holds both a profile
+// link and a free Message control (HirerCardXPath). It waits up to
+// hiringTeamWait for a hirer in the section, which the pane may draw (or fill)
+// after the job, and clicks nothing. ok is false, with no error, when the
+// section is missing or empty or no card has a Message control.
+func (s *Session) HiringTeam(ctx context.Context) (messages.Recipient, bool, error) {
+	_, _ = s.Page.WaitElement(ctx, HirerInSectionXPath, hiringTeamWait) // a missing hirer is read below
+	if ctx.Err() != nil {
+		return messages.Recipient{}, false, ctx.Err()
+	}
+	to, _, ok, err := s.hirer()
+	return to, ok, err
+}
+
+// hirer is HiringTeam with the hirer's card.
+func (s *Session) hirer() (messages.Recipient, browser.Element, bool, error) {
+	section, err := s.Page.Element(HiringTeamSectionXPath)
+	var missing *browser.ErrNotFound
+	if errors.As(err, &missing) {
+		return messages.Recipient{}, nil, false, nil
+	}
+	if err != nil {
+		return messages.Recipient{}, nil, false, err
+	}
+	cards, err := section.Elements(HirerCardXPath)
+	if err != nil {
+		return messages.Recipient{}, nil, false, err
+	}
+	for _, card := range cards {
+		link, err := card.Element(HirerProfileLinkXPath)
+		if err != nil {
+			return messages.Recipient{}, nil, false, err
+		}
+		href, _ := link.Attr("href")
+		profile, ok := NormaliseProfileURL(href)
+		if !ok {
+			continue
+		}
+		var name string
+		if el, err := card.Element(HirerNameXPath); err == nil {
+			name, _ = el.Text()
+		}
+		return messages.Recipient{Name: strings.TrimSpace(name), URL: profile}, card, true, nil
+	}
+	return messages.Recipient{}, nil, false, nil
+}
+
+// NormaliseProfileURL returns the canonical profile URL of a LinkedIn member
+// link, "https://www.linkedin.com/in/<slug>", for an absolute or relative /in/
+// href. The query, the fragment and a trailing slash go. ok is false for
+// anything that is not a member profile on www.linkedin.com over https.
+func NormaliseProfileURL(href string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return "", false
+	}
+	if (u.Scheme != "" && u.Scheme != "https") || (u.Host != "" && u.Host != "www.linkedin.com") {
+		return "", false
+	}
+	slug, ok := strings.CutPrefix(strings.TrimSuffix(u.Path, "/"), "/in/")
+	if !ok || slug == "" || strings.Contains(slug, "/") {
+		return "", false
+	}
+	return "https://www.linkedin.com/in/" + slug, true
+}
+
+// The bounds of HiringTeam's and SendMessage's waits; vars so the tests can shorten them.
+var (
+	// LinkedIn fills the hiring team after the rest of the job, below the
+	// description; 3 s missed it on live job pages.
+	hiringTeamWait = 8 * time.Second
+	composeWait    = 20 * time.Second
+	sentWait       = 20 * time.Second
+)
+
+// SendMessage sends text to the hirer of the job jobID, only for free: a
+// connection's message, or LinkedIn's free message to an open profile. It opens
+// the job page and reads the hiring team again; a hirer other than to, a Premium
+// upsell or an InMail that would use a paid credit is SendNoRecipient, with
+// nothing sent. The optional subject is left empty. A checkpoint page is
+// SendBlocked. An error means the message may not have gone out: the box did
+// not hold exactly text (nothing sent), or the send was clicked and never seen
+// through.
+func (s *Session) SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (SendResult, error) {
+	if blocked, err := s.openJobPage(ctx, jobID); err != nil || blocked {
+		if blocked {
+			return SendBlocked, nil
+		}
+		return "", err
+	}
+	found, card, ok, err := s.hirer()
+	if err != nil {
+		return "", err
+	}
+	if !ok || found.URL != to.URL {
+		return SendNoRecipient, nil
+	}
+	return s.composeAndSend(ctx, card, to, text)
+}
+
+// ErrBlocked is JobHiringTeam on a checkpoint page: LinkedIn restricted the
+// account or asks for a CAPTCHA, so nothing more is sent.
+var ErrBlocked = errors.New("LinkedIn showed a checkpoint page")
+
+// openJobPage opens the job page of jobID and waits for a hirer in its hiring
+// team, which may be missing or stay empty. The slot is drawn empty first and
+// filled later, so it is scrolled to (the fill may wait for it) and the wait
+// is for a hirer link, not the slot. blocked is true on a checkpoint page.
+func (s *Session) openJobPage(ctx context.Context, jobID string) (blocked bool, err error) {
+	base := s.jobBase
+	if base == "" {
+		base = JobURL
+	}
+	if err := s.Page.Navigate(ctx, base+jobID+"/"); err != nil {
+		return false, err
+	}
+	if s.blocked() {
+		return true, nil
+	}
+	section, err := s.Page.WaitElement(ctx, HiringTeamSectionXPath, 15*time.Second)
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if err != nil {
+		s.Logger.Info("no hiring team on the job page", "job", jobID)
+		return false, nil
+	}
+	_ = section.ScrollIntoView()
+	if _, err := s.Page.WaitElement(ctx, HirerInSectionXPath, hiringTeamWait); ctx.Err() != nil {
+		return false, ctx.Err()
+	} else if err != nil {
+		s.Logger.Info("empty hiring team on the job page", "job", jobID)
+	}
+	return false, nil
+}
+
+// JobHiringTeam opens the job page of jobID and reads its hirer, as
+// HiringTeam does; SendHere then sends on that page. A checkpoint page has no
+// hirer to read: it is ErrBlocked.
+func (s *Session) JobHiringTeam(ctx context.Context, jobID string) (messages.Recipient, bool, error) {
+	if blocked, err := s.openJobPage(ctx, jobID); err != nil || blocked {
+		if blocked {
+			err = ErrBlocked
+		}
+		return messages.Recipient{}, false, err
+	}
+	to, _, ok, err := s.hirer()
+	return to, ok, err
+}
+
+// SendHere is SendMessage on the page shown, the search page with the details
+// pane of the job just applied to, without opening the job page: the hirer card
+// there must still be to's. The compose is closed after the send, so the job
+// list stays usable.
+func (s *Session) SendHere(ctx context.Context, to messages.Recipient, text string) (SendResult, error) {
+	if s.blocked() {
+		return SendBlocked, nil
+	}
+	found, card, ok, err := s.hirer()
+	if err != nil {
+		return "", err
+	}
+	if !ok || found.URL != to.URL {
+		return SendNoRecipient, nil
+	}
+	if err := s.Pacer.BetweenActions(ctx); err != nil {
+		return "", err
+	}
+	return s.composeAndSend(ctx, card, to, text)
+}
+
+// composeAndSend clicks the Message control of the hirer card, checked to be
+// to's, and sends text only if the compose is free, before typing and again
+// before the send.
+func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to messages.Recipient, text string) (SendResult, error) {
+	// Every compose the click opened is closed on the way out, whatever the
+	// result, except a sent one, which closes itself below. The bubbles stay
+	// on the page otherwise, and draw over the job list.
+	var seen []browser.Element
+	sent := false
+	defer func() {
+		if !sent {
+			for _, b := range seen {
+				closeBubble(b)
+			}
+		}
+	}()
+	link, err := card.Element(HirerMessageXPath)
+	if err != nil {
+		return "", err
+	}
+	// Rod's click on this link hangs (the overlay opens in place); the page's own click does not.
+	if err := link.ScriptClick(); err != nil {
+		return "", err
+	}
+	host, bubble, seen, err := s.waitCompose(ctx, to)
+	if err != nil {
+		return "", err
+	}
+	if bubble == nil { // the Premium upsell, dismissed, or no compose to the hirer opened
+		return SendNoRecipient, nil
+	}
+	if !freeCompose(bubble) {
+		return SendNoRecipient, nil
+	}
+	box, err := bubble.Element(MessageBoxXPath)
+	if err != nil {
+		return "", err
+	}
+	if err := s.TypeHuman(ctx, box, text); err != nil {
+		return "", err
+	}
+	if err := s.Pacer.BetweenActions(ctx); err != nil {
+		return "", err
+	}
+	if typed, _ := box.Text(); squash(typed) != squash(text) {
+		return "", errors.New("the message box does not hold the approved text; nothing was sent")
+	}
+	if !freeCompose(bubble) { // LinkedIn may have shown the credits once typing began
+		return SendNoRecipient, nil
+	}
+	send, err := bubble.Element(MessageSendButtonXPath)
+	if err != nil {
+		return "", err
+	}
+	if _, disabled := send.Attr("disabled"); disabled {
+		return "", errors.New("the send button stayed disabled; nothing was sent")
+	}
+	if err := send.ScriptClick(); err != nil {
+		return "", fmt.Errorf("clicking send: %w", err)
+	}
+	result, err := s.waitSent(ctx, host, box, text)
+	if err != nil {
+		return "", err
+	}
+	if result == SendSent {
+		sent = true
+		closeBubble(bubble)
+	}
+	return result, nil
+}
+
+// blocked: LinkedIn sent the tab to a checkpoint (a CAPTCHA or a restriction).
+// Read from the URL, as login is; no such page is captured yet.
+func (s *Session) blocked() bool {
+	u, err := s.Page.URL()
+	return err == nil && strings.Contains(u, "/checkpoint/")
+}
+
+// waitCompose waits, up to composeWait, for the overlay the Message link opens:
+// the compose bubble to to, or the Premium upsell, which it dismisses and
+// reports as a nil bubble. seen lists every compose box the overlay showed up
+// to the match, to's or another member's, so the caller can close them; when
+// none turns up the bubble is nil too. host is the overlay's shadow host.
+func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host, bubble browser.Element, seen []browser.Element, err error) {
+	err = poll(ctx, composeWait, "the compose box did not open", func() bool {
+		if host, err = s.Page.Element(MessageOutletXPath); err != nil {
+			return false
+		}
+		if upsell, _ := host.ShadowElements(UpsellModalXPath); len(upsell) > 0 {
+			if dismiss, err := upsell[0].Element(UpsellDismissXPath); err == nil {
+				_ = dismiss.ScriptClick()
+			}
+			return true
+		}
+		seen = seen[:0]
+		bubbles, _ := host.ShadowElements(ComposeBubbleXPath)
+		for _, b := range bubbles {
+			if _, err := b.Element(MessageBoxXPath); err != nil {
+				continue
+			}
+			seen = append(seen, b)
+			link, err := b.Element(ComposeRecipientXPath)
+			if err != nil {
+				continue
+			}
+			href, _ := link.Attr("href")
+			if u, _ := NormaliseProfileURL(href); u != to.URL {
+				continue
+			}
+			bubble = b
+			return true
+		}
+		return false
+	})
+	if err != nil && ctx.Err() == nil { // never opened: no recipient to send to
+		return host, nil, seen, nil
+	}
+	return host, bubble, seen, err
+}
+
+// freeCompose: the compose costs nothing. An InMail shows what it costs
+// (InMailCreditsXPath) and is free only when that says "Free message"; a compose
+// with a subject and no such line is an InMail too, and is not free. A
+// connection's compose has neither.
+func freeCompose(bubble browser.Element) bool {
+	if credits, err := bubble.Element(InMailCreditsXPath); err == nil {
+		t, _ := credits.Text()
+		return strings.Contains(t, FreeMessageText)
+	}
+	_, err := bubble.Element(MessageSubjectXPath)
+	return err != nil
+}
+
+// waitSent waits, up to sentWait, for LinkedIn to show the message sent. The
+// heuristic: the box empties (LinkedIn clears it once the message is accepted)
+// or the message shows in the conversation (SentMessageBodyXPath, from the
+// overlay's root, as the bubble may be drawn anew as a conversation). Neither
+// is an error: the send was clicked, so the message must never be tried again.
+func (s *Session) waitSent(ctx context.Context, host, box browser.Element, text string) (SendResult, error) {
+	var result SendResult
+	err := poll(ctx, sentWait, "the send was clicked but the message never showed as sent", func() bool {
+		if s.blocked() {
+			result = SendBlocked
+			return true
+		}
+		if t, err := box.Text(); err == nil && strings.TrimSpace(t) == "" {
+			result = SendSent
+			return true
+		}
+		bodies, _ := host.ShadowElements(SentMessageBodyXPath)
+		for _, b := range bodies {
+			if t, _ := b.Text(); squash(t) == squash(text) {
+				result = SendSent
+				return true
+			}
+		}
+		return false
+	})
+	return result, err
+}
+
+// closeBubble closes a compose or conversation bubble; a failure only leaves it open.
+func closeBubble(bubble browser.Element) {
+	if c, err := bubble.Element(BubbleCloseButtonXPath); err == nil {
+		_ = c.ScriptClick()
+	}
+}
+
+// squash trims text and collapses its runs of white space, as a contenteditable
+// box gives back line breaks its own way.
+func squash(text string) string { return strings.Join(strings.Fields(text), " ") }
+
+// poll calls done every 250 ms until it reports true, up to wait; past that it
+// is an error saying what never happened.
+func poll(ctx context.Context, wait time.Duration, never string, done func() bool) error {
+	deadline := time.Now().Add(wait)
+	for !done() {
+		if time.Now().After(deadline) {
+			return errors.New(never)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return nil
 }

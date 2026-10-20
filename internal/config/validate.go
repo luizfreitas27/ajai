@@ -50,6 +50,25 @@ func AsValidation(err error) (*ValidationError, bool) {
 
 var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 
+// MessagePlaceholders are the only placeholders a message template may use.
+var MessagePlaceholders = []string{"{first_name}", "{title}", "{company}"}
+
+var placeholderRe = regexp.MustCompile(`\{[^{}]*\}`)
+
+// templateProblem says what is wrong with a message template, or "" when every
+// placeholder is one of MessagePlaceholders and the braces balance.
+func templateProblem(template string) string {
+	for _, tok := range placeholderRe.FindAllString(template, -1) {
+		if !contains(MessagePlaceholders, tok) {
+			return fmt.Sprintf("unknown placeholder %s", tok)
+		}
+	}
+	if strings.ContainsAny(placeholderRe.ReplaceAllString(template, ""), "{}") {
+		return "unbalanced braces"
+	}
+	return ""
+}
+
 // Validate checks every tag-driven rule (closed option sets, minimums) and the
 // cross-field rules the Python validator had. It returns nil or a
 // *ValidationError listing everything wrong at once.
@@ -102,6 +121,18 @@ func (c *Config) Validate() error {
 		if !currencyRe.MatchString(m.Currency) {
 			add("markets."+string(name)+".currency", fmt.Sprintf("%q is not a three-letter ISO 4217 code such as BRL or USD", m.Currency))
 		}
+		if problem := templateProblem(m.MessageTemplate); problem != "" {
+			add("markets."+string(name)+".message_template", problem, MessagePlaceholders...)
+		}
+	}
+	for _, t := range []struct{ key, text string }{
+		{"messages.templates.en", c.Messages.Templates.En},
+		{"messages.templates.pt", c.Messages.Templates.Pt},
+		{"messages.templates.es", c.Messages.Templates.Es},
+	} {
+		if problem := templateProblem(t.text); problem != "" {
+			add(t.key, problem, MessagePlaceholders...)
+		}
 	}
 	p := c.Pacing
 	for _, pair := range []struct {
@@ -111,10 +142,14 @@ func (c *Config) Validate() error {
 		{p.BetweenJobsMin, p.BetweenJobsMax, "pacing.between_jobs_max_seconds"},
 		{p.BetweenActionsMin, p.BetweenActionsMax, "pacing.between_actions_max_seconds"},
 		{p.TypingDelayMinMs, p.TypingDelayMaxMs, "pacing.typing_delay_max_ms"},
+		{c.Messages.BetweenMinSeconds, c.Messages.BetweenMaxSeconds, "messages.between_max_seconds"},
 	} {
 		if pair.hi < pair.lo {
 			add(pair.key, fmt.Sprintf("must not be below its minimum (%d < %d)", pair.hi, pair.lo))
 		}
+	}
+	if c.Messages.AutoSend && !c.Messages.Enabled {
+		add("messages.auto_send", "only works with messages.enabled true")
 	}
 	if c.AI.Enabled && strings.TrimSpace(c.AI.Model) == "" {
 		add("ai.model", "must be set when ai.enabled is true")

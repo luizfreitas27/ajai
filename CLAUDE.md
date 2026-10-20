@@ -28,12 +28,17 @@ to the tag before tagging and the workflow publishes that section as the release
 ## Architecture (target; see issue #1 for the spec)
 
 - `cmd/ajai`: cobra command tree only. No business logic.
+- `internal/cli`: the commands. `ajai messages send` opens Chrome only through
+  `launch.Plan.OpenMessaging`, never `Plan.Open`, so it cannot search or apply.
 - `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
   Secrets never live in the YAML.
 - `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
   (ADR 0001). The only package that imports rod. Never headless outside tests. `Close`
   quits Chrome gracefully on the ajai profile (`Options.QuitOnClose`) and only detaches on
   the user's; never call rod's `launcher.Cleanup` on a real profile (it deletes it).
+  `Element.ShadowElements` searches an element's open shadow root (absolute XPath from its
+  root); `ScriptClick` calls the element's `click()` in the page, for a control whose real
+  click hangs (LinkedIn's hirer Message link). `Press` also takes `Shift+Enter`.
 - Chrome profile: `paths.Paths.ChromeProfile(setting)` (blank = the ajai profile, in the data
   directory) and `launch.OpenChrome` (find, create, open; `ErrOwnProfileInUse`) are the only
   places that decide it; `ajai run` and `ajai login` both go through them. `ajai doctor` checks
@@ -42,6 +47,13 @@ to the tag before tagging and the workflow publishes that section as the release
   (`chrome.HasLinkedInSession`); never copy it, never read cookie values.
 - `internal/linkedin`: `Session` over `browser.Page`: login detection (feed URL only),
   search, filters, job cards, job details, pagination; plus the centralised selectors.
+  `HiringTeam` reads the job page's hirer (read only). `SendMessage` works inside the open
+  shadow root of `#interop-outlet` (`ShadowElements`, `ScriptClick`), re-checks the hirer by
+  normalised `/in/` URL before the send, and is free only: a Premium upsell or an InMail without
+  "Free message" is `SendNoRecipient`, a `/checkpoint/` page is `SendBlocked`.
+- `internal/messages`: pure rendering of a market's `message_template` (`Render`), `DetectLanguage` (stopword counts that pick the `messages.templates` language, or "" when unsure), and the
+  digests an approval quotes back: `Digest` for one text, `ListDigest` for a queue listing.
+  `internal/remote` approves answers with the same `Digest`.
 - `internal/screening`: the pure skip rules (card, company, description).
 - `internal/pacing`: caps and jittered pauses; `--fast` only with `--dry-run`.
 - `internal/run`: the run loop over a `Site` interface (the session), tested with a fake
@@ -54,6 +66,15 @@ to the tag before tagging and the workflow publishes that section as the release
   `Lock.WatchStops` (started by `launch.Opened.Session`) polls it and cancels the session's
   context with a `*StopRequested` cause, whose reason the run records instead of "stopped
   by user". A request older than the lock (left as the previous run ended) is discarded.
+  With `messages.auto_send`, `queueMessage` records the message approved and sends it at once
+  through `Site.SendHere` (`sendNow`: the daily cap, then `sendOne` as at the end of a run; a
+  block sets `sendsStopped` for the rest of the run). One message per recruiter, ever:
+  `store.HasMessaged` is checked when queueing and before each end-of-run send.
+  After an applied job (never on a dry run) `Runner.queueMessage` queues its recruiter
+  message from `Site.HiringTeam`. `Runner.Run` sends the approved messages once a live run's
+  loop ends without an error (`sendMessages`); a cancelled context sends nothing more.
+  `endAbandoned` marks the rows a dead process left `sending` as failed, never approved, so
+  they are never resent.
 - `internal/tui`: the TUI, on Bubble Tea v1 (the version huh brings). Bare `ajai` opens it
   only when stdin and stdout are terminals (`cli.inTerminal`, `cli.showTUI` are the test
   seams); otherwise the help, as before. `tui.New(Deps, renderer)` builds the model;
@@ -178,7 +199,9 @@ to the tag before tagging and the workflow publishes that section as the release
 - `internal/launch`: the one place a loaded configuration becomes a run: `NewPlan` (market,
   AI client, resume, Chrome; no side effects, so the caller can print it first) then
   `Plan.Open` (run lock, Chrome, session, applier, runner) and `Opened.Session`. `ajai run`
-  and the daemon both use it; never wire a runner anywhere else. It decides attended-only
+  and the daemon both use it; never wire a runner anywhere else. `Plan.OpenMessaging` is its one
+  other entry: the run lock (`run.OriginMessages`), Chrome and a session with no applier, for
+  `ajai messages send` (`Runner.SendPending`). It decides attended-only
   hooks (help pause, filter pause) from `run.Options`: the terminal always passes them,
   the daemon has none (its runs are unattended).
 - `internal/config/wired_test.go` fails when a config field is read nowhere outside the
@@ -206,7 +229,10 @@ to the tag before tagging and the workflow publishes that section as the release
   entry with an empty answer is a question queued for the user (`ajai answers review`);
   lookups treat it as a miss so the AI is still asked. Select and radio entries keep the
   options the form offered (`questions.Choices`: placeholders out), so an answer given later
-  can be checked; entries from before migration 0003 have none.
+  can be checked; entries from before migration 0003 have none. `recruiter_messages`
+  (migration 0004) moves queued, approved, sending, sent, failed or no_recipient;
+  `ApproveMessage` and `ApproveAll` take the digest the user read and refuse a changed text or
+  queue, and `MarkSending` is written before the send click.
 - `internal/ai`: one OpenAI-compatible client on the official openai-go SDK, the candidate
   profile and the prompt. The chat service is built without `openai.NewClient`, so the
   SDK's environment defaults (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_CUSTOM_HEADERS`...)
@@ -225,7 +251,9 @@ to the tag before tagging and the workflow publishes that section as the release
   (`Answerer.RememberUnanswered`). Unattended = `--unattended`, or stdin or stdout not a
   terminal (`run.ResolveUnattended`).
 - `internal/linkedin`: every LinkedIn selector, checked against `testdata/fixtures` by
-  `selectors_test.go`. Update both together when LinkedIn changes.
+  `selectors_test.go`. Update both together when LinkedIn changes. `SendMessage` (opens the
+  job page) and `SendHere` (the search pane shown) share `composeAndSend` after re-reading
+  the hirer.
 - `internal/schedule`: the pure window rules. `Window` (weekdays, `Clock` start/end in local
   wall-clock minutes, optional market and dry run), `Validate` (no crossing midnight, no
   overlap with another enabled window on the same weekday), and with an injected time

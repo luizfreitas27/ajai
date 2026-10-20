@@ -6,6 +6,31 @@ no such section the notes are the commit list.
 
 ## Unreleased
 
+### Added
+
+- Recruiter messages after a submitted application. Off by default; turn them on with
+  `messages.enabled: true`. When the job page shows a hirer with a free Message button, ajai
+  queues one message written from the market's `message_template`. Nothing is sent until you
+  approve its exact text: `ajai messages list` shows each queued message with a digest of its
+  text, `ajai messages approve <id> <digest>` approves one, `ajai messages approve --all
+  <list-digest>` approves the whole queue as listed, and `ajai messages delete <id>` removes one.
+  - Messages go out at the end of live runs only, never on a dry run: at most
+    `messages.max_per_day` (3) a local day, each after a pause of
+    `messages.between_min_seconds` to `between_max_seconds` (90 to 300).
+  - `message_template` takes `{first_name}`, `{title}` and `{company}`. A blank template
+    queues nothing.
+  - Free messages only: a connection's message, or LinkedIn's free message to an open profile.
+    Premium and paid InMail are never used; that hirer is recorded and skipped.
+  - `messages.auto_send: true` skips the approval: each message is sent right after its
+    application, from the search page, with the daily cap and the free-only checks still in
+    place. Off by default.
+  - Each recruiter gets one message, ever: an application to another job of a recruiter
+    already messaged records "already messaged this recruiter" and sends nothing.
+  - `ajai messages send` sends the approved messages without a run, so they go out after
+    LinkedIn's daily application limit too. `--applied-since YYYY-MM-DD` also reads the hirer
+    of each job applied to since then with no hirer recorded and sends it a message, within the
+    daily cap. `--dry-run` only prints what would be sent.
+
 ### Fixed
 
 - ajai's files are now readable only by you. They used to be 0755 and 0644, so other users
@@ -22,6 +47,14 @@ no such section the notes are the commit list.
   - That error now names what is drawn over the card (tag, id, class, role, aria-label,
     into LinkedIn's messaging overlay's shadow root) and saves a screenshot.
   - Two cards in a row covered end the run, instead of waiting 10 s on every card left.
+- A multiple-choice question drawn with checkboxes (LinkedIn's "Yes" / "No" sponsorship
+  questions) failed with "element's pointer-events is none": the boxes take no pointer events,
+  and the click never reached them. ajai now picks the option through its label, then unticks
+  any other option of the question that was ticked.
+- ajai recognises LinkedIn's new daily limit notice ("We limit daily submissions … apply
+  tomorrow."), shown under a disabled Easy Apply button. The run used to go on and record
+  every job left as failed at "clicking the apply button"; it now ends at the daily limit,
+  as with the old notice, and records nothing for the job, so the next run tries it again.
 
 ### Docs
 

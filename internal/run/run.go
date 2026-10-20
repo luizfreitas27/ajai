@@ -19,6 +19,7 @@ import (
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
 	"github.com/luizfreitas27/ajai/internal/markets"
+	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/pacing"
 	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/screening"
@@ -42,6 +43,18 @@ type Site interface {
 	ExternalLink(ctx context.Context, button browser.Element) (string, error)
 	DailyLimitReached() bool
 	NextPage(ctx context.Context) (bool, error)
+	// HiringTeam reads the hirer a free Message button is offered for on the job
+	// page; ok is false when there is none.
+	HiringTeam(ctx context.Context) (messages.Recipient, bool, error)
+	// JobHiringTeam opens the job page of jobID and reads its hirer there, as
+	// HiringTeam does; SendHere then sends on that page.
+	JobHiringTeam(ctx context.Context, jobID string) (messages.Recipient, bool, error)
+	// SendMessage sends text to the hirer of job jobID, after checking that the hirer
+	// is still to (see linkedin.SendResult).
+	SendMessage(ctx context.Context, to messages.Recipient, jobID, text string) (linkedin.SendResult, error)
+	// SendHere is SendMessage on the page shown, the job just applied to, without
+	// opening its job page (messages.auto_send).
+	SendHere(ctx context.Context, to messages.Recipient, text string) (linkedin.SendResult, error)
 }
 
 // Applier works one Easy Apply modal; apply.Applier in production.
@@ -186,6 +199,7 @@ type Runner struct {
 	Sleep func(ctx context.Context, d time.Duration) error
 
 	filtersPaused bool // the user typed "off" at a filter pause
+	sendsStopped  bool // a send was blocked (or cut short) in this run: no more are tried
 
 	started    time.Time
 	inProgress *Summary // the summary run() is filling, for Run's crash path
@@ -267,6 +281,14 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	if errors.Is(err, errInvalidOptions) {
 		return sum, err // a mistake on the command line, not a run
 	}
+	// Only a cancel that lands during the send phase is reclassified here; a run
+	// the loop already stopped has emitted its limit and must not stop twice.
+	if err == nil && !opts.DryRun && r.Cfg.Messages.Enabled && ctx.Err() == nil {
+		r.sendMessages(ctx)
+		if ctx.Err() != nil { // stopped while sending: the cause is recorded as an in-run stop's is
+			sum, err = r.stop(ctx, &sum, ctx.Err())
+		}
+	}
 	r.record(&sum)
 	r.notifyEnd(sum, err)
 	ended := sum
@@ -290,9 +312,9 @@ func (r *Runner) record(sum *Summary) {
 	}
 }
 
-// endAbandoned ends the runs dead processes left in progress (killed,
-// crashed). A run holds the run lock and has no row yet, so no run is in
-// progress: the run a state file names, if it has no end, was left by a dead
+// endAbandoned ends the runs and sending messages dead processes left in
+// progress (killed, crashed). A run holds the run lock and has no row yet, so no
+// run is in progress: the run a state file names, if it has no end, was left by a dead
 // process and ends with the counts it last saved (the file stays: this run
 // writes its own next), and any other run left without an end ends too.
 func (r *Runner) endAbandoned() {
@@ -308,6 +330,13 @@ func (r *Runner) endAbandoned() {
 	case n > 0:
 		r.Logger.Info("ended runs dead processes left in progress", "runs", n)
 	}
+	// A message left sending died mid-send: it may have gone out, so it ends
+	// failed, never approved.
+	if m, err := r.Store.FailSendingMessages(store.InterruptedSend); err != nil {
+		r.Logger.Warn("could not end the messages a dead process left sending", "error", err)
+	} else if m > 0 {
+		r.Logger.Warn("ended messages a dead process left sending", "messages", m)
+	}
 }
 
 // Crash is what Run panics with after recording and reporting a panic in a run.
@@ -322,6 +351,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 		return Summary{}, err
 	}
 	r.started = r.Now()
+	r.sendsStopped = false
 	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
 	r.inProgress = &sum
 	r.endAbandoned()
@@ -506,14 +536,12 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, r.skip(sum, c, v)
 	}
 	button, kind, how := r.Site.FindApplyButton()
+	// The notice comes without a button, or (since 2026-10) under a disabled Easy Apply one.
+	if kind != linkedin.ExternalApply && r.Site.DailyLimitReached() {
+		return r.dailyLimit(sum, c), nil
+	}
 	switch kind {
 	case linkedin.NoApplyButton:
-		if r.Site.DailyLimitReached() {
-			sum.ended(EndDailyLimit, "LinkedIn's daily Easy Apply limit reached")
-			_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
-			r.emit(EventLimit, sum.Reason, &c)
-			return cardEndsRun, nil
-		}
 		return cardPassed, r.skip(sum, c, screening.Verdict{Reason: "no apply button on the job page"})
 	case linkedin.ExternalApply:
 		if r.Cfg.Search.EasyApplyOnly {
@@ -591,6 +619,10 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	case apply.Stopped:
 		return cardPassed, ctx.Err()
 	default: // Failed
+		if r.Site.DailyLimitReached() {
+			// Not the job's fault: nothing recorded, so a later run tries it again.
+			return r.dailyLimit(sum, c), nil
+		}
 		sum.Failed++
 		row.Outcome, row.Reason = store.Failed, outcome.Stage
 		if err != nil {
@@ -601,6 +633,9 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	}
 	if err := r.Store.UpsertJob(row); err != nil {
 		return cardPassed, err
+	}
+	if row.Outcome == store.Applied && !opts.DryRun {
+		r.queueMessage(ctx, c, job.Description, sum.RunID)
 	}
 	if ctx.Err() != nil {
 		return cardPassed, ctx.Err()
@@ -629,6 +664,14 @@ func ResolveResume(p paths.Paths, market markets.Resolved, general string) (path
 		note += full + " not found; "
 	}
 	return "", strings.TrimSuffix(note, "; ") + "; LinkedIn's previously uploaded resume will be used"
+}
+
+// dailyLimit ends the run at LinkedIn's daily Easy Apply limit, recording nothing for the job.
+func (r *Runner) dailyLimit(sum *Summary, c linkedin.Card) cardOutcome {
+	sum.ended(EndDailyLimit, "LinkedIn's daily Easy Apply limit reached")
+	_ = r.Store.SetState(DailyLimitStateKey, store.Timestamp(r.Now()))
+	r.emit(EventLimit, sum.Reason, &c)
+	return cardEndsRun
 }
 
 func (r *Runner) skip(sum *Summary, c linkedin.Card, v screening.Verdict) error {

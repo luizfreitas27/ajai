@@ -433,3 +433,74 @@ func TestARetiredKeyStillLoadsWithAWarningAndSetDropsIt(t *testing.T) {
 		t.Error("the rewritten file still has the retired key")
 	}
 }
+
+func TestMessagesAreOffByDefaultWithTheDocumentedLimitsAndTemplates(t *testing.T) {
+	c := Defaults()
+	if c.Messages.Enabled {
+		t.Error("messages.enabled defaults to true")
+	}
+	if c.Messages.AutoSend {
+		t.Error("messages.auto_send defaults to true")
+	}
+	if c.Messages.MaxPerDay != 3 || c.Messages.BetweenMinSeconds != 90 || c.Messages.BetweenMaxSeconds != 300 {
+		t.Errorf("messages defaults = %+v, want max_per_day 3, between 90..300", c.Messages)
+	}
+	if got := c.Markets.Brasil.MessageTemplate; got != "Olá {first_name}, acabei de me candidatar à vaga de {title} na {company}. Fico à disposição para conversar e no aguardo de um contato. Obrigado!" {
+		t.Errorf("brasil template = %q", got)
+	}
+	if got := c.Markets.Internacional.MessageTemplate; got != "Hi {first_name}, I just applied for the {title} role at {company}. I'd be glad to talk whenever it suits you, and I look forward to hearing from you. Thanks!" {
+		t.Errorf("internacional template = %q", got)
+	}
+	if c.Messages.Templates.En != "Hi {first_name}, I just applied for the {title} role at {company}. I'm available for any further information and would be glad to talk whenever it suits you. Looking forward to hearing from you!" {
+		t.Errorf("en template = %q", c.Messages.Templates.En)
+	}
+	if c.Messages.Templates.Pt != "Olá {first_name}, acabei de me candidatar à vaga de {title} na {company}. Fico à disposição para mais informações e para conversarmos quando for melhor para você. No aguardo do seu contato!" {
+		t.Errorf("pt template = %q", c.Messages.Templates.Pt)
+	}
+	if c.Messages.Templates.Es != "Hola {first_name}, acabo de postularme a la vacante de {title} en {company}. Quedo a disposición para cualquier información adicional y para conversar cuando te venga bien. ¡Quedo atento a tu respuesta!" {
+		t.Errorf("es template = %q", c.Messages.Templates.Es)
+	}
+	v := valid()
+	if err := v.Validate(); err != nil {
+		t.Errorf("defaults with a name and terms rejected: %v", err)
+	}
+}
+
+func TestMessageSettingsAreValidated(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*Config)
+		want   string // the key the problem is reported under; "" for none
+	}{
+		{"max per day below one", func(c *Config) { c.Messages.MaxPerDay = 0 }, "messages.max_per_day"},
+		{"max below min", func(c *Config) { c.Messages.BetweenMinSeconds, c.Messages.BetweenMaxSeconds = 120, 60 }, "messages.between_max_seconds"},
+		{"max equal to min", func(c *Config) { c.Messages.BetweenMinSeconds, c.Messages.BetweenMaxSeconds = 90, 90 }, ""},
+		{"unknown placeholder", func(c *Config) { c.Markets.Brasil.MessageTemplate = "Oi {name}" }, "markets.brasil.message_template"},
+		{"unclosed brace", func(c *Config) { c.Markets.Internacional.MessageTemplate = "Hi {first_name" }, "markets.internacional.message_template"},
+		{"stray closing brace", func(c *Config) { c.Markets.Brasil.MessageTemplate = "Oi }" }, "markets.brasil.message_template"},
+		{"all three placeholders", func(c *Config) {
+			c.Markets.Brasil.MessageTemplate = "{first_name} {title} {company}"
+		}, ""},
+		{"blank template", func(c *Config) { c.Markets.Brasil.MessageTemplate = "" }, ""},
+		{"unknown placeholder in the spanish template", func(c *Config) { c.Messages.Templates.Es = "Hola {name}" }, "messages.templates.es"},
+		{"unclosed brace in the portuguese template", func(c *Config) { c.Messages.Templates.Pt = "Olá {title" }, "messages.templates.pt"},
+		{"blank language templates", func(c *Config) { c.Messages.Templates = MessageTemplates{} }, ""},
+		{"auto send without messages", func(c *Config) { c.Messages.AutoSend = true }, "messages.auto_send"},
+		{"auto send with messages", func(c *Config) { c.Messages.Enabled, c.Messages.AutoSend = true, true }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := valid()
+			tc.change(&c)
+			err := c.Validate()
+			if tc.want == "" {
+				if err != nil {
+					t.Errorf("rejected: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want+":") {
+				t.Errorf("error = %v, want one under %s", err, tc.want)
+			}
+		})
+	}
+}
