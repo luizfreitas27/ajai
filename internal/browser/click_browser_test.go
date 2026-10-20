@@ -225,3 +225,34 @@ func TestTheCallersOwnDeadlineIsNotBlamedOnTheElement(t *testing.T) {
 		t.Errorf("%v, want the caller's deadline", err)
 	}
 }
+
+// TestAClickThatStaysCoveredNamesWhatCoversIt: the error says what is drawn
+// over the element, down into an open shadow root as LinkedIn's messaging
+// overlay is drawn, so a live failure explains itself.
+func TestAClickThatStaysCoveredNamesWhatCoversIt(t *testing.T) {
+	shortWait(t, time.Second)
+	for _, tc := range []struct{ name, extra, want string }{
+		{"a dialog", `<div id="sent" role="dialog" aria-label="Application sent" class="artdeco-modal is-open" style="position:fixed;inset:0;background:#fff"></div>`,
+			`div#sent.artdeco-modal.is-open[role=dialog][aria-label="Application sent"]`},
+		{"the messaging overlay", `<div id="interop-outlet" data-testid="interop-shadowdom"></div><script>
+document.getElementById("interop-outlet").attachShadow({mode: "open"}).innerHTML =
+  '<aside id="msg-overlay" class="msg-overlay-container" style="position:fixed;inset:0;background:#fff"></aside>';
+</script>`, `div#interop-outlet > aside#msg-overlay.msg-overlay-container`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pg := openPage(t, `<button id="target">Next</button>`+tc.extra)
+			el, err := pg.Element(`//*[@id="target"]`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = el.Click()
+			var notReady *NotReadyError
+			if !errors.As(err, &notReady) || notReady.Reason != StayedCovered {
+				t.Fatalf("%v, want it covered", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("%q does not name %s", err, tc.want)
+			}
+		})
+	}
+}

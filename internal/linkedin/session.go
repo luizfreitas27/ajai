@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,6 +26,8 @@ type Session struct {
 	Pacer     *pacing.Pacer
 	Logger    *slog.Logger
 	CloseTabs bool // close the tab an external application opened (settings.close_tabs)
+	// ScreenshotDir receives a screenshot of a card something stays drawn over; "" disables it.
+	ScreenshotDir string
 }
 
 // NewSession wires a session; br and logger may be nil.
@@ -367,9 +370,24 @@ func (s *Session) OpenCard(ctx context.Context, card browser.Element) error {
 		return err
 	}
 	if err := link.Click(); err != nil {
-		return err
+		return s.coveredShot(err)
 	}
 	return s.Pacer.BetweenActions(ctx)
+}
+
+// coveredShot screenshots the page when err says something stayed drawn over
+// a card, and names the file in the error: what covers it is then seen.
+func (s *Session) coveredShot(err error) error {
+	var notReady *browser.NotReadyError
+	if s.ScreenshotDir == "" || !errors.As(err, &notReady) || notReady.Reason != browser.StayedCovered {
+		return err
+	}
+	path := filepath.Join(s.ScreenshotDir, "card-covered-"+time.Now().Format("20060102-150405")+".png")
+	if shotErr := s.Page.Screenshot(path); shotErr != nil {
+		s.Logger.Warn("screenshot failed", "error", shotErr)
+		return err
+	}
+	return fmt.Errorf("%w (screenshot %s)", err, filepath.Base(path))
 }
 
 // AlreadyAppliedOnPage is the job page's own "application submitted" link, the
