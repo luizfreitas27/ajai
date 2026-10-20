@@ -118,6 +118,7 @@ func describe(a memory.Remembered, outcome string) string {
 // buttons are Approve and Delete, or Delete alone for a question with no answer
 // yet. Approve carries a digest of the answer shown, so it never approves an
 // answer a run gave after the message was sent.
+// The digest is messages.Digest, shared with recruiter messages, so answers and messages are approved the same way.
 func buttons(a memory.Remembered) []notify.Button {
 	del := notify.Button{Text: "Delete", Data: "delete:" + a.ID}
 	if unanswered(a) {

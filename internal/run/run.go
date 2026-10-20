@@ -271,6 +271,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	}
 	if err == nil && !opts.DryRun {
 		r.sendMessages(ctx)
+		if ctx.Err() != nil { // stopped while sending: the cause is recorded as an in-run stop's is
+			sum, err = r.stop(ctx, &sum, ctx.Err())
+		}
 	}
 	r.record(&sum)
 	r.notifyEnd(sum, err)
@@ -295,9 +298,9 @@ func (r *Runner) record(sum *Summary) {
 	}
 }
 
-// endAbandoned ends the runs dead processes left in progress (killed,
-// crashed). A run holds the run lock and has no row yet, so no run is in
-// progress: the run a state file names, if it has no end, was left by a dead
+// endAbandoned ends the runs and sending messages dead processes left in
+// progress (killed, crashed). A run holds the run lock and has no row yet, so no
+// run is in progress: the run a state file names, if it has no end, was left by a dead
 // process and ends with the counts it last saved (the file stays: this run
 // writes its own next), and any other run left without an end ends too.
 func (r *Runner) endAbandoned() {
@@ -312,6 +315,13 @@ func (r *Runner) endAbandoned() {
 		r.Logger.Warn("could not end the runs dead processes left in progress", "error", err)
 	case n > 0:
 		r.Logger.Info("ended runs dead processes left in progress", "runs", n)
+	}
+	// A message left sending died mid-send: it may have gone out, so it ends
+	// failed, never approved.
+	if m, err := r.Store.FailSendingMessages(store.InterruptedSend); err != nil {
+		r.Logger.Warn("could not end the messages a dead process left sending", "error", err)
+	} else if m > 0 {
+		r.Logger.Warn("ended messages a dead process left sending", "messages", m)
 	}
 }
 

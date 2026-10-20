@@ -207,3 +207,34 @@ func TestMessagesHelpListsItsSubcommands(t *testing.T) {
 		t.Errorf("ajai help does not list messages:\n%s", out)
 	}
 }
+
+func TestMessagesListNamesEachStateOnceWhenAStateIsUnknown(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	code, _, errText := h.run("messages", "list", "--state", "bogus")
+	want := "--state takes queued, approved, sending, sent, failed, no_recipient"
+	if got := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(errText), "error: ")); code == 0 || got != want {
+		t.Errorf("unknown state: code %d, error %q, want exactly %q", code, got, want)
+	}
+}
+
+func TestMessagesDeleteSaysASentMessageStaysInTheHistory(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	id := h.seedMessage(t, "1", "https://www.linkedin.com/in/ana", "Oi Ana", true)
+	h.withStore(t, func(st *store.Store) {
+		for _, step := range []func(int64) (bool, error){st.MarkSending, st.MarkSent} {
+			if ok, err := step(id); err != nil || !ok {
+				t.Fatalf("send: ok=%v err=%v", ok, err)
+			}
+		}
+	})
+	code, _, errText := h.run("messages", "delete", fmt.Sprint(id))
+	want := fmt.Sprintf("message %d was sent; it stays in the history", id)
+	if got := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(errText), "error: ")); code == 0 || got != want {
+		t.Errorf("delete sent: code %d, error %q, want %q", code, got, want)
+	}
+	if _, out, _ := h.run("messages", "list", "--state", "sent"); !strings.Contains(out, "Oi Ana") {
+		t.Errorf("the sent row is gone:\n%s", out)
+	}
+}

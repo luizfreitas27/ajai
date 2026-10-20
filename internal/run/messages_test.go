@@ -404,3 +404,143 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+func TestASendingRowLeftByADeadProcessEndsFailedAtTheNextRunAndIsNotSent(t *testing.T) {
+	site := liveSite()
+	r, st, _ := runner(t, site, messagesCfg())
+	orphan := approvedMessage(t, st, "1", ana, "orphan")
+	if ok, err := st.MarkSending(orphan.ID); err != nil || !ok {
+		t.Fatalf("MarkSending: ok=%v err=%v", ok, err)
+	}
+	next := approvedMessage(t, st, "2", ana, "next")
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(site.sends) != 1 || site.sends[0].text != "next" {
+		t.Errorf("sends %+v, want only the approved message", site.sends)
+	}
+	if got := stateOf(t, st, orphan.ID); got.State != store.MessageFailed || got.Error != store.InterruptedSend || got.SentAt != "" {
+		t.Errorf("orphaned message: %+v, want failed with the interrupted reason", got)
+	}
+	if got := stateOf(t, st, next.ID); got.State != store.MessageSent {
+		t.Errorf("next message is %q, want sent", got.State)
+	}
+}
+
+func TestAStopDuringSendingRecordsTheStopCauseAndNotifiesOnce(t *testing.T) {
+	site := liveSite()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	site.sendFunc = func(sendCall) (linkedin.SendResult, error) {
+		cancel(&StopRequested{Reason: "stopped from the TUI"})
+		return linkedin.SendSent, nil
+	}
+	r, st, _ := runner(t, site, messagesCfg())
+	rec := &recorder{}
+	r.Notifier = rec
+	approvedMessage(t, st, "1", ana, "first")
+	approvedMessage(t, st, "2", ana, "second")
+	sum, err := r.Run(ctx, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.End != EndStopped || sum.Reason != "stopped from the TUI" {
+		t.Errorf("summary ended %q %q, want stopped with the stop request's reason", sum.End, sum.Reason)
+	}
+	run, err := st.GetRun(sum.RunID)
+	if err != nil || run == nil {
+		t.Fatalf("run %d: %v", sum.RunID, err)
+	}
+	if run.Reason != "stopped from the TUI" {
+		t.Errorf("recorded reason %q, want the stop request's", run.Reason)
+	}
+	if len(rec.messages) != 1 {
+		t.Errorf("%d notifier messages, want exactly 1", len(rec.messages))
+	}
+}
+
+func TestAHirerWithoutAProfileURLIsRecordedNoRecipientNotQueued(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Developer", "Acme", "desc")},
+		pages: [][]string{{"1"}}, hirers: map[string]hirer{"1": {to: messages.Recipient{Name: "Ana Silva"}, ok: true}}}
+	r, st, _ := runner(t, site, messagesCfg())
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := allMessages(t, st)
+	if len(msgs) != 1 || msgs[0].State != store.MessageNoRecipient || msgs[0].Text != "" || msgs[0].RecipientURL != "" {
+		t.Fatalf("messages %+v, want one blank no_recipient row", msgs)
+	}
+	if next, _ := st.NextApproved(10); len(next) != 0 {
+		t.Errorf("offered for sending: %+v", next)
+	}
+}
+
+func TestAMessageIsMarkedSendingBeforeTheSendIsClicked(t *testing.T) {
+	site := liveSite()
+	r, st, _ := runner(t, site, messagesCfg())
+	m := approvedMessage(t, st, "1", ana, "Oi")
+	var during store.Message
+	site.sendFunc = func(sendCall) (linkedin.SendResult, error) {
+		during = stateOf(t, st, m.ID)
+		return linkedin.SendSent, nil
+	}
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if during.State != store.MessageSending {
+		t.Errorf("during the send the row is %q, want sending", during.State)
+	}
+}
+
+func TestANonStopSessionSendsApprovedMessagesAtTheEndOfEachRun(t *testing.T) {
+	site := liveSite()
+	c := messagesCfg()
+	c.Settings.RunNonStop = true
+	r, st, _ := runner(t, site, c)
+	approvedMessage(t, st, "1", ana, "first")
+	waits := 0
+	r.Sleep = func(ctx context.Context, d time.Duration) error {
+		if waits++; waits == 1 {
+			approvedMessage(t, st, "2", ana, "second") // queued and approved while the session waits
+			return nil
+		}
+		return errors.New("end the session") // a session ending during the wait returns cleanly
+	}
+	sums, err := r.Session(context.Background(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sums) != 2 {
+		t.Fatalf("%d runs, want 2", len(sums))
+	}
+	if len(site.sends) != 2 || site.sends[0].text != "first" || site.sends[1].text != "second" {
+		t.Errorf("sends %+v, want one message at the end of each run", site.sends)
+	}
+}
+
+func TestAPanicInsideASendLeavesTheRowOutOfTheNextRunsSends(t *testing.T) {
+	site := liveSite()
+	site.sendFunc = func(sendCall) (linkedin.SendResult, error) { panic("the send button vanished") }
+	r, st, _ := runner(t, site, messagesCfg())
+	m := approvedMessage(t, st, "1", ana, "Oi")
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("the run did not crash on the panic")
+			}
+		}()
+		_, _ = r.Run(context.Background(), Options{})
+	}()
+
+	next := liveSite()
+	r2 := *r // the next process: same store, a fresh site
+	r2.Site = next
+	if _, err := r2.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(next.sends) != 0 {
+		t.Errorf("the next run sent %+v, want nothing: a message left sending must not be sent again", next.sends)
+	}
+	if got := stateOf(t, st, m.ID); got.State != store.MessageFailed || got.Error != store.InterruptedSend {
+		t.Errorf("after the next run: %+v, want failed as interrupted", got)
+	}
+}

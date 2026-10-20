@@ -29,12 +29,11 @@ func Render(template string, r Recipient, job Job) string {
 	if first != "" {
 		text = strings.ReplaceAll(text, "{first_name}", first)
 	} else {
-		// "Hi {first_name}, I" becomes "Hi, I"; a name at the very start
-		// leaves its comma to be stripped below.
-		text = strings.ReplaceAll(text, " {first_name}", "")
-		text = strings.ReplaceAll(text, "{first_name} ", "")
+		// Only the greeting's name goes: "Hi {first_name}, I" becomes "Hi, I", and
+		// a name at the very start takes its comma with it. Any other comma stays.
+		text = strings.ReplaceAll(text, " {first_name},", ",")
+		text = strings.TrimLeft(strings.TrimPrefix(text, "{first_name},"), " ")
 		text = strings.ReplaceAll(text, "{first_name}", "")
-		text = strings.TrimLeft(text, ", ")
 	}
 	text = strings.NewReplacer("{title}", job.Title, "{company}", job.Company).Replace(text)
 	return strings.TrimSpace(text)

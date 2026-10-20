@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -155,26 +156,35 @@ func TestASendingMessageIsNeverOfferedAgain(t *testing.T) {
 }
 
 func TestSentTodayCountsByLocalDateAcrossMidnight(t *testing.T) {
+	// A fixed zone, not the machine's: the test means the same under TZ=UTC.
+	brt := time.FixedZone("BRT", -3*3600)
+	prevLocal := time.Local
+	time.Local = brt
+	t.Cleanup(func() { time.Local = prevLocal })
+
 	s := open(t)
 	seedJob(t, s, "1")
 	seedJob(t, s, "2")
-	seedJob(t, s, "3")
-	clock := time.Date(2026, 10, 20, 23, 59, 0, 0, time.Local)
-	s.now = func() time.Time { return clock }
+	at := func(day, hour, min int) time.Time { return time.Date(2026, 10, day, hour, min, 0, 0, brt) }
 
+	// 20:30 and 21:30 BRT on 20 Oct are 23:30 UTC on 20 Oct and 00:30 UTC on 21 Oct:
+	// the two straddle midnight UTC, but both are 20 Oct in BRT.
+	sentAt := []time.Time{at(20, 20, 30), at(20, 21, 30)}
 	for i, job := range []string{"1", "2"} {
+		s.now = func() time.Time { return sentAt[i] }
 		_, _ = s.QueueMessage(queued(job, "https://www.linkedin.com/in/p"+job, "Oi"))
 		m, _ := s.ListMessages("")
 		must(t, s.ApproveMessage(m[i].ID, messages.Digest("Oi")))
 		_, _ = s.MarkSending(m[i].ID)
 		_, _ = s.MarkSent(m[i].ID)
 	}
+	s.now = func() time.Time { return at(20, 21, 45) }
 	if n, _ := s.SentToday(); n != 2 {
-		t.Fatalf("SentToday at 23:59 = %d, want 2", n)
+		t.Fatalf("SentToday at 21:45 BRT on 20 Oct = %d, want 2", n)
 	}
-	clock = time.Date(2026, 10, 21, 0, 1, 0, 0, time.Local)
+	s.now = func() time.Time { return at(21, 0, 1) }
 	if n, _ := s.SentToday(); n != 0 {
-		t.Errorf("SentToday after midnight = %d, want 0", n)
+		t.Errorf("SentToday after local midnight = %d, want 0", n)
 	}
 }
 
@@ -224,5 +234,102 @@ func TestAMessageWhoseHirerChangedEndsNoRecipientAndIsNeverOffered(t *testing.T)
 	}
 	if next, _ := s.NextApproved(10); len(next) != 0 {
 		t.Errorf("a no_recipient message offered: %+v", next)
+	}
+}
+
+func TestASendingMessageLeftByADeadProcessEndsFailedAndIsNeverOffered(t *testing.T) {
+	s := open(t)
+	seedJob(t, s, "1")
+	seedJob(t, s, "2")
+	_, _ = s.QueueMessage(queued("1", "https://www.linkedin.com/in/ana", "Oi"))
+	_, _ = s.QueueMessage(queued("2", "https://www.linkedin.com/in/bruno", "Ola"))
+	msgs, _ := s.ListMessages("")
+	must(t, s.ApproveMessage(msgs[0].ID, messages.Digest("Oi")))
+	must(t, s.ApproveMessage(msgs[1].ID, messages.Digest("Ola")))
+	if ok, err := s.MarkSending(msgs[0].ID); err != nil || !ok {
+		t.Fatalf("MarkSending: ok=%v err=%v", ok, err)
+	}
+
+	n, err := s.FailSendingMessages(InterruptedSend)
+	must(t, err)
+	if n != 1 {
+		t.Fatalf("FailSendingMessages = %d, want 1", n)
+	}
+	m, _ := s.GetMessage(msgs[0].ID)
+	if m.State != MessageFailed || m.Error != "interrupted while sending; it may have been sent" {
+		t.Errorf("orphaned sending row: %+v, want failed with the interrupted reason", m)
+	}
+	if next, _ := s.NextApproved(10); len(next) != 1 || next[0].ID != msgs[1].ID {
+		t.Errorf("NextApproved = %+v, want only the other approved message", next)
+	}
+	if n, _ := s.FailSendingMessages(InterruptedSend); n != 0 {
+		t.Errorf("a second FailSendingMessages changed %d rows, want 0", n)
+	}
+}
+
+func TestApprovingAMessageDeletedAfterTheListNeverSucceeds(t *testing.T) {
+	s := open(t)
+	seedJob(t, s, "1")
+	_, _ = s.QueueMessage(queued("1", "https://www.linkedin.com/in/ana", "Oi"))
+	id := mustID(t, s)
+	digest := messages.Digest("Oi") // what list showed
+	if ok, err := s.DeleteMessage(id); err != nil || !ok {
+		t.Fatalf("delete: ok=%v err=%v", ok, err)
+	}
+
+	if err := s.ApproveMessage(id, digest); !errors.Is(err, ErrNoMessage) {
+		t.Errorf("approve after delete: err = %v, want ErrNoMessage", err)
+	}
+}
+
+func TestASentMessageCannotBeDeletedSoItKeepsCountingTowardTheDailyCap(t *testing.T) {
+	s := open(t)
+	seedJob(t, s, "1")
+	_, _ = s.QueueMessage(queued("1", "https://www.linkedin.com/in/ana", "Oi"))
+	id := mustID(t, s)
+	must(t, s.ApproveMessage(id, messages.Digest("Oi")))
+	if ok, err := s.MarkSending(id); err != nil || !ok {
+		t.Fatalf("MarkSending: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.MarkSent(id); err != nil || !ok {
+		t.Fatalf("MarkSent: ok=%v err=%v", ok, err)
+	}
+
+	if ok, _ := s.DeleteMessage(id); ok {
+		t.Fatal("a sent message was deleted")
+	}
+	if m, _ := s.GetMessage(id); m == nil || m.State != MessageSent {
+		t.Errorf("after the refused delete: %+v, want the sent row kept", m)
+	}
+	if n, _ := s.SentToday(); n != 1 {
+		t.Errorf("SentToday = %d, want 1", n)
+	}
+}
+
+// codedErr stands in for modernc's *sqlite.Error, whose code cannot be set from outside its package.
+type codedErr struct{ code int }
+
+func (e *codedErr) Error() string { return "sqlite error" }
+func (e *codedErr) Code() int     { return e.code }
+
+func TestABusyDatabaseErrorIsRecognisedWhateverItsExtendedCode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"SQLITE_BUSY", &codedErr{5}, true},
+		{"SQLITE_BUSY_SNAPSHOT", &codedErr{517}, true},
+		{"busy, wrapped", fmt.Errorf("update: %w", &codedErr{517}), true},
+		{"SQLITE_LOCKED is not busy", &codedErr{6}, false},
+		{"a constraint error", &codedErr{19}, false},
+		{"not a sqlite error", errors.New("boom"), false},
+		{"no error", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isBusy(tc.err); got != tc.want {
+				t.Errorf("isBusy(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

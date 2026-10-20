@@ -81,7 +81,7 @@ func (a *App) messagesListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if state != "" && !slices.Contains(messageStates, state) {
-				return errors.New("--state takes " + strings.Join(messageStates, ", ") + " or no_recipient")
+				return errors.New("--state takes " + strings.Join(messageStates, ", "))
 			}
 			st, err := a.openStore()
 			if err != nil {
@@ -214,6 +214,9 @@ func (a *App) messagesDeleteCmd() *cobra.Command {
 				return err
 			}
 			if !ok {
+				if m.State == store.MessageSent {
+					return fmt.Errorf("message %d was sent; it stays in the history", id)
+				}
 				return fmt.Errorf("message %d is being sent, so it cannot be deleted", id)
 			}
 			a.logger.Info("message deleted", "id", id)

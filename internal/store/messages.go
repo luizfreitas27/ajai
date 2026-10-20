@@ -1,8 +1,8 @@
 package store
 
 import (
-	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/luizfreitas27/ajai/internal/messages"
 )
@@ -102,30 +102,48 @@ func (s *Store) GetMessage(id int64) (*Message, error) {
 }
 
 // ApproveMessage moves a queued message to approved when digest matches the
-// text it has now, the text the user was shown.
+// text it has now, the text the user was shown. The update is bound to that
+// text, so a message changed or approved since the read changes nothing.
 func (s *Store) ApproveMessage(id int64, digest string) error {
-	var state, text string
-	err := s.db.QueryRow(`SELECT state, text FROM recruiter_messages WHERE id = ?`, id).Scan(&state, &text)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNoMessage
-	}
+	m, err := s.GetMessage(id)
 	if err != nil {
 		return err
 	}
-	if state != MessageQueued {
+	if m == nil {
+		return ErrNoMessage
+	}
+	if m.State != MessageQueued {
 		return ErrNotQueued
 	}
-	if messages.Digest(text) != digest {
+	if messages.Digest(m.Text) != digest {
 		return ErrTextChanged
 	}
-	_, err = s.db.Exec(`UPDATE recruiter_messages SET state = ? WHERE id = ? AND state = ?`, MessageApproved, id, MessageQueued)
-	return err
+	res, err := s.db.Exec(`UPDATE recruiter_messages SET state = ? WHERE id = ? AND state = ? AND text = ?`,
+		MessageApproved, id, MessageQueued, m.Text)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 1 {
+		return err
+	}
+	// Nothing changed: the message went away or moved on since the read. Say why.
+	again, err := s.GetMessage(id)
+	switch {
+	case err != nil:
+		return err
+	case again == nil:
+		return ErrNoMessage
+	case again.State != MessageQueued:
+		return ErrNotQueued
+	}
+	return ErrTextChanged
 }
 
 // ApproveAll approves every queued message when their list digest (see
 // messages.ListDigest) is listDigest: exactly the queue the user last listed.
 // Any change to the queue since refuses the whole approval. It returns how many
-// it approved.
+// it approved. A busy database during the write is a queue that changed under
+// the read, so it is refused the same way.
 func (s *Store) ApproveAll(listDigest string) (int, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -137,6 +155,7 @@ func (s *Store) ApproveAll(listDigest string) (int, error) {
 		return 0, err
 	}
 	var items []messages.Item
+	var ids []any
 	for rows.Next() {
 		var it messages.Item
 		var text string
@@ -146,6 +165,7 @@ func (s *Store) ApproveAll(listDigest string) (int, error) {
 		}
 		it.Digest = messages.Digest(text)
 		items = append(items, it)
+		ids = append(ids, it.ID)
 	}
 	_ = rows.Close()
 	if err := rows.Err(); err != nil {
@@ -154,7 +174,14 @@ func (s *Store) ApproveAll(listDigest string) (int, error) {
 	if messages.ListDigest(items) != listDigest {
 		return 0, ErrQueueChanged
 	}
-	res, err := tx.Exec(`UPDATE recruiter_messages SET state = ? WHERE state = ?`, MessageApproved, MessageQueued)
+	if len(ids) == 0 {
+		return 0, tx.Commit()
+	}
+	res, err := tx.Exec(`UPDATE recruiter_messages SET state = ? WHERE state = ? AND id IN (`+placeholders(len(ids))+`)`,
+		append([]any{MessageApproved, MessageQueued}, ids...)...)
+	if isBusy(err) { // another writer got in between the read and the write: the queue moved on
+		return 0, ErrQueueChanged
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -162,7 +189,15 @@ func (s *Store) ApproveAll(listDigest string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if n != int64(len(items)) {
+		return 0, ErrQueueChanged
+	}
 	return int(n), tx.Commit()
+}
+
+// placeholders returns n comma-separated SQL placeholders.
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // MarkSending moves an approved message to sending, just before the send is
@@ -204,10 +239,11 @@ func (s *Store) move(id int64, from, to, reason string) (bool, error) {
 	return n > 0, err
 }
 
-// DeleteMessage removes a message that is not being sent; false when there is
-// none to remove or it is sending.
+// DeleteMessage removes a message that is not being sent and was not sent; false
+// when there is none to remove, or it is sending or sent. A sent row stays: it
+// counts toward the daily cap.
 func (s *Store) DeleteMessage(id int64) (bool, error) {
-	res, err := s.db.Exec(`DELETE FROM recruiter_messages WHERE id = ? AND state <> ?`, id, MessageSending)
+	res, err := s.db.Exec(`DELETE FROM recruiter_messages WHERE id = ? AND state NOT IN (?, ?)`, id, MessageSending, MessageSent)
 	if err != nil {
 		return false, err
 	}
@@ -221,4 +257,30 @@ func (s *Store) SentToday() (int, error) {
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM recruiter_messages WHERE state = ? AND substr(sent_at, 1, 10) = ?`,
 		MessageSent, s.now().Local().Format("2006-01-02")).Scan(&n)
 	return n, err
+}
+
+// InterruptedSend is the error a message gets when a process died while it was sending.
+const InterruptedSend = "interrupted while sending; it may have been sent"
+
+// FailSendingMessages ends every sending message as failed with reason, and
+// says how many. Only a run holding the run lock calls it, so no send is in
+// progress: a sending row is left by a process that died mid-send. It is never
+// moved back to approved, because it may already have been sent.
+func (s *Store) FailSendingMessages(reason string) (int64, error) {
+	res, err := s.db.Exec(`UPDATE recruiter_messages SET state = ?, error = ? WHERE state = ?`, MessageFailed, reason, MessageSending)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// sqliteBusy is SQLITE_BUSY. Its extended codes (SQLITE_BUSY_SNAPSHOT is 517)
+// share the primary code in their low byte.
+const sqliteBusy = 5
+
+// isBusy reports whether err is SQLite saying the database is busy, as modernc's
+// *sqlite.Error does through Code().
+func isBusy(err error) bool {
+	var coded interface{ Code() int }
+	return errors.As(err, &coded) && coded.Code()&0xff == sqliteBusy
 }

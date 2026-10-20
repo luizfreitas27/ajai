@@ -22,7 +22,7 @@ func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, runID int64)
 		return
 	}
 	m := store.Message{JobID: c.ID, RunID: runID, State: store.MessageNoRecipient}
-	if ok {
+	if ok && to.URL != "" { // a hirer without a profile URL cannot be keyed, so it is no recipient
 		m = store.Message{JobID: c.ID, RunID: runID, RecipientName: to.Name, RecipientURL: to.URL,
 			Text: messages.Render(r.Market.MessageTemplate, to, messages.Job{Title: c.Title, Company: c.Company})}
 		if m.Text == "" {

@@ -26,6 +26,7 @@ func TestRenderFillsThePlaceholdersAndTidiesAMissingName(t *testing.T) {
 			"hello Dev Python"},
 		{"surrounding blanks trimmed", "  Hi {title}  ", Recipient{}, "Hi Dev Python"},
 		{"a blank template renders nothing", "   ", Recipient{Name: "Ana"}, ""},
+		{"a template's own leading comma is kept without a name", ", hello {title}", Recipient{}, ", hello Dev Python"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Render(tc.template, tc.r, job); got != tc.want {
