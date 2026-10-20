@@ -3,6 +3,8 @@ package linkedin
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,5 +127,41 @@ func TestNormaliseProfileURL(t *testing.T) {
 		if got != tc.want || ok != tc.ok {
 			t.Errorf("NormaliseProfileURL(%q) = %q, %v; want %q, %v", tc.href, got, ok, tc.want, tc.ok)
 		}
+	}
+}
+
+// shotPage records the screenshots taken.
+type shotPage struct {
+	browser.Page
+	shots []string
+}
+
+func (p *shotPage) Screenshot(path string) error { p.shots = append(p.shots, path); return nil }
+
+// coveredCard is a job card whose title link something stays drawn over.
+type element = browser.Element
+
+type coveredCard struct {
+	element
+	err error
+}
+
+func (c *coveredCard) Element(string) (browser.Element, error) { return c, nil }
+func (c *coveredCard) ScrollIntoView() error                   { return nil }
+func (c *coveredCard) Click() error                            { return c.err }
+
+func TestACardSomethingStaysDrawnOverIsScreenshotted(t *testing.T) {
+	pg := &shotPage{}
+	s := NewSession(pg, nil, pacing.New(config.Defaults().Pacing, true), nil)
+	s.ScreenshotDir = t.TempDir()
+	covered := &browser.NotReadyError{Wait: time.Second, Reason: browser.StayedCovered, Over: "div#sent"}
+	err := s.OpenCard(context.Background(), &coveredCard{err: covered})
+	if !errors.Is(err, covered) || len(pg.shots) != 1 || !strings.Contains(err.Error(), filepath.Base(pg.shots[0])) {
+		t.Errorf("%v, screenshots %v", err, pg.shots)
+	}
+	// A card that fails for another reason is not screenshotted.
+	other := errors.New("boom")
+	if err := s.OpenCard(context.Background(), &coveredCard{err: other}); !errors.Is(err, other) || len(pg.shots) != 1 {
+		t.Errorf("%v, screenshots %v", err, pg.shots)
 	}
 }

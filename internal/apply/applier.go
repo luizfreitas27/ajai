@@ -381,12 +381,22 @@ func (a *Applier) review(ctx context.Context, st *formState, out *Outcome, opts 
 	// The application is in: whatever happens from here, it is recorded as applied.
 	out.Kind = Applied
 	a.Logger.Info("application submitted", "job", job.ID, "title", job.Title, "company", job.Company)
-	if done, err := a.Page.WaitElement(context.Background(), linkedin.TextXPath("span", linkedin.DoneButtonText), 5*time.Second); err == nil {
-		_ = done.Click()
-	} else {
-		_ = a.Page.Press("Escape")
-	}
+	a.closeSent()
 	return *out, nil
+}
+
+// closeSent closes the "Application sent" dialog LinkedIn draws over the whole
+// page after Submit: its Done, else its close button, else Escape. Left open,
+// it covers every card that follows.
+func (a *Applier) closeSent() {
+	if done, err := a.Page.WaitElement(context.Background(), linkedin.DialogButtonXPath(linkedin.DoneButtonText), 5*time.Second); err == nil && done.Click() == nil {
+		return
+	}
+	if x, err := a.Page.Element(linkedin.FromDocument(linkedin.ModalCloseXPath)); err == nil && x.Click() == nil {
+		return
+	}
+	a.Logger.Warn("could not close the Application sent dialog; pressing Escape")
+	_ = a.Page.Press("Escape")
 }
 
 func (a *Applier) setFollowCompany(modal browser.Element, follow bool) {

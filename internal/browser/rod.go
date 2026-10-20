@@ -345,8 +345,43 @@ func (e *rodElement) whenReady(act func(el *rod.Element) error) error {
 	if evalErr != nil {
 		return &NotReadyError{Wait: actionWait, Reason: NotReadyReason("its state could not be read: " + evalErr.Error())}
 	}
-	return &NotReadyError{Wait: actionWait, Reason: NotReadyReason(reason.Value.Str())}
+	out := &NotReadyError{Wait: actionWait, Reason: NotReadyReason(reason.Value.Str())}
+	if out.Reason == StayedCovered {
+		if over, err := e.el.Eval(coveredByScript); err == nil {
+			out.Over = over.Value.Str()
+		}
+	}
+	return out
 }
+
+// describeScript names the element hit at x, y for an error message, as
+// tag#id.class[role=…][aria-label="…"], followed (" > ") by what is hit at the
+// same point inside its open shadow root, as LinkedIn draws its messaging overlay.
+const describeScript = `(hit, x, y) => {
+	const one = (el) => {
+		const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).filter(Boolean) : [];
+		let name = [el.tagName.toLowerCase() + (el.id ? "#" + el.id : ""), ...cls].join(".");
+		const role = el.getAttribute("role"), label = el.getAttribute("aria-label");
+		if (role) name += "[role=" + role + "]";
+		if (label) name += "[aria-label=" + JSON.stringify(label) + "]";
+		return name;
+	};
+	const names = [one(hit)];
+	while (hit.shadowRoot) {
+		const inner = hit.shadowRoot.elementFromPoint(x, y);
+		if (!inner || inner === hit) break;
+		names.push(one(inner));
+		hit = inner;
+	}
+	return names.join(" > ");
+}`
+
+// coveredByScript names what is drawn at the middle of the element (this).
+const coveredByScript = `() => {
+	const box = this.getBoundingClientRect(), x = box.left + box.width / 2, y = box.top + box.height / 2;
+	const hit = document.elementFromPoint(x, y);
+	return hit ? (` + describeScript + `)(hit, x, y) : "";
+}`
 
 func (e *rodElement) Click() error {
 	_ = e.ScrollIntoView()
@@ -360,8 +395,7 @@ const drawnOverScript = `(x, y) => {
 	if (!hit) return "nothing";
 	const label = hit.closest("label");
 	if (hit.contains(this) || this.contains(hit) || (label && label.control === this)) return "";
-	const cls = typeof hit.className === "string" ? hit.className.trim().split(/\s+/).filter(Boolean) : [];
-	return [hit.tagName.toLowerCase(), ...cls].join(".");
+	return (` + describeScript + `)(hit, x, y);
 }`
 
 func (e *rodElement) ClickAtCentre() error {

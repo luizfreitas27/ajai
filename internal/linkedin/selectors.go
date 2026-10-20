@@ -159,6 +159,13 @@ const (
 	ContinueButtonText      = "Continue"
 )
 
+// DialogButtonXPath is a button holding this text inside an open dialog,
+// anywhere in the document. Kept to a dialog: a span anywhere holding the word
+// (a company called "Software Delivery Done Right") must not stand in for it.
+func DialogButtonXPath(text string) string {
+	return "//*[@role='dialog']" + strings.TrimPrefix(TextXPath("button", text), ".")
+}
+
 // FromDocument turns a dialog-relative selector (".//x") into a document-wide one ("//x").
 func FromDocument(xpath string) string { return strings.TrimPrefix(xpath, ".") }
 

@@ -171,7 +171,7 @@ func TestALiveRunSubmitsAndSetsTheFollowBox(t *testing.T) {
 	modal.with(".//input[@id='"+linkedin.FollowCompanyCheckbox+"' and @type='checkbox']", followBox).with(".//label[@for='"+linkedin.FollowCompanyCheckbox+"']", followLabel)
 	pg, button := pageWith(modal)
 	done := el("Done")
-	pg.root.with(linkedin.TextXPath("span", "Done"), done)
+	pg.root.with(linkedin.DialogButtonXPath(linkedin.DoneButtonText), done)
 
 	a := &Applier{Page: pg, Pacer: quick(), Answerer: answerer(t)}
 	out, err := a.Apply(context.Background(), job, button, Options{FollowCompanies: false})

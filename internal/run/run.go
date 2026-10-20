@@ -218,7 +218,12 @@ type runState struct {
 	// opened again in this run. Only verdicts about the role itself settle it: a
 	// failure, a missing apply button or an external application does not.
 	handled map[string]string
+	covered int // cards in a row that could not be opened for something drawn over them
 }
+
+// coveredCardsEndRun is how many cards in a row something drawn over them may
+// keep from opening before the run ends: each one waits out the click's bound.
+const coveredCardsEndRun = 2
 
 // handle settles the job's posting for the rest of the run (a settled posting
 // is never opened again, so it is settled once).
@@ -493,8 +498,15 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 			return cardPassed, ctx.Err()
 		}
 		r.Logger.Warn("could not open card", "job", c.ID, "error", err)
+		if notReady := (*browser.NotReadyError)(nil); errors.As(err, &notReady) && notReady.Reason == browser.StayedCovered {
+			// Something stays drawn over the page, and it will cover every card that follows.
+			if st.covered++; st.covered >= coveredCardsEndRun {
+				return cardPassed, fmt.Errorf("opening job cards: %w", err)
+			}
+		}
 		return cardPassed, nil
 	}
+	st.covered = 0
 	if r.Site.AlreadyAppliedOnPage() {
 		st.handle(c)
 		sum.Skipped++

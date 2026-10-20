@@ -307,6 +307,21 @@ func TestUpsellSelectorsMatchTheCapturedPremiumModal(t *testing.T) {
 	}
 }
 
+// ------------------------------------------------------------ after Submit
+func TestTheDoneButtonIsOnlyLookedForInADialog(t *testing.T) {
+	doc, err := htmlquery.Parse(strings.NewReader(`<ul><li><span>Software Delivery Done Right</span></li></ul>
+<div role="dialog"><h2>Application sent</h2><button aria-label="Dismiss" data-test-modal-close-btn>x</button><button><span>Done</span></button></div>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := text(one(t, doc, DialogButtonXPath(DoneButtonText))); got != "Done" {
+		t.Errorf("matched %q", got)
+	}
+	if count(t, doc, FromDocument(ModalCloseXPath)) != 1 {
+		t.Error("the dialog's close button is not found")
+	}
+}
+
 // attr is an attribute and whether it is there.
 func attr(n *html.Node, name string) (string, bool) {
 	for _, a := range n.Attr {
