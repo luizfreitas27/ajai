@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/luizfreitas27/ajai/internal/messages"
 )
@@ -82,6 +83,39 @@ func TestSendHereNeverPays(t *testing.T) {
 		if recorded(t, c.s, c.after) != "yes" {
 			t.Errorf("%s: not %s", name, c.after)
 		}
+	}
+}
+
+// TestSendHereDismissesAnUpsellInTheDocument: on the search page there is no
+// #interop-outlet, and the Premium upsell is drawn in the main document over the
+// job list (fixture 13, as captured). It is dismissed, nothing is sent, and the
+// next card still opens.
+func TestSendHereDismissesAnUpsellInTheDocument(t *testing.T) {
+	defer func(d time.Duration) { composeWait = d }(composeWait)
+	composeWait = 2 * time.Second
+	s := panePage(t, "13_search_upsell.html", "document")
+	got, err := s.SendHere(context.Background(), bruno, note)
+	if err != nil || got != SendNoRecipient {
+		t.Fatalf("SendHere = %q, %v; want no recipient", got, err)
+	}
+	if n := recorded(t, s, "sends"); n != "" {
+		t.Errorf("send clicked %q times", n)
+	}
+	if recorded(t, s, "dismissed") != "yes" {
+		t.Error("the upsell in the document was not dismissed")
+	}
+	if left, _ := s.Page.Elements(UpsellModalXPath); len(left) != 0 {
+		t.Errorf("%d upsell modals left in the document", len(left))
+	}
+	cards, err := s.Cards()
+	if err != nil || len(cards) != 1 {
+		t.Fatalf("cards %d, %v", len(cards), err)
+	}
+	if err := s.OpenCard(context.Background(), cards[0]); err != nil {
+		t.Errorf("the next card could not be opened: %v", err)
+	}
+	if recorded(t, s, "next-card") != "yes" {
+		t.Error("the click on the next card never reached it")
 	}
 }
 

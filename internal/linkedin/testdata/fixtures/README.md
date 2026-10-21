@@ -22,3 +22,5 @@ reads `/checkpoint/` in the URL).
 limit, the Easy Apply button disabled and a red notice under it ("We limit daily
 submissions … Save this job and apply tomorrow."). Its real markup was not captured;
 when it shows again, capture it and check `DailyLimitXPath` still matches.
+
+`13_search_upsell.html` is the Premium upsell as the jobs search page drew it on 2026-10-21, after the Message link of a hirer was clicked there: `modal-upsell` in the main document, not in a shadow root, over the job list. The search page has no `#interop-outlet` at all, so `SendHere` finds the upsell in the document. Names fictional ("Ana", "Rafael"), the owner's photo and the profile image URLs removed, the job id and the referenceId in the Premium link replaced. `selectors_test.go` checks that `UpsellModalXPath` and `UpsellDismissXPath` still match it.

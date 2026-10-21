@@ -381,6 +381,12 @@ func TestUpsellSelectorsMatchTheCapturedPremiumModal(t *testing.T) {
 	}
 }
 
+func TestUpsellSelectorsMatchTheSearchPageUpsell(t *testing.T) {
+	doc := fixture(t, "13_search_upsell.html")
+	modal := one(t, doc, UpsellModalXPath)
+	one(t, modal, UpsellDismissXPath)
+}
+
 // ------------------------------------------------------------ after Submit
 func TestTheDoneButtonIsOnlyLookedForInADialog(t *testing.T) {
 	doc, err := htmlquery.Parse(strings.NewReader(`<ul><li><span>Software Delivery Done Right</span></li></ul>

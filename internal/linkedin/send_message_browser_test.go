@@ -29,7 +29,7 @@ import (
 // data-dismissed, data-next-card for a click on the next job card). A send
 // clears the box and lists the message, unless MODE is "silent"; MODE "draft"
 // leaves a draft in the box.
-const overlayScript = `<div id="interop-outlet" data-testid="interop-shadowdom"></div>
+const overlayScript = `OUTLET
 <template id="overlay">OVERLAY</template>
 <script>
 const MODE = "SENDMODE";
@@ -42,6 +42,19 @@ document.addEventListener("click", e => {
   if (!link) return;
   e.preventDefault();
   mark("opened", "yes");
+  // MODE "document": the search page has no #interop-outlet at all (OUTLET is
+  // empty), and LinkedIn drew the Premium upsell in the main document. It covers
+  // the page until dismissed.
+  if (MODE === "document") {
+    document.body.insertAdjacentHTML("beforeend", '<style>.artdeco-modal-overlay { position: fixed; inset: 0; z-index: 999; background: #fff; }</style>' + document.getElementById("overlay").innerHTML);
+    document.addEventListener("click", ev => {
+      const b = ev.target.closest("button[data-test-modal-close-btn]");
+      if (!b) return;
+      mark("dismissed", "yes");
+      b.closest("[data-test-modal-id]").remove();
+    });
+    return;
+  }
   const host = document.getElementById("interop-outlet");
   const root = host.shadowRoot || host.attachShadow({mode: "open"});
   root.innerHTML = '<style>[role="dialog"], [data-test-modal-id] { position: fixed; inset: 0; z-index: 999; background: #fff; }</style>' +
@@ -120,7 +133,11 @@ func overlayHTML(t *testing.T, html, overlayFixture, mode string, blocked bool, 
 	for i := 0; i+1 < len(replace); i += 2 {
 		overlay = strings.ReplaceAll(overlay, replace[i], replace[i+1])
 	}
-	script := strings.NewReplacer("OVERLAY", overlay, "SENDMODE", mode).Replace(overlayScript)
+	outlet := `<div id="interop-outlet" data-testid="interop-shadowdom"></div>`
+	if mode == "document" {
+		outlet = ""
+	}
+	script := strings.NewReplacer("OUTLET", outlet, "OVERLAY", overlay, "SENDMODE", mode).Replace(overlayScript)
 	page := "<html><body>" + nextCard + html + script + "</body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if blocked && strings.HasPrefix(r.URL.Path, "/jobs/view/") {

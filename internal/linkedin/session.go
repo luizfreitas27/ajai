@@ -818,18 +818,24 @@ func (s *Session) blocked() bool {
 
 // waitCompose waits, up to composeWait, for the overlay the Message link opens:
 // the compose bubble to to, or the Premium upsell, which it dismisses and
-// reports as a nil bubble. seen lists every compose box the overlay showed up
-// to the match, to's or another member's, so the caller can close them; when
-// none turns up the bubble is nil too. host is the overlay's shadow host.
+// reports as a nil bubble. The search page has no #interop-outlet, and its
+// upsell is drawn in the document, so the document is checked first and a
+// missing outlet does not stop the poll. host is the overlay's shadow host, nil
+// when the page has no outlet; it is only used once a bubble was found in it.
+// seen lists every compose box the overlay showed up to the match, to's or
+// another member's, so the caller can close them; when none turns up the bubble
+// is nil too.
 func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host, bubble browser.Element, seen []browser.Element, err error) {
 	err = poll(ctx, composeWait, "the compose box did not open", func() bool {
+		if upsell, _ := s.Page.Elements(UpsellModalXPath); len(upsell) > 0 {
+			dismissUpsell(upsell[0])
+			return true
+		}
 		if host, err = s.Page.Element(MessageOutletXPath); err != nil {
 			return false
 		}
 		if upsell, _ := host.ShadowElements(UpsellModalXPath); len(upsell) > 0 {
-			if dismiss, err := upsell[0].Element(UpsellDismissXPath); err == nil {
-				_ = dismiss.ScriptClick()
-			}
+			dismissUpsell(upsell[0])
 			return true
 		}
 		seen = seen[:0]
@@ -856,6 +862,13 @@ func (s *Session) waitCompose(ctx context.Context, to messages.Recipient) (host,
 		return host, nil, seen, nil
 	}
 	return host, bubble, seen, err
+}
+
+// dismissUpsell clicks the Dismiss control of the Premium upsell modal.
+func dismissUpsell(modal browser.Element) {
+	if dismiss, err := modal.Element(UpsellDismissXPath); err == nil {
+		_ = dismiss.ScriptClick()
+	}
 }
 
 // freeCompose: the compose costs nothing. An InMail shows what it costs
