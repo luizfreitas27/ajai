@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>Easy Apply.</b><br>
+  <b>Easy Apply AI.</b><br>
   One binary. Your machine, your browser, your account.
 </p>
 
