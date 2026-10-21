@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>LinkedIn Easy Apply from your own Chrome, at a human pace.</b><br>
+  <b>Easy Apply.</b><br>
   One binary. Your machine, your browser, your account.
 </p>
 
