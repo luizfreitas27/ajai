@@ -34,11 +34,17 @@ no such section the notes are the commit list.
   loopback address only). It reads the status, runs, jobs, recruiter messages, invites and
   answer memory, approves messages and answers by the digest the reader saw, starts and stops
   runs as the TUI does, and streams the log and status as server-sent events.
+- The web front's Messages page shows how many past applications never reached their
+  recruiter and starts `ajai messages backfill` for them (`POST /api/messages/backfill`), under
+  the run lock like a run.
 - `search.good_words`: a job whose title or description has one of these is not skipped for a
   `search.bad_words` match.
 - An unanswered text question can be approved as a blank (`Leave blank` in `ajai serve`): later
   runs leave it empty without asking the AI, and it stops showing in the review queue.
 
+- `ajai messages backfill [--limit N]`: messages and invites for applied jobs that never got
+  one (no message sent, approved or queued, no invite sent). It reads each job page, queues what
+  a run would and sends it under the same daily caps and checks. Newest jobs first.
 ### Fixed
 
 - ajai's files are now readable only by you. They used to be 0755 and 0644, so other users

@@ -29,7 +29,8 @@ to the tag before tagging and the workflow publishes that section as the release
 
 - `cmd/ajai`: cobra command tree only. No business logic.
 - `internal/cli`: the commands. `ajai messages send` opens Chrome only through
-  `launch.Plan.OpenMessaging`, never `Plan.Open`, so it cannot search or apply.
+  `launch.Plan.OpenMessaging`, never `Plan.Open`, so it cannot search or apply. `ajai messages
+  backfill` goes through it too, with `--origin web` as the web front's origin.
 - `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
   Secrets never live in the YAML.
 - `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
@@ -60,7 +61,9 @@ to the tag before tagging and the workflow publishes that section as the release
 - `internal/screening`: the pure skip rules (card, company, description).
 - `internal/pacing`: caps and jittered pauses; `--fast` only with `--dry-run`.
 - `internal/run`: the run loop over a `Site` interface (the session), tested with a fake
-  site; records runs and jobs in the store. `Runner.Session` repeats runs for
+  site; records runs and jobs in the store. `Runner.Backfill` sends what applied jobs never got:
+  `UnreachedApplied` lists them, `JobHiringTeam` reads each hirer, `queueHirer` queues it approved,
+  and `sendMessages`/`sendInvites` send as a run's end does. `Runner.Session` repeats runs for
   `settings.run_non_stop` (`FilterCycle` changes the filters between them; `End.Continues`
   decides whether another run starts). `Runner.AfterFilters` is the filter pause hook.
   One run at a time on the machine: `run.AcquireLock` (an OS file lock via

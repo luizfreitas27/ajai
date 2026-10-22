@@ -574,6 +574,11 @@ steps: when it is reached, ajai stops and prints how many are left for another d
 `--dry-run` reads the hirers and prints what would be sent, and sends and records nothing. Each
 job gets one line: sent, would send, no free message, already messaged, cap reached or failed.
 
+`ajai messages backfill` covers the applied jobs no message or invite reached, newest first, and
+sends the invites too (`messages.connect`). It opens each job page, reads the hirer, approves the
+message and invite a run would queue, then sends them at the end under the same caps. `--limit N`
+stops after N jobs. It prints how many hirers it found, what it sent and why it stopped, if it did.
+
 To skip the approval step, turn on `messages.auto_send` (it needs `messages.enabled`):
 
 ```bash
