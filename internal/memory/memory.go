@@ -52,9 +52,13 @@ func New(st *store.Store, logger *slog.Logger) *Memory {
 // kind at or above SimilarityThreshold. (nil, false) when nothing fits or the
 // label normalises to nothing.
 //
-// Only entries that have an answer are returned: a question queued with no
-// answer yet answers nothing, and must not shadow a similar answered one. Use
-// Find to see whether a question is in the memory at all.
+// An empty answer means one of two things, told apart by state. A pending
+// empty entry is a question queued for the user: it answers nothing, and must
+// not shadow a similar answered one. An approved empty entry is a deliberate
+// blank (see ApproveBlank): an exact match returns it, so the question is left
+// empty without asking the AI. Approximate matching never returns a blank, so
+// it cannot spread to similar questions. Use Find to see whether a question is
+// in the memory at all.
 func (m *Memory) Lookup(label, kind string, approximate bool) (*Remembered, bool, error) {
 	key := textmatch.Normalise(label)
 	if key == "" {
@@ -64,7 +68,7 @@ func (m *Memory) Lookup(label, kind string, approximate bool) (*Remembered, bool
 	if err != nil {
 		return nil, false, err
 	}
-	if exact != nil && strings.TrimSpace(exact.Answer) != "" {
+	if exact != nil && (strings.TrimSpace(exact.Answer) != "" || exact.State == "approved") {
 		return exact, false, nil
 	}
 	if !approximate {
@@ -226,4 +230,27 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// ErrCannotBeBlank: a checkbox, select or radio takes an option or a tick, not a blank.
+var ErrCannotBeBlank = errors.New("this question cannot be left blank")
+
+// ApproveBlank approves an entry as a deliberate blank: the question is to be
+// left empty on the form, and later runs leave it empty without asking the AI.
+// Only text and textarea questions can be blank; a checkbox, select or radio is
+// ErrCannotBeBlank and is left as it was.
+func (m *Memory) ApproveBlank(id string) (*Remembered, error) {
+	entry, err := m.st.GetAnswer(id)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return nil, ErrUnknownID
+	}
+	if entry.Kind == "checkbox" || entry.Kind == "select" || entry.Kind == "radio" || len(entry.Options) > 0 {
+		return nil, ErrCannotBeBlank
+	}
+	entry.Answer, entry.Source, entry.State = "", "user", "approved"
+	entry.UpdatedAt = store.Timestamp(m.now())
+	return entry, m.st.UpsertAnswer(*entry)
 }

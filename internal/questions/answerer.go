@@ -261,7 +261,8 @@ func (a *Answerer) noticeAnswer(label string) string {
 
 // lookup is a memory lookup; callers gate sensitive questions before calling. An
 // entry with no answer yet (a question queued for the user) is a miss, so the AI
-// may still be asked.
+// may still be asked. An approved blank is a hit with an empty answer: the caller
+// leaves the question empty.
 func (a *Answerer) lookup(label, kind string, approximate bool) (*memory.Remembered, bool) {
 	if a.Memory == nil {
 		return nil, false
@@ -271,7 +272,7 @@ func (a *Answerer) lookup(label, kind string, approximate bool) (*memory.Remembe
 		a.Logger.Warn("answer memory lookup failed", "question", label, "error", err)
 		return nil, false
 	}
-	if found != nil && strings.TrimSpace(found.Answer) == "" {
+	if found != nil && strings.TrimSpace(found.Answer) == "" && found.State != "approved" {
 		return nil, false
 	}
 	return found, approx
@@ -321,6 +322,10 @@ func (a *Answerer) answerFromMemoryOrAI(ctx context.Context, label string, kind 
 	}
 	if found, approx := a.lookup(label, string(kind), true); found != nil {
 		a.recordUse(found, job.Link)
+		if strings.TrimSpace(found.Answer) == "" {
+			a.Logger.Info("left blank as approved", "question", label)
+			return "", "memory"
+		}
 		a.Logger.Info("memory answered", "question", label, "answer", found.Answer, "state", found.State, "approximate", approx)
 		return found.Answer, "memory"
 	}
@@ -342,7 +347,7 @@ func (a *Answerer) optionFromMemoryOrAI(ctx context.Context, label string, kind 
 	if IsSensitive(label) {
 		return -1, ""
 	}
-	if found, approx := a.lookup(label, string(kind), true); found != nil && !IsPlaceholder(found.Answer) { // a placeholder is no answer, remembered or not
+	if found, approx := a.lookup(label, string(kind), true); found != nil && strings.TrimSpace(found.Answer) != "" && !IsPlaceholder(found.Answer) { // a placeholder is no answer, remembered or not
 		matched := indexOf(options, found.Answer)
 		if matched < 0 {
 			matched = MatchAnswerToOption(found.Answer, options)

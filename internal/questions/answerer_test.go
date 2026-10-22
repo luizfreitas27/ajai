@@ -1029,3 +1029,44 @@ func TestADropdownOnThePortuguesePlaceholderIsAnsweredFromMemory(t *testing.T) {
 		t.Errorf("a remembered placeholder answered: %+v", d)
 	}
 }
+
+func TestAnApprovedBlankIsLeftEmptyWithoutAskingTheAI(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	ai := &fakeAI{replies: map[string]string{"If your answer was 'Other' please specify. If NOT leave blank.": "Not applicable"}}
+	a.AI = ai
+	entry, err := mem.Remember("If your answer was 'Other' please specify. If NOT leave blank.", "text", "", "form", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.ApproveBlank(entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	d := a.Answer(text("If your answer was 'Other' please specify. If NOT leave blank."), job)
+	if d.Action == Fill || d.Value != "" {
+		t.Errorf("a blank approved by the user was filled: %+v", d)
+	}
+	if len(ai.calls) != 0 {
+		t.Errorf("the AI was asked about an approved blank: %v", ai.calls)
+	}
+	if got, _ := mem.Get(entry.ID); got.State != "approved" || got.Answer != "" {
+		t.Errorf("the blank changed: %+v", got)
+	}
+}
+
+func TestRememberUnansweredNeverQueuesAnApprovedBlankAgain(t *testing.T) {
+	a, mem := answerer(t, pinned())
+	q := text("If your answer was 'Other' please specify. If NOT leave blank.")
+	entry, err := mem.Remember(q.Label, "text", "", "form", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.ApproveBlank(entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a.RememberUnanswered(q, Decision{Remember: true}, job.Link) {
+		t.Error("an approved blank was queued again")
+	}
+	if got, _ := mem.Get(entry.ID); got.State != "approved" || got.Answer != "" {
+		t.Errorf("RememberUnanswered flipped the blank: %+v", got)
+	}
+}

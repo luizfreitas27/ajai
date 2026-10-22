@@ -267,3 +267,87 @@ func TestOptionsAreRememberedAndKeptWhenAnUpdateHasNone(t *testing.T) {
 		t.Errorf("newer options replace them: %+v", got.Options)
 	}
 }
+
+func TestApproveBlankMakesAPendingTextEntryAnApprovedBlank(t *testing.T) {
+	m, _ := fresh(t)
+	entry := rem(t, m, "If your answer was 'Other' please specify. If NOT leave blank.", "text", "", "form", "")
+	got, err := m.ApproveBlank(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "approved" || got.Answer != "" || got.Source != "user" {
+		t.Errorf("%+v", got)
+	}
+	stored, _ := m.Get(entry.ID)
+	if stored.State != "approved" || stored.Answer != "" {
+		t.Errorf("not stored: %+v", stored)
+	}
+}
+
+func TestApproveBlankRefusesCheckboxesAndOptionsAndLeavesTheEntry(t *testing.T) {
+	m, _ := fresh(t)
+	box := rem(t, m, "I agree to the terms", "checkbox", "", "form", "")
+	sel, err := m.Remember("Do you know Go?", "select", "", "form", "", []string{"Yes", "No"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []*Remembered{box, sel} {
+		if _, err := m.ApproveBlank(e.ID); !errors.Is(err, ErrCannotBeBlank) {
+			t.Errorf("%s: err = %v, want ErrCannotBeBlank", e.Kind, err)
+		}
+		stored, _ := m.Get(e.ID)
+		if stored.State != "pending" || stored.Answer != "" {
+			t.Errorf("%s changed: %+v", e.Kind, stored)
+		}
+	}
+}
+
+func TestApproveBlankUnknownID(t *testing.T) {
+	m, _ := fresh(t)
+	if _, err := m.ApproveBlank("nope"); !errors.Is(err, ErrUnknownID) {
+		t.Errorf("err = %v, want ErrUnknownID", err)
+	}
+}
+
+func TestAnApprovedBlankIsAnExactHitAndAPendingEmptyIsAMiss(t *testing.T) {
+	m, _ := fresh(t)
+	pending := rem(t, m, "Anything else we should know?", "text", "", "form", "")
+	found, approximate, _ := m.Lookup("Anything else we should know?", "text", true)
+	if found != nil || approximate {
+		t.Errorf("pending empty must miss: %+v", found)
+	}
+	if _, err := m.ApproveBlank(pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	found, approximate, err := m.Lookup("Anything else we should know?", "text", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == nil || found.ID != pending.ID || found.Answer != "" || approximate {
+		t.Errorf("approved blank must hit exactly: %+v approx=%v", found, approximate)
+	}
+}
+
+func TestAnApprovedBlankNeverSpreadsToSimilarQuestions(t *testing.T) {
+	m, _ := fresh(t)
+	pending := rem(t, m, "If your answer was 'Other' please specify. If NOT leave blank.", "text", "", "form", "")
+	if _, err := m.ApproveBlank(pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	found, _, _ := m.Lookup("If your answer was 'Other' please specify. If NOT leave blank, thanks.", "text", true)
+	if found != nil {
+		t.Errorf("a blank spread to a similar question: %+v", found)
+	}
+}
+
+func TestAnAIAnswerNeverReplacesAnApprovedBlank(t *testing.T) {
+	m, _ := fresh(t)
+	pending := rem(t, m, "Other, please specify", "text", "", "form", "")
+	if _, err := m.ApproveBlank(pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	got := rem(t, m, "Other, please specify", "text", "Not applicable", "ai", "")
+	if got.State != "approved" || got.Answer != "" || got.Source != "user" {
+		t.Errorf("an AI answer changed the approved blank: %+v", got)
+	}
+}
