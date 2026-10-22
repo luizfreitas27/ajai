@@ -67,10 +67,13 @@ func (s *Session) Connect(ctx context.Context, to messages.Recipient) (ConnectRe
 	}); err != nil {
 		return "", err
 	}
-	if s.exists(TopCardDegreeXPath) || s.exists(TopCardPendingXPath) {
+	// A Connect in the top card means not connected, whatever the degree text
+	// says: a 2nd-degree page holds a hidden "· 1st" too.
+	btn, offered := s.first(TopCardOffersConnectXPath)
+	if !offered && (s.exists(TopCardDegreeXPath) || s.exists(TopCardPendingXPath)) {
 		return ConnectAlready, nil
 	}
-	if btn, ok := s.first(TopCardConnectXPath); ok {
+	if offered {
 		return s.invite(ctx, btn)
 	}
 	more, err := s.Page.Element(ProfileMoreXPath)

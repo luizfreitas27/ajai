@@ -476,6 +476,66 @@ func TestConnectSelectorsOnATopCardConnectButton(t *testing.T) {
 	one(t, doc, ProfileMoreXPath)
 }
 
+// TestConnectSelectorsOnASecondDegreeProfile: the top card holds a hidden
+// "· 1st" and the visible "· 2nd", and its Connect is an anchor (fixture 22,
+// anonymised from a live capture). Connect is in the top card, so the profile is
+// not connected whatever the degree text says.
+func TestConnectSelectorsOnASecondDegreeProfile(t *testing.T) {
+	doc := fixture(t, "22_profile_2nd_top_connect_anchor.html")
+	one(t, doc, ProfileMoreXPath)
+	one(t, doc, TopCardDegreeXPath)
+	if count(t, doc, TopCardConnectXPath) == 0 {
+		t.Fatal("the top card's Connect anchor does not match TopCardConnectXPath")
+	}
+	nodes, err := htmlquery.QueryAll(doc, TopCardConnectXPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range nodes {
+		if n.Data != "a" && n.Data != "button" {
+			t.Errorf("TopCardConnectXPath matched a <%s>", n.Data)
+		}
+	}
+	if count(t, doc, TopCardPendingXPath) != 0 {
+		t.Error("a profile that offers Connect matched Pending")
+	}
+}
+
+// TestConnectSelectorsIgnoreTheSidebarInvites: the page also holds "Invite … to
+// connect" cards in the sidebar, outside the top card, which must not match it.
+func TestConnectSelectorsIgnoreTheSidebarInvites(t *testing.T) {
+	doc := fixture(t, "22_profile_2nd_top_connect_anchor.html")
+	if count(t, doc, `//aside//*[`+ConnectLabelCond+`]`) != 2 {
+		t.Fatal("the fixture lost its sidebar invites")
+	}
+	if count(t, doc, TopCardConnectXPath) == 0 {
+		t.Fatal("the top card's Connect is not matched, so the sidebar check proves nothing")
+	}
+	nodes, err := htmlquery.QueryAll(doc, TopCardConnectXPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range nodes {
+		if strings.Contains(htmlquery.SelectAttr(n, "aria-label"), "Carla Mendes") || strings.Contains(htmlquery.SelectAttr(n, "aria-label"), "Dimitri Lopes") {
+			t.Errorf("TopCardConnectXPath matched a sidebar card (%q)", htmlquery.SelectAttr(n, "aria-label"))
+		}
+	}
+}
+
+// TestConnectSelectorsOnAThirdDegreeTopCard: the top card of a 3rd-degree profile
+// (fixture 23, anonymised) has Message, Follow and More, and no Connect, so
+// Connect goes to the More menu.
+func TestConnectSelectorsOnAThirdDegreeTopCard(t *testing.T) {
+	doc := fixture(t, "23_profile_3rd_top_card.html")
+	one(t, doc, ProfileMoreXPath)
+	if count(t, doc, TopCardDegreeXPath) != 0 {
+		t.Error("a 3rd-degree profile matched the 1st-degree text")
+	}
+	if count(t, doc, TopCardConnectXPath) != 0 {
+		t.Error("the top card of a 3rd-degree profile offers Connect")
+	}
+}
+
 func TestInviteDialogSelectors(t *testing.T) {
 	note := fixture(t, "17_invite_note_dialog.html")
 	one(t, note, InviteSendWithoutNoteXPath)

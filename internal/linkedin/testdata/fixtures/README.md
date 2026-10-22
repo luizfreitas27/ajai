@@ -38,6 +38,20 @@ Message link, Follow and More, the degree text "· 3rd", no h1 (as on LinkedIn).
 `profile_connected.html` (Message link and More button, degree "· 1st") reduced to its
 top card, the name fictional. No Connect control.
 
+`22_profile_2nd_top_connect_anchor.html` is a 2nd-degree profile (CAPTURED 2026-10-22,
+anonymised: name Ana Ribeiro, slug ana-ribeiro-fictional, company and school names, member
+URNs and photo URLs replaced; markup and attributes kept). Its top card holds a hidden
+`· 1st` and the visible `· 2nd`, and its Connect is an anchor to
+`/preload/custom-invite/?vanityName=…` with `aria-label="Invite Ana Ribeiro to connect"`
+(the real markup has that anchor twice in the top card). The `<aside>` after `</main>` is
+synthetic: two "People you may know" invites (a button and an anchor, Carla Mendes and
+Dimitri Lopes) outside the top card, which Connect must never click.
+
+`23_profile_3rd_top_card.html` is a 3rd-degree profile's top card (CAPTURED 2026-10-22,
+anonymised: name Bruno Almeida, slug bruno-almeida-fictional, company and school names and
+photo URLs replaced). It has Message, Follow and More, the degree "· 3rd" and no Connect
+control; the test appends fixture 15 for its More menu.
+
 `20_profile_top_connect.html` is synthetic, not captured: a 3rd-degree top card whose
 Connect is a button in the card (`aria-label="Invite Ana Ribeiro to connect"`), as on
 some profiles. Message, Connect and More; no More menu.

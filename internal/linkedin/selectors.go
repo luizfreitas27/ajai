@@ -169,10 +169,14 @@ const (
 	FirstDegreeText     = "· 1st"
 	ConnectLabelCond    = `starts-with(@aria-label,"Invite ") and contains(@aria-label," to connect")`
 	TopCardDegreeXPath  = ProfileTopCard + `//*[text()[contains(., "· 1st")]]`
-	TopCardConnectXPath = ProfileTopCard + `//button[` + ConnectLabelCond + `]`
-	TopCardPendingXPath = ProfileTopCard + `//*[starts-with(@aria-label,"Pending")]`
-	MenuXPath           = `//*[@role="menu"]`
-	MenuConnectXPath    = `//*[@role="menuitem"][.//*[` + ConnectLabelCond + `]]`
+	TopCardConnectXPath = ProfileTopCard + `//*[self::button or self::a][` + ConnectLabelCond + `]`
+	// TopCardOffersConnectXPath is any Connect the top card offers: the labelled
+	// control above, or an anchor to LinkedIn's invite page (fixture 22). A card
+	// that offers one is not connected, whatever degree text it holds.
+	TopCardOffersConnectXPath = TopCardConnectXPath + ` | ` + ProfileTopCard + `//a[contains(@href,"/preload/custom-invite/")]`
+	TopCardPendingXPath       = ProfileTopCard + `//*[starts-with(@aria-label,"Pending")]`
+	MenuXPath                 = `//*[@role="menu"]`
+	MenuConnectXPath          = `//*[@role="menuitem"][.//*[` + ConnectLabelCond + `]]`
 	// MenuPendingXPath is the Connect item once the invite is out: LinkedIn
 	// relabels it Pending (or offers Withdraw).
 	MenuPendingXPath = `//*[@role="menuitem"][.//*[starts-with(@aria-label,"Pending") or normalize-space(.)="Pending" or normalize-space(.)="Withdraw"]]`

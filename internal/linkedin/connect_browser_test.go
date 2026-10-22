@@ -229,3 +229,43 @@ func TestConnectStopsAtACheckpoint(t *testing.T) {
 	s := connectPage(t, readFixture(t, "20_profile_top_connect.html"), "direct", "/checkpoint/challenge/")
 	connectCase(t, s, ConnectBlocked, map[string]string{"connect": ""})
 }
+
+// TestConnectSendsFromAnAnchorOnASecondDegreeProfile: the top card's Connect is
+// an anchor to /preload/custom-invite/, and the profile shows a hidden "· 1st"
+// beside "· 2nd". Connect clicks the anchor, the dialog is answered, and the
+// result is sent, never already.
+func TestConnectSendsFromAnAnchorOnASecondDegreeProfile(t *testing.T) {
+	s := connectPage(t, readFixture(t, "22_profile_2nd_top_connect_anchor.html"), "note", "")
+	connectCase(t, s, ConnectSent, map[string]string{
+		"connect":           "top",
+		"sent-without-note": "yes",
+		"added-note":        "",
+	})
+}
+
+// TestConnectNeverClicksASidebarInvite: the "Invite … to connect" cards in the
+// sidebar stay as they were, the top card's Connect is the one sent.
+func TestConnectNeverClicksASidebarInvite(t *testing.T) {
+	s := connectPage(t, readFixture(t, "22_profile_2nd_top_connect_anchor.html"), "note", "")
+	connectCase(t, s, ConnectSent, map[string]string{"connect": "top"})
+	side, err := s.Page.Elements(`//aside//*[@aria-label="Invite Carla Mendes to connect" or @aria-label="Invite Dimitri Lopes to connect"]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(side) != 2 {
+		t.Errorf("the sidebar invites changed: %d still read Invite, want 2", len(side))
+	}
+}
+
+// TestConnectGoesToTheMoreMenuOfAThirdDegreeTopCard: the top card of a
+// 3rd-degree profile (fixture 23) has no Connect, so the More menu sends it.
+// The menu is the one captured in fixture 15, appended after the top card.
+func TestConnectGoesToTheMoreMenuOfAThirdDegreeTopCard(t *testing.T) {
+	page := readFixture(t, "23_profile_3rd_top_card.html") + readFixture(t, "15_profile_more_connect.html")
+	s := connectPage(t, page, "direct", "")
+	connectCase(t, s, ConnectSent, map[string]string{
+		"more":              "yes",
+		"connect":           "menu",
+		"sent-without-note": "",
+	})
+}
