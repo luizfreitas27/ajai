@@ -552,6 +552,18 @@ func TestInviteDialogSelectors(t *testing.T) {
 	}
 }
 
+// TestInviteSendWithoutNoteFindsTheTextButton: the button has no aria-label, only
+// its visible text, and it is the one clicked, never "Add a note".
+func TestInviteSendWithoutNoteFindsTheTextButton(t *testing.T) {
+	doc := fixture(t, "24_invite_note_dialog_text_button.html")
+	btn := one(t, doc, InviteSendWithoutNoteXPath)
+	if got := text(btn); got != "Send without a note" {
+		t.Errorf("matched button reads %q, want %q", got, "Send without a note")
+	}
+	one(t, doc, InviteDialogXPath)
+	one(t, doc, FromDocument(InviteDismissXPath))
+}
+
 // TestConnectPendingSelectorsMatchAnInviteSent: once an invite is out, the top
 // card's control and the More menu's item read Pending (synthetic relabelling
 // of fixtures 20 and 15; LinkedIn's Pending label is not captured yet).

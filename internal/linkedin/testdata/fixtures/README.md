@@ -59,6 +59,13 @@ some profiles. Message, Connect and More; no More menu.
 `17_invite_note_dialog.html` is synthetic, not captured: the "Add a note to your
 invitation?" dialog, with "Add a note" and `aria-label="Send without a note"`.
 
+`24_invite_note_dialog_text_button.html` is synthetic, not captured: the same note dialog as
+the 2026-10-22 screenshot showed it, with texts from that screenshot and fictional names. Its
+"Send without a note" button has no aria-label, only the visible text in a span, and its
+close button is `aria-label="Dismiss"`. `TestInviteSendWithoutNoteFindsTheTextButton` and
+`TestConnectSendsWithoutANoteWhenTheButtonHasOnlyItsText` use it. Replace it with a capture
+when one is available.
+
 `18_invite_email_dialog.html` is synthetic, not captured: the dialog that asks for the
 member's email ("To verify this member knows you, please enter their email address.").
 

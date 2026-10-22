@@ -182,12 +182,16 @@ const (
 	MenuPendingXPath = `//*[@role="menuitem"][.//*[starts-with(@aria-label,"Pending") or normalize-space(.)="Pending" or normalize-space(.)="Withdraw"]]`
 	// The invite dialogs. The note dialog offers "Send without a note" (its
 	// "Add a note" is never clicked); the other two only ask to be dismissed.
-	InviteSendWithoutNoteXPath = `//*[@role="dialog"]//button[@aria-label="Send without a note"]`
-	InviteEmailDialogXPath     = `//*[@role="dialog"][contains(., "To verify this member knows you")]`
-	InviteLimitDialogXPath     = `//*[@role="dialog"][contains(., "reached the weekly invitation limit")]`
-	InviteDialogXPath          = `//*[@role="dialog"]`
+	// The dialog container is tolerant: a role, or the artdeco-modal class alone.
+	inviteDialogCond = `@role="dialog" or @role="alertdialog" or contains(concat(" ",normalize-space(@class)," ")," artdeco-modal ")`
+	// The "Send without a note" button is matched by its aria-label or its
+	// visible text (the label may be absent). "Add a note" never matches.
+	InviteSendWithoutNoteXPath = `//*[` + inviteDialogCond + `]//button[@aria-label="Send without a note" or normalize-space(.)="Send without a note" or .//span[normalize-space(.)="Send without a note"]]`
+	InviteEmailDialogXPath     = `//*[` + inviteDialogCond + `][contains(., "To verify this member knows you")]`
+	InviteLimitDialogXPath     = `//*[` + inviteDialogCond + `][contains(., "reached the weekly invitation limit")]`
+	InviteDialogXPath          = `//*[` + inviteDialogCond + `]`
 	// InviteDismissXPath, within a dialog, closes it.
-	InviteDismissXPath = `.//button[@aria-label="Dismiss" or @data-test-modal-close-btn]`
+	InviteDismissXPath = `.//button[@aria-label="Dismiss" or @aria-label="Close" or @data-test-modal-close-btn]`
 )
 
 // PaginationClasses are tried in order to find the results pager.

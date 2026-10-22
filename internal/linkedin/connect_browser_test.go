@@ -56,7 +56,7 @@ document.addEventListener("click", e => {
   }
   const button = e.target.closest("button");
   if (!button || !inDialog) return;
-  if (button.getAttribute("aria-label") === "Send without a note") {
+  if (button.getAttribute("aria-label") === "Send without a note" || button.textContent.trim() === "Send without a note") {
     e.preventDefault();
     mark("sent-without-note", "yes");
     inDialog.remove();
@@ -76,9 +76,10 @@ document.addEventListener("keydown", e => {
 
 // connectDialogs are the dialogs Connect can open, by MODE.
 var connectDialogs = map[string]string{
-	"note":  "17_invite_note_dialog.html",
-	"email": "18_invite_email_dialog.html",
-	"limit": "19_invite_limit_notice.html",
+	"note":      "17_invite_note_dialog.html",
+	"note-text": "24_invite_note_dialog_text_button.html",
+	"email":     "18_invite_email_dialog.html",
+	"limit":     "19_invite_limit_notice.html",
 }
 
 // connectPage serves html, a profile page, on a headless Chrome and returns a
@@ -95,7 +96,7 @@ func connectPage(t *testing.T, html, mode, redirect string) *Session {
 	if mode != "direct" {
 		dialog = readFixture(t, connectDialogs[mode])
 	}
-	script := strings.NewReplacer("DIALOG", dialog, "MODE", mode).Replace(connectScript)
+	script := strings.NewReplacer("DIALOG", dialog, `"MODE"`, `"`+mode+`"`).Replace(connectScript)
 	page := "<html><body>" + html + script + "</body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if redirect != "" && r.URL.Path == "/in/ana-ribeiro-fictional" {
@@ -146,6 +147,18 @@ func connectCase(t *testing.T, s *Session, want ConnectResult, clicked map[strin
 // opens the note dialog, and the invite goes out with "Send without a note".
 func TestConnectSendsWithoutANoteFromTheTopCard(t *testing.T) {
 	s := connectPage(t, readFixture(t, "20_profile_top_connect.html"), "note", "")
+	connectCase(t, s, ConnectSent, map[string]string{
+		"connect":           "top",
+		"sent-without-note": "yes",
+		"added-note":        "",
+	})
+}
+
+// TestConnectSendsWithoutANoteWhenTheButtonHasOnlyItsText: the note dialog's
+// "Send without a note" carries no aria-label (fixture 24), and the invite still
+// goes out by that text, never by "Add a note".
+func TestConnectSendsWithoutANoteWhenTheButtonHasOnlyItsText(t *testing.T) {
+	s := connectPage(t, readFixture(t, "20_profile_top_connect.html"), "note-text", "")
 	connectCase(t, s, ConnectSent, map[string]string{
 		"connect":           "top",
 		"sent-without-note": "yes",
