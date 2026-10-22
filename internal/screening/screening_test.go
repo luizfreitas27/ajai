@@ -165,3 +165,64 @@ func TestCardAndCompanyRules(t *testing.T) {
 		t.Errorf("whole word: %+v", v)
 	}
 }
+
+func TestAGoodWordInTheTitleOrDescriptionWaivesABadWord(t *testing.T) {
+	cases := []struct {
+		name       string
+		good       []string
+		bad        []string
+		job        Job
+		wantSkip   bool
+		wantReason string
+		wantDetail string
+	}{
+		{
+			name: "good and bad both in the description: not skipped",
+			good: []string{"AWS"}, bad: []string{"Azure"},
+			job:      Job{Description: "We run Azure and AWS in production.", DescriptionOK: true},
+			wantSkip: false,
+		},
+		{
+			name: "bad only in the description: skipped as today",
+			good: []string{"AWS"}, bad: []string{"Azure"},
+			job:        Job{Description: "We run Azure in production.", DescriptionOK: true},
+			wantSkip:   true,
+			wantReason: "bad word in the job description",
+			wantDetail: "Azure",
+		},
+		{
+			name: "good words set, no bad word present: not skipped",
+			good: []string{"AWS"}, bad: []string{"Azure"},
+			job:      Job{Description: "Python and Postgres.", DescriptionOK: true},
+			wantSkip: false,
+		},
+		{
+			name: "good word only in the title, bad word in the description: not skipped",
+			good: []string{"AWS"}, bad: []string{"Azure"},
+			job:      Job{Title: "Cloud Engineer (AWS)", Description: "We run Azure in production.", DescriptionOK: true},
+			wantSkip: false,
+		},
+		{
+			name: "empty good_words: bad word still skips",
+			good: nil, bad: []string{"Azure"},
+			job:        Job{Description: "AWS and Azure.", DescriptionOK: true},
+			wantSkip:   true,
+			wantReason: "bad word in the job description",
+			wantDetail: "Azure",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := pinned()
+			r.Search.BadWords = c.bad
+			r.Search.GoodWords = c.good
+			v := r.Description(c.job)
+			if v.Skip != c.wantSkip {
+				t.Fatalf("Skip = %v, want %v: %+v", v.Skip, c.wantSkip, v)
+			}
+			if c.wantSkip && (v.Reason != c.wantReason || v.Detail != c.wantDetail) {
+				t.Errorf("Reason/Detail = %q/%q, want %q/%q", v.Reason, v.Detail, c.wantReason, c.wantDetail)
+			}
+		})
+	}
+}

@@ -102,7 +102,9 @@ func (r Rules) Description(job Job) Verdict {
 	}
 	s := r.Search
 	text := job.Description
-	if bad := textmatch.FindWord(text, s.BadWords); bad != "" {
+	// A good word in the title or description waives the bad-word check.
+	good := textmatch.FindWord(job.Title+"\n"+text, s.GoodWords)
+	if bad := textmatch.FindWord(text, s.BadWords); bad != "" && good == "" {
 		return Verdict{Skip: true, Reason: "bad word in the job description", Detail: bad}
 	}
 	// Sponsorship, tier 1: only what THIS posting says. Offers first; an offer always wins.
