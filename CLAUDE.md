@@ -33,7 +33,10 @@ to the tag before tagging and the workflow publishes that section as the release
 - `internal/config`: the YAML config, `.env` secrets, CLI overrides, defaults and validation.
   Secrets never live in the YAML.
 - `internal/browser`: the `Browser`/`Page`/`Element` interfaces and the go-rod adapter
-  (ADR 0001). The only package that imports rod. Never headless outside tests. `Close`
+  (ADR 0001, window modes ADR 0003). The only package that imports rod. `Options.Window`
+  is `settings.window`: offscreen (the default, headful but off screen), minimized (headful,
+  minimized over CDP), visible, or headless (opt-in, `--headless=new`, easier for LinkedIn to
+  detect). `launch.OpenChrome` passes the setting; `ajai login` always opens visible. `Close`
   quits Chrome gracefully on the ajai profile (`Options.QuitOnClose`) and only detaches on
   the user's; never call rod's `launcher.Cleanup` on a real profile (it deletes it).
   `Element.ShadowElements` searches an element's open shadow root (absolute XPath from its

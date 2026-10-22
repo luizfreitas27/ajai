@@ -683,6 +683,19 @@ the ajai profile, so sign in once with `ajai login` before the first window.
 
 </details>
 
+## Web front
+
+`ajai serve` runs a local HTTP API for a web front, on `127.0.0.1:7077` (`--addr` takes another
+loopback address; anything else is refused). Nothing is authenticated, so anyone on this machine
+who can reach the port acts as you. Requests whose Host or Origin is not loopback are refused.
+
+It reads the run in progress and the last runs (`GET /api/status`, `GET /api/runs`), the job
+history (`GET /api/jobs?text=&offset=&limit=`), recruiter messages and invites, and the answer
+memory. It approves a message or an answer only with the digest of the text you read, starts a
+run as `ajai run --unattended --origin web` (`POST /api/runs`), stops only the run you saw
+(`POST /api/runs/stop`), and streams the log and the status (`GET /api/events`, server-sent
+events). The endpoints and their JSON are listed in the package comment of `internal/web/web.go`.
+
 ## Telegram
 
 With `AJAI_TELEGRAM_BOT_TOKEN` and `AJAI_TELEGRAM_CHAT_ID` set, ajai sends one message when a

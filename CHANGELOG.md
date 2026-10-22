@@ -30,6 +30,14 @@ no such section the notes are the commit list.
     LinkedIn's daily application limit too. `--applied-since YYYY-MM-DD` also reads the hirer
     of each job applied to since then with no hirer recorded and sends it a message, within the
     daily cap. `--dry-run` only prints what would be sent.
+- `ajai serve`: a local HTTP API for a web front, on `127.0.0.1:7077` (`--addr` takes another
+  loopback address only). It reads the status, runs, jobs, recruiter messages, invites and
+  answer memory, approves messages and answers by the digest the reader saw, starts and stops
+  runs as the TUI does, and streams the log and status as server-sent events.
+- `search.good_words`: a job whose title or description has one of these is not skipped for a
+  `search.bad_words` match.
+- An unanswered text question can be approved as a blank (`Leave blank` in `ajai serve`): later
+  runs leave it empty without asking the AI, and it stops showing in the review queue.
 
 ### Fixed
 
