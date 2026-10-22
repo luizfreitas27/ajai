@@ -1,0 +1,39 @@
+<!-- synthetic (not captured): a 3rd-degree top card whose Connect is a button, and the invite dialog LinkedIn draws in the open shadow root of #interop-outlet (as it does for the messaging overlay). Names fictional. The script attaches the dialog on the Connect click, marks the top card Pending after "Send without a note" (unless SILENT), and records on <body> (data-connect, data-sent-without-note, data-added-note, data-dismissed). -->
+<section class="artdeco-card pv-top-card"><div class="ph5"><div><div><span>Ana Ribeiro</span> <span>· 3rd</span></div><p>Senior Recruiter at Example Talent</p></div><div class="actions"><div data-display-contents="true"><a href="/messaging/compose/?recipient=ana-ribeiro-fictional&amp;screenContext=NON_SELF_PROFILE_VIEW&amp;interop=msgOverlay"><span><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"></svg><span>Message</span></span></a></div><div data-display-contents="true"><button type="button" aria-label="Invite Ana Ribeiro to connect"><span><span>Connect</span></span></button></div><div data-display-contents="true"><button type="button" aria-label="More" aria-expanded="false"><span><span>More</span></span></button></div></div></div></section>
+<div id="interop-outlet" data-testid="interop-shadowdom"></div>
+<script>
+const SILENT = false;
+const DIALOG = '<div role="dialog" aria-modal="true" class="artdeco-modal"><div class="artdeco-modal__header"><h2>Add a note to your invitation?</h2><button type="button" aria-label="Dismiss" data-test-modal-close-btn><span>×</span></button></div><div class="artdeco-modal__content"><p>Personalize your invitation to Ana Ribeiro by adding a note.</p></div><div class="artdeco-modal__actionbar"><button type="button" class="artdeco-button artdeco-button--outline"><span>Add a note</span></button><button type="button" class="artdeco-button artdeco-button--primary"><span>Send without a note</span></button></div></div>';
+const PENDING = "Pending, click to withdraw invitation sent to Ana Ribeiro";
+const mark = (k, v) => document.body.setAttribute("data-" + k, v);
+let target = null;
+document.addEventListener("click", e => {
+  const t = e.composedPath()[0];
+  const inv = t.closest && t.closest('[aria-label$=" to connect"]');
+  if (inv) {
+    e.preventDefault();
+    target = inv;
+    mark("connect", "top");
+    const host = document.getElementById("interop-outlet");
+    const root = host.shadowRoot || host.attachShadow({mode: "open"});
+    root.innerHTML = '<style>[role="dialog"] { position: fixed; inset: 0; z-index: 999; background: #fff; }</style>' + DIALOG;
+    return;
+  }
+  const button = t.closest && t.closest("button");
+  if (!button || !button.getRootNode().host || button.getRootNode().host.id !== "interop-outlet") return;
+  const dialog = button.closest('[role="dialog"]');
+  if (button.textContent.trim() === "Send without a note") {
+    e.preventDefault();
+    mark("sent-without-note", "yes");
+    if (!SILENT) {
+      target.setAttribute("aria-label", PENDING);
+      if (dialog) dialog.remove();
+    }
+  } else if (button.textContent.trim() === "Add a note") {
+    mark("added-note", "yes");
+  } else if (button.getAttribute("aria-label") === "Dismiss") {
+    mark("dismissed", "yes");
+    if (dialog) dialog.remove();
+  }
+}, true);
+</script>

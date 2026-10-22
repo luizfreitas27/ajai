@@ -78,3 +78,12 @@ the control, "Pending" on the menu item) is synthetic in every fixture: it is th
 own relabelling after a send, and the test edits 15 and 20 to show it. Capture a real sent
 invite (and the three dialogs above) and check `InviteEmailDialogXPath`,
 `InviteLimitDialogXPath`, `InviteSendWithoutNoteXPath` and `TopCardPendingXPath` still match.
+
+`25_invite_dialog_in_shadow.html` is synthetic, not captured: a 3rd-degree top card whose Connect
+is a button, and the note dialog LinkedIn draws in the open shadow root of `#interop-outlet` (as
+it does for the messaging overlay, fixture 08), so no document-wide XPath reaches it. Its
+"Send without a note" is a text-only button. Its script marks the top card Pending after the
+send (unless `const SILENT = true`, which the test sets to show a send that changes nothing).
+`TestConnectSendsWithTheDialogInTheOutletsShadowRoot` and
+`TestConnectKeepsDiagnosticsWhenNothingShowsPending` use it. Replace it with a capture when one
+is available.

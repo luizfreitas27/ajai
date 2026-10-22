@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -88,16 +90,23 @@ var connectDialogs = map[string]string{
 // /in/ana-ribeiro-fictional URL is sent to (a checkpoint, or another member).
 func connectPage(t *testing.T, html, mode, redirect string) *Session {
 	t.Helper()
-	bin, err := chrome.Find("")
-	if err != nil {
-		t.Skip("no Chrome on this machine:", err)
-	}
 	dialog := ""
 	if mode != "direct" {
 		dialog = readFixture(t, connectDialogs[mode])
 	}
 	script := strings.NewReplacer("DIALOG", dialog, `"MODE"`, `"`+mode+`"`).Replace(connectScript)
-	page := "<html><body>" + html + script + "</body></html>"
+	return servePage(t, html+script, redirect)
+}
+
+// servePage serves html as a profile page on a headless Chrome and returns a
+// Session whose profiles are on that server (see connectPage).
+func servePage(t *testing.T, html, redirect string) *Session {
+	t.Helper()
+	bin, err := chrome.Find("")
+	if err != nil {
+		t.Skip("no Chrome on this machine:", err)
+	}
+	page := "<html><body>" + html + "</body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if redirect != "" && r.URL.Path == "/in/ana-ribeiro-fictional" {
 			http.Redirect(w, r, redirect, http.StatusFound)
@@ -281,4 +290,65 @@ func TestConnectGoesToTheMoreMenuOfAThirdDegreeTopCard(t *testing.T) {
 		"connect":           "menu",
 		"sent-without-note": "",
 	})
+}
+
+// shadowInvitePage serves fixture 25: the invite dialog is drawn in the open
+// shadow root of #interop-outlet. silent keeps the top card from reading
+// Pending after the send.
+func shadowInvitePage(t *testing.T, silent bool) *Session {
+	t.Helper()
+	page := readFixture(t, "25_invite_dialog_in_shadow.html")
+	if silent {
+		page = strings.Replace(page, "const SILENT = false;", "const SILENT = true;", 1)
+	}
+	return servePage(t, page, "")
+}
+
+// TestConnectSendsWithTheDialogInTheOutletsShadowRoot: LinkedIn draws the invite
+// dialog in the shadow root of #interop-outlet, out of a document-wide XPath's
+// reach. Connect finds it there, sends without a note and sees the top card
+// Pending.
+func TestConnectSendsWithTheDialogInTheOutletsShadowRoot(t *testing.T) {
+	s := shadowInvitePage(t, false)
+	connectCase(t, s, ConnectSent, map[string]string{
+		"connect":           "top",
+		"sent-without-note": "yes",
+		"added-note":        "",
+		"dismissed":         "",
+	})
+}
+
+// TestConnectKeepsDiagnosticsWhenNothingShowsPending: a send that leaves the
+// invite unconfirmed is a failure, never a sent invite, and the page is kept
+// for diagnosis: a screenshot and the HTML of the document and of the outlet's
+// shadow root, both named invite-<slug>-<unix>, in ScreenshotDir.
+func TestConnectKeepsDiagnosticsWhenNothingShowsPending(t *testing.T) {
+	defer func(old time.Duration) { inviteWait = old }(inviteWait)
+	inviteWait = 2 * time.Second
+	s := shadowInvitePage(t, true)
+	s.ScreenshotDir = t.TempDir()
+	got, err := s.Connect(context.Background(), ana)
+	if err == nil || got == ConnectSent {
+		t.Fatalf("Connect = %q, %v; want a failure, not a sent invite", got, err)
+	}
+	if r := recorded(t, s, "sent-without-note"); r != "yes" {
+		t.Errorf("data-sent-without-note = %q, want the send clicked once", r)
+	}
+	if r := recorded(t, s, "added-note"); r != "" {
+		t.Errorf("data-added-note = %q, must stay empty", r)
+	}
+	shots, _ := filepath.Glob(filepath.Join(s.ScreenshotDir, "invite-ana-ribeiro-fictional-*.png"))
+	dumps, _ := filepath.Glob(filepath.Join(s.ScreenshotDir, "invite-ana-ribeiro-fictional-*.html"))
+	if len(shots) != 1 || len(dumps) != 1 {
+		t.Fatalf("diagnostics = %v %v, want one screenshot and one HTML file", shots, dumps)
+	}
+	html, err := os.ReadFile(dumps[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"pv-top-card", "interop-outlet", "Add a note to your invitation?", "<!-- #interop-outlet shadowRoot -->"} {
+		if !strings.Contains(string(html), want) {
+			t.Errorf("the HTML dump lacks %q", want)
+		}
+	}
 }
