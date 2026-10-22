@@ -151,15 +151,28 @@ func (m *Messaging) Send(ctx context.Context, opts run.PendingOptions, report fu
 	return m.Runner.SendPending(ctx, opts, report)
 }
 
+// Backfill messages and invites the applied jobs that never got one
+// (run.Runner.Backfill), ending cleanly on a stop request, as Send does.
+func (m *Messaging) Backfill(ctx context.Context, limit int) (run.BackfillSummary, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	go m.lock.WatchStops(ctx, cancel)
+	return m.Runner.Backfill(ctx, limit)
+}
+
 // Close closes Chrome and releases the run lock, as Opened.Close does.
 func (m *Messaging) Close() { m.close() }
 
-// OpenMessaging is Open for ajai messages send: the run lock (with
-// run.OriginMessages), Chrome on the configured profile and a session, with
-// no applier, so nothing can search or apply.
+// OpenMessaging is Open for ajai messages send and messages backfill: the run
+// lock (with run.OriginMessages unless d.Origin says otherwise), Chrome on the
+// configured profile and a session, with no applier, so nothing can search or apply.
 func (p *Plan) OpenMessaging(ctx context.Context, d Deps) (*Messaging, error) {
 	cfg := p.Config
-	lock, err := run.AcquireLock(d.Paths.DataDir, run.Holder{Origin: run.OriginMessages, Started: time.Now()})
+	origin := d.Origin
+	if origin == "" {
+		origin = run.OriginMessages
+	}
+	lock, err := run.AcquireLock(d.Paths.DataDir, run.Holder{Origin: origin, Started: time.Now()})
 	if err != nil {
 		return nil, err
 	}

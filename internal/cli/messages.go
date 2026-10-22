@@ -48,7 +48,7 @@ message by the digest of the text you read, so an edited text is refused; approv
 whole queue by the list digest that "list" prints, so a queue that changed since is
 refused too.`,
 	}
-	cmd.AddCommand(a.messagesListCmd(), a.messagesApproveCmd(), a.messagesDeleteCmd(), a.messagesSendCmd())
+	cmd.AddCommand(a.messagesListCmd(), a.messagesApproveCmd(), a.messagesDeleteCmd(), a.messagesSendCmd(), a.messagesBackfillCmd())
 	return cmd
 }
 
@@ -310,5 +310,82 @@ both steps; what it leaves is printed, for another day.
 	}
 	cmd.Flags().StringVar(&since, "applied-since", "", "also message the hirers of jobs applied to on or after this date (YYYY-MM-DD)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "read the hirers and print what would be sent; send and record nothing")
+	return cmd
+}
+
+func (a *App) messagesBackfillCmd() *cobra.Command {
+	var limit int
+	var origin string
+	var unattended bool
+	cmd := &cobra.Command{
+		Use:   "backfill",
+		Short: "Message and invite the hirers of applied jobs that never got one",
+		Long: `Opens Chrome and LinkedIn as messages send does, under the same run lock, and goes
+through the applied jobs that no recruiter message or invite reached, newest first. For each
+it opens the job page, reads the hirer and queues what a run would queue: the message when
+messages.enabled is on, the invite when messages.connect is on. Those are approved and sent at
+the end with the same checks: free messages only, one per recruiter ever, messages.max_per_day
+and messages.max_invites_per_day, and a pause before each send. A checkpoint page or a block
+stops it. It never searches or applies.
+
+--limit N stops after N jobs (0 for all). --unattended is accepted so scripts can call it as
+they call ajai run; nothing here pauses for a question.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			from := run.OriginMessages
+			switch origin {
+			case "":
+			case string(run.OriginWeb):
+				from = run.OriginWeb
+			default:
+				return fmt.Errorf("unknown --origin %q", origin)
+			}
+			if limit < 0 {
+				return errors.New("--limit takes 0 (all) or a number of jobs")
+			}
+			l, err := config.Load(a.paths, a.Env, nil)
+			a.openLog(logLevel(l))
+			if err := a.configProblem(l, err); err != nil {
+				return err
+			}
+			if !l.Config.Messages.Enabled && !l.Config.Messages.Connect {
+				return errors.New("recruiter messages and invites are both off; turn one on with ajai config set messages.enabled true")
+			}
+			st, err := a.openStore()
+			if err != nil {
+				return err
+			}
+			plan, err := launch.NewPlan(l, a.paths, a.logger)
+			if err != nil {
+				return err
+			}
+			m, err := plan.OpenMessaging(ctx, launch.Deps{Origin: from, Paths: a.paths, Store: st, Logger: a.logger, Events: a.report, OpenBrowser: OpenBrowser})
+			if err != nil {
+				return err
+			}
+			defer m.Close()
+			sum, err := m.Backfill(ctx, limit)
+			a.ui.Printf("checked %d job(s): %d with a hirer, %d with none", sum.Checked, sum.Hirers, sum.NoHirer)
+			a.ui.Println()
+			a.ui.Printf("sent %d message(s), %d invite(s)", sum.Messages, sum.Invites)
+			if sum.Left > 0 {
+				a.ui.Printf(", %d message(s) left approved for another day", sum.Left)
+			}
+			a.ui.Println()
+			if sum.Stopped != "" {
+				a.ui.Warn("stopped", sum.Stopped)
+			}
+			if errors.Is(err, context.Canceled) {
+				return nil // Ctrl-C or ajai stop: what was done is printed
+			}
+			return err
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 0, "stop after this many applied jobs (0: all)")
+	cmd.Flags().BoolVar(&unattended, "unattended", false, "accepted for scripts; nothing here pauses for a question")
+	f := cmd.Flags()
+	f.StringVar(&origin, "origin", "", "who starts the backfill: web (the web front's own)")
+	_ = f.MarkHidden("origin")
 	return cmd
 }

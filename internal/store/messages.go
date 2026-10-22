@@ -326,3 +326,28 @@ func (s *Store) AppliedWithoutRecipient(since time.Time) ([]Job, error) {
 	return s.listJobs(`outcome = ? AND recorded_at >= ? AND NOT EXISTS (SELECT 1 FROM recruiter_messages m
 		WHERE m.job_id = jobs.job_id AND m.recipient_url != '')`, []any{string(Applied), Timestamp(since)}, 0, 0)
 }
+
+// unreached is the rule for a job still to be messaged or invited by ajai messages
+// backfill: applied, with no message to its hirer in a state that will or did
+// go out, and no invite sent or accepted.
+func unreached() (string, []any) {
+	return `outcome = ? AND NOT EXISTS (SELECT 1 FROM recruiter_messages m WHERE m.job_id = jobs.job_id
+		AND m.state IN (?, ?, ?, ?)) AND NOT EXISTS (SELECT 1 FROM recruiter_invites i WHERE i.job_id = jobs.job_id
+		AND i.state IN (?, ?))`,
+		[]any{string(Applied), MessageSent, MessageApproved, MessageSending, MessageQueued, InviteSent, InviteAlready}
+}
+
+// UnreachedApplied returns the applied jobs whose hirer was never messaged or
+// invited, newest first, at most limit of them (0 for all).
+func (s *Store) UnreachedApplied(limit int) ([]Job, error) {
+	where, args := unreached()
+	return s.listJobs(where, args, limit, 0)
+}
+
+// CountUnreachedApplied counts the jobs UnreachedApplied lists.
+func (s *Store) CountUnreachedApplied() (int, error) {
+	where, args := unreached()
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM jobs WHERE `+where, args...).Scan(&n)
+	return n, err
+}

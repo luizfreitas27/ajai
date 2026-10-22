@@ -457,3 +457,77 @@ func TestAppliedWithoutRecipientListsAppliedJobsSinceADateWithNoHirerRecorded(t 
 		t.Errorf("jobs %v, want %v (newest first)", ids, want)
 	}
 }
+
+func TestUnreachedAppliedListsAppliedJobsWithNoMessageOrInviteReachingTheirHirer(t *testing.T) {
+	s := open(t)
+	at := func(day int) string { return Timestamp(time.Date(2026, 10, day, 10, 0, 0, 0, time.Local)) }
+	for _, j := range []Job{
+		{JobID: "none", Outcome: Applied, RecordedAt: at(10)},    // no rows at all
+		{JobID: "sent", Outcome: Applied, RecordedAt: at(11)},    // message sent
+		{JobID: "norec", Outcome: Applied, RecordedAt: at(12)},   // only a no_recipient row
+		{JobID: "invited", Outcome: Applied, RecordedAt: at(13)}, // invite sent
+		{JobID: "approved", Outcome: Applied, RecordedAt: at(14)},
+		{JobID: "queued", Outcome: Applied, RecordedAt: at(15)},
+		{JobID: "already", Outcome: Applied, RecordedAt: at(16)}, // invite already connected
+		{JobID: "skipped", Outcome: Skipped, RecordedAt: at(17)},
+		{JobID: "failed", Outcome: Failed, RecordedAt: at(18)},
+		{JobID: "newest", Outcome: Applied, RecordedAt: at(19)}, // no rows, newest
+	} {
+		must(t, s.UpsertJob(j))
+	}
+	_, err := s.InsertMessage(Message{JobID: "sent", RecipientURL: "https://www.linkedin.com/in/ana", State: MessageSent})
+	must(t, err)
+	_, err = s.InsertMessage(Message{JobID: "norec", State: MessageNoRecipient})
+	must(t, err)
+	_, err = s.InsertMessage(Message{JobID: "approved", RecipientURL: "https://www.linkedin.com/in/bia", State: MessageApproved})
+	must(t, err)
+	_, err = s.InsertMessage(Message{JobID: "queued", RecipientURL: "https://www.linkedin.com/in/caio", State: MessageQueued})
+	must(t, err)
+	for _, inv := range []Invite{
+		{JobID: "invited", RecipientURL: "https://www.linkedin.com/in/dani"},
+		{JobID: "already", RecipientURL: "https://www.linkedin.com/in/eva"},
+	} {
+		_, err := s.QueueInvite(inv)
+		must(t, err)
+	}
+	invs, err := s.ListInvites("", 0)
+	must(t, err)
+	for _, inv := range invs {
+		state := InviteSent
+		if inv.JobID == "already" {
+			state = InviteAlready
+		}
+		if ok, err := s.MarkInvite(inv.ID, state, ""); err != nil || !ok {
+			t.Fatalf("mark invite %d: %v %v", inv.ID, ok, err)
+		}
+	}
+
+	jobs, err := s.UnreachedApplied(0)
+	must(t, err)
+	var ids []string
+	for _, j := range jobs {
+		ids = append(ids, j.JobID)
+	}
+	if want := []string{"newest", "norec", "none"}; fmt.Sprint(ids) != fmt.Sprint(want) {
+		t.Errorf("unreached %v, want %v (newest first)", ids, want)
+	}
+	if n, err := s.CountUnreachedApplied(); err != nil || n != len(jobs) {
+		t.Errorf("count %d, %v; want %d", n, err, len(jobs))
+	}
+}
+
+func TestUnreachedAppliedHonoursALimitNewestFirst(t *testing.T) {
+	s := open(t)
+	for day := 1; day <= 4; day++ {
+		must(t, s.UpsertJob(Job{JobID: fmt.Sprint("j", day), Outcome: Applied,
+			RecordedAt: Timestamp(time.Date(2026, 10, day, 10, 0, 0, 0, time.Local))}))
+	}
+	jobs, err := s.UnreachedApplied(2)
+	must(t, err)
+	if len(jobs) != 2 || jobs[0].JobID != "j4" || jobs[1].JobID != "j3" {
+		t.Errorf("limit 2 gave %v, want j4 then j3", jobs)
+	}
+	if n, err := s.CountUnreachedApplied(); err != nil || n != 4 {
+		t.Errorf("count %d, %v; want 4 whatever the limit", n, err)
+	}
+}

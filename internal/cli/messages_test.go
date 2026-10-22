@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/messages"
 	"github.com/luizfreitas27/ajai/internal/paths"
+	"github.com/luizfreitas27/ajai/internal/run"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
@@ -236,5 +238,24 @@ func TestMessagesDeleteSaysASentMessageStaysInTheHistory(t *testing.T) {
 	}
 	if _, out, _ := h.run("messages", "list", "--state", "sent"); !strings.Contains(out, "Oi Ana") {
 		t.Errorf("the sent row is gone:\n%s", out)
+	}
+}
+
+func TestMessagesBackfillIsRefusedWhileARunHoldsTheLock(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	if code, _, errText := h.run("config", "set", "messages.enabled", "true"); code != 0 {
+		t.Fatalf("config set: %s", errText)
+	}
+	lock, err := run.AcquireLock(h.home, run.Holder{Origin: run.OriginSchedule, Started: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if code, _, errText := h.run("messages", "backfill"); code == 0 || !strings.Contains(errText, "another run is in progress") {
+		t.Errorf("backfill under the lock: %d %s", code, errText)
+	}
+	if code, _, errText := h.run("messages", "backfill", "--origin", "web"); code == 0 || strings.Contains(errText, "unknown --origin") || !strings.Contains(errText, "another run is in progress") {
+		t.Errorf("--origin web must be accepted and refused only by the lock: %d %s", code, errText)
 	}
 }

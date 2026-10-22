@@ -22,11 +22,18 @@ func (r *Runner) queueRecruiter(ctx context.Context, c linkedin.Card, descriptio
 		r.Logger.Warn("could not read the hiring team", "job", c.ID, "error", err)
 		return
 	}
+	r.queueHirer(ctx, c, description, runID, to, ok, false)
+}
+
+// queueHirer queues what the settings ask for, given the hirer of a job: the
+// invite (messages.connect), then the message (messages.enabled). approved is
+// set by ajai messages backfill, which sends what it queues at the end.
+func (r *Runner) queueHirer(ctx context.Context, c linkedin.Card, description string, runID int64, to messages.Recipient, ok, approved bool) {
 	if r.Cfg.Messages.Connect && ok && to.URL != "" { // a hirer without a profile URL cannot be keyed
 		r.queueInvite(c, to, runID)
 	}
 	if r.Cfg.Messages.Enabled {
-		r.queueMessage(ctx, c, description, runID, to, ok)
+		r.queueMessage(ctx, c, description, runID, to, ok, approved)
 	}
 }
 
@@ -45,7 +52,7 @@ func (r *Runner) queueInvite(c linkedin.Card, to messages.Recipient, runID int64
 
 // queueMessage queues the recruiter message for a job just applied to, or records
 // that the job had no hirer to message. to and ok are the hirer read by queueRecruiter.
-func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description string, runID int64, to messages.Recipient, ok bool) {
+func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description string, runID int64, to messages.Recipient, ok, approved bool) {
 	template := r.templateFor(messages.DetectLanguage(c.Title + "\n" + description))
 	if strings.TrimSpace(template) == "" {
 		return
@@ -67,7 +74,7 @@ func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description 
 		}
 	}
 	auto := r.Cfg.Messages.AutoSend && m.State == ""
-	if auto { // the user approved the template in advance
+	if m.State == "" && (auto || approved) { // the user approved the template in advance, or asked for the backfill
 		m.State = store.MessageApproved
 	}
 	id, err := r.Store.InsertMessage(m)
