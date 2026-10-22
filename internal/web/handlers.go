@@ -114,12 +114,6 @@ func (s *server) startRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "market must be one of "+strings.Join(config.MarketNameList(), ", ")+" (or blank for the config's)")
 		return
 	}
-	if act, _ := run.ReadActivity(s.d.DataDir); act.Held {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error":  act.Holder.String() + " is in progress",
-			"holder": holderOf(act.Holder)})
-		return
-	}
 	args := []string{"run", "--unattended", "--origin", string(run.OriginWeb)}
 	if body.Market != "" {
 		args = append(args, "--market", body.Market)
@@ -127,13 +121,43 @@ func (s *server) startRun(w http.ResponseWriter, r *http.Request) {
 	if body.DryRun {
 		args = append(args, "--dry-run")
 	}
+	s.startAjai(w, args, "run started from the web front")
+}
+
+// startAjai launches ajai args in a process of its own, refused with 409 while a run holds the lock.
+func (s *server) startAjai(w http.ResponseWriter, args []string, msg string) {
+	if act, _ := run.ReadActivity(s.d.DataDir); act.Held {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":  act.Holder.String() + " is in progress",
+			"holder": holderOf(act.Holder)})
+		return
+	}
 	pid, _, err := s.d.Launcher.Start(args)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not start ajai: "+err.Error())
 		return
 	}
-	s.log.Info("run started from the web front", "pid", pid, "args", strings.Join(args[1:], " "))
+	s.log.Info(msg, "pid", pid, "args", strings.Join(args[1:], " "))
 	writeJSON(w, http.StatusAccepted, map[string]any{"pid": pid, "args": args})
+}
+
+// startBackfill starts ajai messages backfill --unattended --origin web, with --limit when one is given.
+func (s *server) startBackfill(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Limit *int `json:"limit"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	args := []string{"messages", "backfill", "--unattended", "--origin", "web"}
+	if body.Limit != nil {
+		if *body.Limit < 0 {
+			writeErr(w, http.StatusBadRequest, "limit must be 0 (all) or a positive number of jobs")
+			return
+		}
+		args = append(args, "--limit", strconv.Itoa(*body.Limit))
+	}
+	s.startAjai(w, args, "backfill started from the web front")
 }
 
 func (s *server) stopRun(w http.ResponseWriter, r *http.Request) {
@@ -286,8 +310,13 @@ func (s *server) messages(w http.ResponseWriter, r *http.Request) {
 			RecipientName: m.RecipientName, RecipientURL: m.RecipientURL, Text: m.Text,
 			Digest: messages.Digest(m.Text), Error: m.Error, SentAt: m.SentAt, CreatedAt: m.CreatedAt})
 	}
+	unreached, err := s.d.Store.CountUnreachedApplied()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out,
-		"queue_digest": messages.ListDigest(items), "queued": len(items)})
+		"queue_digest": messages.ListDigest(items), "queued": len(items), "unreached": unreached})
 }
 
 // messageStates are the states "state" takes, as the store names them.

@@ -28,7 +28,8 @@
 //	     "work_location", "work_style", "job_link", "external_link", "hr_name",
 //	     "hr_link", "date_applied", "recorded_at", "run_id"}, newest first
 //	GET  /api/messages?state=
-//	     {"messages": [message], "queue_digest": string, "queued": int}
+//	     {"messages": [message], "queue_digest": string, "queued": int, "unreached": int}
+//	     unreached counts the applied jobs whose recruiter was never reached
 //	     message = {"id", "state", "job_id", "title", "company", "recipient_name",
 //	     "recipient_url", "text", "digest", "error", "sent_at", "created_at"};
 //	     queue_digest is the list digest of the queued messages (see approve-all)
@@ -36,6 +37,8 @@
 //	     200 {"id", "state"} | 404 | 409 when the text changed or the message is not queued
 //	POST /api/messages/approve-all  {"digest": queue_digest}
 //	     200 {"approved": int} | 409 when the queue changed since it was read
+//	POST /api/messages/backfill  {"limit": int (optional, 0 or absent: all)}
+//	     202 {"pid", "args"} | 400 negative limit | 409 {"error", "holder"} while a run holds the lock
 //	GET  /api/invites?state=&limit=50
 //	     [invite] where invite = {"id", "state", "job_id", "title", "company",
 //	     "recipient_name", "recipient_url", "error", "sent_at", "created_at"}
@@ -112,6 +115,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/runs", s.runs)
 	mux.HandleFunc("POST /api/runs", s.startRun)
 	mux.HandleFunc("POST /api/runs/stop", s.stopRun)
+	mux.HandleFunc("POST /api/messages/backfill", s.startBackfill)
 	mux.HandleFunc("GET /api/jobs", s.jobs)
 	mux.HandleFunc("GET /api/messages", s.messages)
 	mux.HandleFunc("POST /api/messages/approve-all", s.approveAll)

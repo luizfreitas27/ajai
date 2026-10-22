@@ -112,7 +112,7 @@ export default function App() {
       <main className="main" id="main">
         {page === 'dashboard' && <Dashboard events={events} />}
         {page === 'jobs' && <Jobs />}
-        {page === 'messages' && <Messages />}
+        {page === 'messages' && <Messages busy={!!events.status?.holder} />}
         {page === 'invites' && <Invites />}
         {page === 'answers' && <Answers />}
       </main>

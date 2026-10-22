@@ -469,3 +469,77 @@ func TestEventsBacklogIsCappedAt300Lines(t *testing.T) {
 		t.Errorf("last backlog line = %q, want %q", got[299], want)
 	}
 }
+
+// Case 8: a backfill starts as ajai messages backfill --unattended --origin web, with --limit when given.
+func TestBackfillLaunchesItAsTheWebFront(t *testing.T) {
+	f := newFixture(t)
+	code, body := f.do("POST", "/api/messages/backfill", `{}`, nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("start: %d %s", code, body)
+	}
+	code, body = f.do("POST", "/api/messages/backfill", `{"limit":5}`, nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("start with a limit: %d %s", code, body)
+	}
+	want := []string{
+		"messages backfill --unattended --origin web",
+		"messages backfill --unattended --origin web --limit 5",
+	}
+	if len(f.launcher.calls) != 2 {
+		t.Fatalf("launcher got %v, want 2 starts", f.launcher.calls)
+	}
+	for i, w := range want {
+		if got := strings.Join(f.launcher.calls[i], " "); got != w {
+			t.Errorf("start %d: launcher got %q, want %q", i, got, w)
+		}
+	}
+}
+
+// Case 9: a backfill is refused with 409 while a run holds the lock, and launches nothing.
+func TestBackfillWaitsForTheRunLock(t *testing.T) {
+	f := newFixture(t)
+	lock, err := run.AcquireLock(f.dataDir, run.Holder{Origin: run.OriginTUI, Started: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	code, body := f.do("POST", "/api/messages/backfill", `{"limit":3}`, nil)
+	if code != http.StatusConflict || !strings.Contains(body, "is in progress") {
+		t.Errorf("with the lock held: %d %s, want 409", code, body)
+	}
+	if len(f.launcher.calls) != 0 {
+		t.Errorf("a refused backfill launched %v", f.launcher.calls)
+	}
+}
+
+// Case 10: a negative limit is a 400 and launches nothing.
+func TestBackfillRefusesANegativeLimit(t *testing.T) {
+	f := newFixture(t)
+	code, body := f.do("POST", "/api/messages/backfill", `{"limit":-1}`, nil)
+	if code != http.StatusBadRequest {
+		t.Errorf("negative limit: %d %s, want 400", code, body)
+	}
+	if len(f.launcher.calls) != 0 {
+		t.Errorf("a refused backfill launched %v", f.launcher.calls)
+	}
+}
+
+// Case 11: GET /api/messages counts the applied jobs whose recruiter was never reached.
+func TestMessagesReportTheUnreachedApplied(t *testing.T) {
+	f := newFixture(t)
+	if err := f.st.UpsertJob(store.Job{JobID: "1", Outcome: store.Applied, Title: "Dev", Company: "Acme"}); err != nil {
+		t.Fatal(err)
+	}
+	code, body := f.do("GET", "/api/messages", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list: %d %s", code, body)
+	}
+	want, err := f.st.CountUnreachedApplied()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decode(t, body)["unreached"]
+	if got != float64(want) || want != 1 {
+		t.Errorf("unreached = %v, store counts %d, want 1", got, want)
+	}
+}

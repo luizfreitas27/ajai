@@ -60,6 +60,7 @@ export const api = {
   approveMessage: (id: number, digest: string) =>
     post(`/api/messages/${id}/approve`, { digest }) as Promise<{ id: number; state: string }>,
   approveAll: (digest: string) => post('/api/messages/approve-all', { digest }) as Promise<{ approved: number }>,
+  startBackfill: () => post('/api/messages/backfill', {}) as Promise<{ pid: number; args: string[] }>,
 
   invites: (state: string) =>
     request<import('./types').Invite[]>(`/api/invites?limit=100${state ? `&state=${state}` : ''}`),

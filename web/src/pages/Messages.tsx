@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import { Badge, toneFor } from '../components/Badge';
 import { Dialog } from '../components/Dialog';
+import { Frame } from '../components/Frame';
 import { Empty, Failure, Loading, Notice } from '../components/States';
 import { formatTime, plural } from '../format';
 import { Tabs, useLoad } from '../hooks';
@@ -17,16 +18,42 @@ const STATES: { value: MessageState; label: string; help: string }[] = [
 
 const STALE = 'This list changed since you read it. Review the messages again.';
 
-export function Messages() {
+export function Messages({ busy }: { busy: boolean }) {
   const [state, setState] = useState<MessageState>('queued');
   const list = useLoad(() => api.messages(state), [state]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [approveAllOpen, setApproveAllOpen] = useState(false);
   const [approvingAll, setApprovingAll] = useState(false);
+  const [reachOpen, setReachOpen] = useState(false);
+  const [reaching, setReaching] = useState(false);
+  const [reached, setReached] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const wasBusy = useRef(busy);
 
   const data = list.data;
   const current = STATES.find((s) => s.value === state)!;
+  const unreached = data?.unreached ?? 0;
+
+  // Reread the count once a run ends, so the button follows what the run reached.
+  useEffect(() => {
+    if (wasBusy.current && !busy) list.reload();
+    wasBusy.current = busy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+
+  const reach = async () => {
+    setReaching(true);
+    setReached(null);
+    try {
+      const r = await api.startBackfill();
+      setReached({ tone: 'ok', text: `Started (pid ${r.pid}). Follow it in the Dashboard log.` });
+    } catch (e) {
+      setReached({ tone: 'error', text: e instanceof ApiError ? e.message : 'The backfill could not start.' });
+    } finally {
+      setReaching(false);
+      setReachOpen(false);
+    }
+  };
 
   const approve = async (m: Message) => {
     setBusyId(m.id);
@@ -76,6 +103,24 @@ export function Messages() {
 
       <Tabs label="Message state" items={STATES} value={state} onChange={setState} />
       <p className="muted page__help">{current.help}</p>
+
+      {data && (
+        <Frame id="reach" caption="PAST APPLICATIONS">
+          <p>{plural(unreached, 'past application')} whose recruiter was never reached.</p>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => setReachOpen(true)}
+              disabled={busy || reaching || unreached === 0}
+            >
+              {reaching ? 'Starting' : 'Reach them'}
+            </button>
+            {busy && <p className="muted">A run is in progress. Wait for it to end.</p>}
+          </div>
+          {reached && <Notice tone={reached.tone}>{reached.text}</Notice>}
+        </Frame>
+      )}
 
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
 
@@ -130,6 +175,20 @@ export function Messages() {
         onCancel={() => setApproveAllOpen(false)}
       >
         <p>Approved messages go out during the next live run. You can read each one above before you approve.</p>
+      </Dialog>
+
+      <Dialog
+        open={reachOpen}
+        title={`Reach ${plural(unreached, 'past application')}?`}
+        confirmLabel="Reach them"
+        busy={reaching}
+        onConfirm={reach}
+        onCancel={() => setReachOpen(false)}
+      >
+        <p>
+          Open each job page, read the recruiter, and send a message and an invite, within today's limits
+          (messages.max_per_day, messages.max_invites_per_day). Runs like a run: one at a time.
+        </p>
       </Dialog>
     </section>
   );

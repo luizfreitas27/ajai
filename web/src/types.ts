@@ -97,6 +97,7 @@ export type MessagesResponse = {
   messages: Message[];
   queue_digest: string;
   queued: number;
+  unreached: number;
 };
 
 export type Invite = {
