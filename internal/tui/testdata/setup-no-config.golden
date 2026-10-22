@@ -2,7 +2,7 @@ ajai   Setup   1 Dashboard   2 Answers   3 Schedule   4 Jobs   5 Config
 ───────━━━━━────────────────────────────────────────────────────────────────────────────────────────
 Setup checklist   what a run needs, as `ajai doctor` checks it
 ▌ ✗ config          no config file at ~/config.yaml; run `ajai init`
-  ✓ chrome          Chromium 152 (/usr/bin/chromium)
+  ✓ chrome          Chromium 152 (/usr/bin/chromium), window offscreen
   ✓ chrome profile  ~/chrome-profile (the ajai profile), signed in to LinkedIn
   ✓ data dir        ~
 ────────────────────────────────────────────────────────────────────────────────────────────────────

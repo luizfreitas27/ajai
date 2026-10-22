@@ -205,7 +205,8 @@ func OpenChrome(ctx context.Context, cfg config.Config, p paths.Paths, open brow
 		}
 	}
 	br, err := open(ctx, browser.Options{Bin: bin, ProfileDir: profile.Dir, DisableExtensions: cfg.Settings.DisableExtensions,
-		SmoothScroll: cfg.Settings.SmoothScroll, QuitOnClose: profile.Own, Logger: logger})
+		SmoothScroll: cfg.Settings.SmoothScroll, Window: browser.Window(cfg.Settings.Window),
+		QuitOnClose: profile.Own, Logger: logger})
 	if profile.Own && errors.Is(err, browser.ErrProfileInUse) {
 		return nil, profile, ErrOwnProfileInUse
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/luizfreitas27/ajai/internal/browser"
 	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/launch"
 	"github.com/luizfreitas27/ajai/internal/linkedin"
@@ -44,7 +45,10 @@ to sign in for them.`,
 				return err
 			}
 			ctx := cmd.Context()
-			br, profile, err := launch.OpenChrome(ctx, l.Config, a.paths, OpenBrowser, a.logger)
+			// Signing in is by hand, so the window is always shown, whatever settings.window says.
+			cfg := l.Config
+			cfg.Settings.Window = string(browser.WindowVisible)
+			br, profile, err := launch.OpenChrome(ctx, cfg, a.paths, OpenBrowser, a.logger)
 			if err != nil {
 				return err
 			}

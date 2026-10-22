@@ -115,12 +115,13 @@ func Run(loaded *config.Loaded, loadErr error, p paths.Paths, probe Probe) Repor
 
 	// Chrome
 	binary, err := probe.FindChrome(cfg.Settings.ChromeBinary)
+	window := ", window " + cfg.Settings.Window
 	if err != nil {
 		add(CheckChrome, Fail, err.Error())
 	} else if v := probe.ChromeVersion(binary); v != "" {
-		add(CheckChrome, OK, v+" ("+binary+")")
+		add(CheckChrome, OK, v+" ("+binary+")"+window)
 	} else {
-		add(CheckChrome, Warn, binary+" found but `--version` failed; it may still run")
+		add(CheckChrome, Warn, binary+" found but `--version` failed; it may still run"+window)
 	}
 
 	// Profile, and whether LinkedIn is signed in there

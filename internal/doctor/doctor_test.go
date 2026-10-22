@@ -135,6 +135,15 @@ func TestEverythingPresentPasses(t *testing.T) {
 	}
 }
 
+func TestTheChromeLineSaysWhichWindowModeRuns(t *testing.T) {
+	p, l := setup(t)
+	l.Config.Settings.Window = "minimized"
+	r := Run(l, nil, p, probe(true))
+	if c := byName(r, "chrome"); !strings.Contains(c.Detail, ", window minimized") {
+		t.Errorf("window mode not reported: %+v", c)
+	}
+}
+
 func TestEnabledFeaturesNeedTheirSecrets(t *testing.T) {
 	p, l := setup(t)
 	l.Config.AI.Enabled = true

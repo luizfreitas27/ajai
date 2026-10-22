@@ -2,7 +2,7 @@
 \e[2m───────\e[0m\e[38;2;234;88;12m━━━━━\e[0m\e[2m────────────────────────────────────────────────────────────────────────────────────────\e[0m
 \e[1;38;2;234;88;12mSetup checklist\e[0m   \e[2mwhat a run needs, as `ajai doctor` checks it\e[0m
 \e[38;2;234;88;12m▌\e[0m \e[38;2;220;38;38m✗\e[0m config          no config file at ~/config.yaml; run `ajai init`
-  \e[38;2;22;163;73m✓\e[0m chrome          Chromium 152 (/usr/bin/chromium)
+  \e[38;2;22;163;73m✓\e[0m chrome          Chromium 152 (/usr/bin/chromium), window offscreen
   \e[38;2;22;163;73m✓\e[0m chrome profile  ~/chrome-profile (the ajai profile), signed in to LinkedIn
   \e[38;2;22;163;73m✓\e[0m data dir        ~
 \e[2m────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m

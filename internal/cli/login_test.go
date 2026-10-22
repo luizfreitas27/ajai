@@ -135,3 +135,16 @@ func TestLoginRefusesWhileTheProfileOrARunIsBusy(t *testing.T) {
 		t.Error("Chrome must not open while a run uses it")
 	}
 }
+
+func TestLoginShowsTheWindowWhateverSettingsWindowSays(t *testing.T) {
+	h := newHarness(t)
+	h.env["AJAI_CFG_SETTINGS_WINDOW"] = "headless"
+	br := &loginBrowser{page: &loginPage{signedInAfter: 1}}
+	opts := fakeChrome(t, br, nil)
+	if code, _, errText := h.run("login", "--timeout", "200ms"); code != 0 {
+		t.Fatalf("%d %s", code, errText)
+	}
+	if opts.Window != browser.WindowVisible || opts.HeadlessForTests {
+		t.Errorf("login opened Chrome with window %q, want %q", opts.Window, browser.WindowVisible)
+	}
+}

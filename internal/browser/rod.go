@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"testing"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/launcher/flags"
 	"github.com/go-rod/rod/lib/proto"
 
 	"github.com/luizfreitas27/ajai/internal/paths"
@@ -29,8 +29,10 @@ type Options struct {
 	DisableExtensions bool
 	// SmoothScroll scrolls elements into view smoothly (settings.smooth_scroll).
 	SmoothScroll bool
-	// HeadlessForTests is honoured ONLY by the browser-tagged tests; the CLI never sets it
-	// and a run is never headless (ADR 0001).
+	// Window is how the window is shown (settings.window); the zero value is visible.
+	Window Window
+	// HeadlessForTests is the older spelling of Window: WindowHeadless. The browser-tagged
+	// tests still set it, and Close then removes the test profile as before.
 	HeadlessForTests bool
 	// QuitOnClose: the profile is the ajai profile, so Close quits Chrome (gracefully, the
 	// profile kept) and the next run finds it free. Otherwise Close only detaches.
@@ -52,6 +54,40 @@ func exited(pid int, d time.Duration) bool {
 	return true
 }
 
+// valid reports whether w is one of the window modes (the zero value is visible).
+func (w Window) valid() bool {
+	switch w {
+	case "", WindowOffscreen, WindowMinimized, WindowVisible, WindowHeadless:
+		return true
+	}
+	return false
+}
+
+// windowFlags is what a window mode adds to Chrome's launch: its flags, and
+// whether Chrome runs headless (--headless=new). Minimizing is not a flag: Open
+// does it over CDP once the window exists.
+func windowFlags(w Window) (map[string]string, bool) {
+	switch w {
+	case WindowOffscreen:
+		return map[string]string{"window-position": "-32000,-32000", "window-size": "1280,900"}, false
+	case WindowMinimized:
+		return map[string]string{"window-size": "1280,900"}, false
+	case WindowHeadless:
+		return map[string]string{}, true
+	}
+	return map[string]string{}, false
+}
+
+// minimize puts the window that holds p into the minimized state.
+func minimize(p *rod.Page) error {
+	w, err := proto.BrowserGetWindowForTarget{}.Call(p)
+	if err != nil {
+		return err
+	}
+	return proto.BrowserSetWindowBounds{WindowID: w.WindowID,
+		Bounds: &proto.BrowserBounds{WindowState: proto.BrowserWindowStateMinimized}}.Call(p)
+}
+
 // ErrProfileInUse means the profile directory is locked by a running Chrome.
 var ErrProfileInUse = errors.New("your Chrome profile is in use: close Chrome (every window) and run again, or leave settings.chrome_profile_dir blank to use the ajai profile")
 
@@ -60,15 +96,23 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	if opts.HeadlessForTests && !testing.Testing() {
-		return nil, errors.New("a headless browser is allowed only inside a test binary (ADR 0001)")
+	window := opts.Window
+	if opts.HeadlessForTests {
+		window = WindowHeadless
 	}
+	if !window.valid() {
+		return nil, fmt.Errorf("unknown window mode %q: use offscreen, minimized, visible or headless", window)
+	}
+	winFlags, headless := windowFlags(window)
 	l := launcher.New().
-		Headless(opts.HeadlessForTests).
+		HeadlessNew(headless).
 		Leakless(false). // the user's Chrome must survive ajai exiting
 		Set("disable-blink-features", "AutomationControlled").
 		Delete("enable-automation").
 		Delete("no-startup-window")
+	for name, value := range winFlags {
+		l = l.Set(flags.Flag(name), value)
+	}
 	if opts.Bin != "" {
 		l = l.Bin(opts.Bin)
 	}
@@ -102,7 +146,12 @@ func Open(ctx context.Context, opts Options) (Browser, error) {
 	} else if main, err = b.Page(proto.TargetCreateTarget{URL: "about:blank"}); err != nil {
 		return nil, err
 	}
-	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "headless", opts.HeadlessForTests)
+	if window == WindowMinimized {
+		if err := minimize(main); err != nil {
+			opts.Logger.Warn("could not minimize Chrome's window; it stays on screen", "error", err)
+		}
+	}
+	opts.Logger.Info("chrome attached", "profile", opts.ProfileDir, "window", string(window))
 	return &rodBrowser{b: b, main: &rodPage{p: main, smooth: opts.SmoothScroll}, launcher: l, logger: opts.Logger,
 		testBrowser: opts.HeadlessForTests, quit: opts.QuitOnClose}, nil
 }

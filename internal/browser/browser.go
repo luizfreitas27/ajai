@@ -67,6 +67,19 @@ type Page interface {
 	Close() error
 }
 
+// Window is how Chrome's window is shown during a run (settings.window). The
+// zero value means visible, the launch ajai made before the setting existed.
+type Window string
+
+// The window modes. Offscreen is the config default; Headless is opt-in
+// (ADR 0003).
+const (
+	WindowOffscreen Window = "offscreen"
+	WindowMinimized Window = "minimized"
+	WindowVisible   Window = "visible"
+	WindowHeadless  Window = "headless"
+)
+
 // Opener opens Chrome: Open in production, a fake in tests.
 type Opener func(ctx context.Context, o Options) (Browser, error)
 
