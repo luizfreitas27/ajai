@@ -28,6 +28,9 @@ func (s Summary) fields(withEnded bool) [][2]string {
 			[2]string{"Failed", fmt.Sprint(s.Failed)})
 	}
 	f = append(f, [2]string{"Skipped", fmt.Sprint(s.Skipped)})
+	if s.InvitesOn || s.Invites > 0 {
+		f = append(f, [2]string{"Invites sent", fmt.Sprint(s.Invites)})
+	}
 	if s.Captured > 0 {
 		f = append(f, [2]string{"Captured", fmt.Sprintf("%d answer(s) you typed, remembered", s.Captured)})
 	}

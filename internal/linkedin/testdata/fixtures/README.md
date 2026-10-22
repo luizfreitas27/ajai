@@ -24,3 +24,36 @@ submissions … Save this job and apply tomorrow."). Its real markup was not cap
 when it shows again, capture it and check `DailyLimitXPath` still matches.
 
 `13_search_upsell.html` is the Premium upsell as the jobs search page drew it on 2026-10-21, after the Message link of a hirer was clicked there: `modal-upsell` in the main document, not in a shadow root, over the job list. The search page has no `#interop-outlet` at all, so `SendHere` finds the upsell in the document. Names fictional ("Ana", "Rafael"), the owner's photo and the profile image URLs removed, the job id and the referenceId in the Premium link replaced. `selectors_test.go` checks that `UpsellModalXPath` and `UpsellDismissXPath` still match it.
+
+Connect (`connect.go`, `connect_browser_test.go`) reads a member's profile page. The
+files below are not captured from a live page unless the entry says so.
+
+`15_profile_more_connect.html` is a 3rd-degree recruiter's profile (captured 2026-10-21): the
+More menu is `more_menu.html` as captured, with the name, slug and member URNs replaced
+(Ana Ribeiro, ana-ribeiro-fictional), and its Connect item is `/preload/custom-invite/`
+with `aria-label="Invite Ana Ribeiro to connect"`. The top card above it is synthetic: the
+Message link, Follow and More, the degree text "· 3rd", no h1 (as on LinkedIn).
+
+`16_profile_connected.html` is a 1st-degree profile: the actions markup of the captured
+`profile_connected.html` (Message link and More button, degree "· 1st") reduced to its
+top card, the name fictional. No Connect control.
+
+`20_profile_top_connect.html` is synthetic, not captured: a 3rd-degree top card whose
+Connect is a button in the card (`aria-label="Invite Ana Ribeiro to connect"`), as on
+some profiles. Message, Connect and More; no More menu.
+
+`17_invite_note_dialog.html` is synthetic, not captured: the "Add a note to your
+invitation?" dialog, with "Add a note" and `aria-label="Send without a note"`.
+
+`18_invite_email_dialog.html` is synthetic, not captured: the dialog that asks for the
+member's email ("To verify this member knows you, please enter their email address.").
+
+`19_invite_limit_notice.html` is synthetic, not captured: the weekly invitation limit notice
+("You've reached the weekly invitation limit."). Its dismiss button is the `Dismiss` close
+control.
+
+The Pending state (`aria-label="Pending, click to withdraw invitation sent to Ana Ribeiro"` on
+the control, "Pending" on the menu item) is synthetic in every fixture: it is the test page's
+own relabelling after a send, and the test edits 15 and 20 to show it. Capture a real sent
+invite (and the three dialogs above) and check `InviteEmailDialogXPath`,
+`InviteLimitDialogXPath`, `InviteSendWithoutNoteXPath` and `TopCardPendingXPath` still match.

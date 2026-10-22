@@ -55,6 +55,9 @@ type Site interface {
 	// SendHere is SendMessage on the page shown, the job just applied to, without
 	// opening its job page (messages.auto_send).
 	SendHere(ctx context.Context, to messages.Recipient, text string) (linkedin.SendResult, error)
+	// Connect sends a connection invite, without a note, to the hirer to
+	// (messages.connect); see linkedin.ConnectResult.
+	Connect(ctx context.Context, to messages.Recipient) (linkedin.ConnectResult, error)
 }
 
 // Applier works one Easy Apply modal; apply.Applier in production.
@@ -136,6 +139,10 @@ type Summary struct {
 	WouldApply int    `json:"would_apply"`
 	// Captured counts answers the user typed during help pauses and ajai remembered.
 	Captured int `json:"captured"`
+	// Invites is how many connection invites the run sent; InvitesOn says whether
+	// messages.connect was on, so the summary shows the count even at zero.
+	Invites   int  `json:"invites"`
+	InvitesOn bool `json:"invites_on"`
 	// PendingAnswers is the review queue's size when the run ended.
 	PendingAnswers int `json:"pending_answers"`
 	// Reason says, in words, why the run ended; End says it for code.
@@ -202,7 +209,9 @@ type Runner struct {
 	sendsStopped  bool // a send was blocked (or cut short) in this run: no more are tried
 
 	started    time.Time
-	inProgress *Summary // the summary run() is filling, for Run's crash path
+	inProgress *Summary    // the summary run() is filling, for Run's crash path
+	term       string      // the search term being walked, for the state file
+	job        *CurrentJob // the job being handled, for the state file; nil between jobs
 }
 
 func (r *Runner) emit(kind EventKind, text string, card *linkedin.Card) {
@@ -247,10 +256,27 @@ func (r *Runner) saveState(sum *Summary, term string) {
 		return
 	}
 	st := State{PID: os.Getpid(), Started: r.started, RunID: sum.RunID, DryRun: sum.DryRun, Market: sum.Market,
-		Applied: sum.Applied, External: sum.External, Failed: sum.Failed, Skipped: sum.Skipped, WouldApply: sum.WouldApply, Term: term}
+		Applied: sum.Applied, External: sum.External, Failed: sum.Failed, Skipped: sum.Skipped, WouldApply: sum.WouldApply, Term: term,
+		Job: r.job}
 	if err := WriteState(r.StatePath, st); err != nil {
 		r.Logger.Warn("could not write the run state", "error", err)
 	}
+}
+
+// setJob makes the job c the one the run is on, at step, and saves the state.
+func (r *Runner) setJob(sum *Summary, c linkedin.Card, step string) {
+	r.job = &CurrentJob{ID: c.ID, Title: c.Title, Company: c.Company, Location: c.Location, Step: step, Since: r.Now()}
+	r.saveState(sum, r.term)
+}
+
+// endJob clears the job from the state, once it is done (or the card was passed
+// over), and saves the state if there was one.
+func (r *Runner) endJob(sum *Summary) {
+	if r.job == nil {
+		return
+	}
+	r.job = nil
+	r.saveState(sum, r.term)
 }
 
 // Run executes one run and returns its summary. A cancelled context ends the
@@ -283,8 +309,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (sum Summary, err error)
 	}
 	// Only a cancel that lands during the send phase is reclassified here; a run
 	// the loop already stopped has emitted its limit and must not stop twice.
-	if err == nil && !opts.DryRun && r.Cfg.Messages.Enabled && ctx.Err() == nil {
+	if err == nil && !opts.DryRun && (r.Cfg.Messages.Enabled || r.Cfg.Messages.Connect) && ctx.Err() == nil {
 		r.sendMessages(ctx)
+		sum.Invites += r.sendInvites(ctx)
 		if ctx.Err() != nil { // stopped while sending: the cause is recorded as an in-run stop's is
 			sum, err = r.stop(ctx, &sum, ctx.Err())
 		}
@@ -352,7 +379,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 	}
 	r.started = r.Now()
 	r.sendsStopped = false
-	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun}
+	sum := Summary{Market: string(r.Market.Name), DryRun: opts.DryRun, InvitesOn: r.Cfg.Messages.Connect}
 	r.inProgress = &sum
 	r.endAbandoned()
 	id, err := r.Store.StartRun(context.Background(), sum.Market, opts.DryRun) // the record must exist even when ctx is already cancelled
@@ -394,6 +421,7 @@ func (r *Runner) run(ctx context.Context, opts Options) (Summary, error) {
 
 	for _, term := range terms {
 		r.emit(EventTerm, term, nil)
+		r.term = term
 		r.saveState(&sum, term)
 		if err := r.Site.Search(ctx, term); err != nil {
 			return r.stop(ctx, &sum, err)
@@ -485,6 +513,8 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		r.Logger.Warn("unreadable card", "error", err)
 		return cardPassed, nil
 	}
+	r.setJob(sum, c, StepOpening)
+	defer r.endJob(sum)
 	job := screening.Job{ID: c.ID, Title: c.Title, Company: c.Company, AlreadyApplied: c.AlreadyApplied}
 	if v := rules.Card(job, st.blacklisted, st.rejected, st.applied); v.Skip {
 		// Counted, not stored: LinkedIn's own badge and our history are not new facts about the job.
@@ -522,6 +552,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, nil
 	}
 	job.AboutCompany = r.Site.AboutCompany()
+	r.setJob(sum, c, StepScreening)
 	if v := rules.Company(job); v.Skip {
 		st.reject(c)
 		if v.BlacklistCompany {
@@ -582,6 +613,7 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 	if !posted.IsZero() {
 		row.DatePosted = store.Timestamp(posted)
 	}
+	r.setJob(sum, c, StepApplying)
 	outcome, err := r.Applier.Apply(ctx, c, button, apply.Options{DryRun: opts.DryRun, ResumePath: r.ResumePath,
 		FollowCompanies: r.Cfg.Settings.FollowCompanies, Description: job.Description})
 	row.Resume, row.Screenshot = outcome.Resume, outcome.Screenshot
@@ -635,8 +667,10 @@ func (r *Runner) handleCard(ctx context.Context, sum *Summary, opts Options, rul
 		return cardPassed, err
 	}
 	if row.Outcome == store.Applied && !opts.DryRun {
-		r.queueMessage(ctx, c, job.Description, sum.RunID)
+		r.setJob(sum, c, StepMessaging)
+		r.queueRecruiter(ctx, c, job.Description, sum.RunID)
 	}
+	r.endJob(sum) // done with the job before any pause between jobs
 	if ctx.Err() != nil {
 		return cardPassed, ctx.Err()
 	}

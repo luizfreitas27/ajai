@@ -288,6 +288,35 @@ func TestHiringTeamSelectorsMatchTheSearchPane(t *testing.T) {
 	}
 }
 
+// The search pane's Message control since 2026-10-21 is a button with the text
+// "Message" and no send-privately icon (fixture 14), and the pane draws a
+// "People you can reach out to" section before the hiring team.
+func TestHiringTeamSelectorsMatchThePaneWithATextMessageButton(t *testing.T) {
+	pane := fixture(t, "14_search_pane_text_message_button.html")
+	if count(t, pane, HiringTeamSectionXPath) != 2 {
+		t.Fatalf("hiring team sections = %d, want 2 (connections, then the hiring team)", count(t, pane, HiringTeamSectionXPath))
+	}
+	var hiring *html.Node
+	for _, section := range htmlquery.Find(pane, HiringTeamSectionXPath) {
+		if count(t, section, HirerInSectionXPath) > 0 || count(t, section, HirerProfileLinkXPath) > 0 {
+			hiring = section
+		}
+	}
+	if hiring == nil {
+		t.Fatal("no section holds a hirer's profile link")
+	}
+	if count(t, hiring, HirerMessageXPath) != 1 {
+		t.Fatal("the text Message button is not found")
+	}
+	card := one(t, hiring, HirerCardXPath)
+	if count(t, card, HirerMessageXPath) != 1 || count(t, card, HirerProfileLinkXPath) != 2 {
+		t.Error("the card does not hold the hirer's profile links and its Message button together")
+	}
+	if text(one(t, card, HirerNameXPath)) != "Bruno Tavares" {
+		t.Errorf("hirer name %q", text(one(t, card, HirerNameXPath)))
+	}
+}
+
 func TestHiringTeamSelectorsOnAnEmptySlot(t *testing.T) {
 	team := fixture(t, "10_no_hiring_team.html")
 	if count(t, team, HiringTeamSectionXPath) != 1 {
@@ -410,4 +439,90 @@ func attr(n *html.Node, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ------------------------------------------------------------ connect (15 to 20)
+func TestConnectSelectorsOnTheMoreMenuOfAThirdDegreeProfile(t *testing.T) {
+	doc := fixture(t, "15_profile_more_connect.html")
+	one(t, doc, ProfileMoreXPath)
+	if count(t, doc, TopCardDegreeXPath) != 0 {
+		t.Error("a 3rd-degree profile matched the 1st-degree text")
+	}
+	if count(t, doc, TopCardConnectXPath) != 0 {
+		t.Error("Connect is in the top card of this profile; it is only in More")
+	}
+	one(t, doc, MenuXPath)
+	item := one(t, doc, MenuConnectXPath)
+	if got := text(item); got != "Connect" {
+		t.Errorf("the Connect item reads %q", got)
+	}
+	if count(t, doc, MenuPendingXPath) != 0 {
+		t.Error("a fresh Connect item matched Pending")
+	}
+}
+
+func TestConnectSelectorsOnAFirstDegreeProfile(t *testing.T) {
+	doc := fixture(t, "16_profile_connected.html")
+	one(t, doc, TopCardDegreeXPath)
+	one(t, doc, ProfileMoreXPath)
+	if count(t, doc, TopCardConnectXPath) != 0 || count(t, doc, TopCardPendingXPath) != 0 {
+		t.Error("a 1st-degree profile offers no invite")
+	}
+}
+
+func TestConnectSelectorsOnATopCardConnectButton(t *testing.T) {
+	doc := fixture(t, "20_profile_top_connect.html")
+	one(t, doc, TopCardConnectXPath)
+	one(t, doc, ProfileMoreXPath)
+}
+
+func TestInviteDialogSelectors(t *testing.T) {
+	note := fixture(t, "17_invite_note_dialog.html")
+	one(t, note, InviteSendWithoutNoteXPath)
+	one(t, note, InviteDialogXPath)
+	one(t, note, FromDocument(InviteDismissXPath))
+	email := fixture(t, "18_invite_email_dialog.html")
+	one(t, email, InviteEmailDialogXPath)
+	one(t, email, FromDocument(InviteDismissXPath))
+	limit := fixture(t, "19_invite_limit_notice.html")
+	one(t, limit, InviteLimitDialogXPath)
+	one(t, limit, FromDocument(InviteDismissXPath))
+	if count(t, note, InviteEmailDialogXPath) != 0 || count(t, email, InviteLimitDialogXPath) != 0 {
+		t.Error("an invite dialog matched another dialog's text")
+	}
+}
+
+// TestConnectPendingSelectorsMatchAnInviteSent: once an invite is out, the top
+// card's control and the More menu's item read Pending (synthetic relabelling
+// of fixtures 20 and 15; LinkedIn's Pending label is not captured yet).
+func TestConnectPendingSelectorsMatchAnInviteSent(t *testing.T) {
+	const pending = `aria-label="Pending, click to withdraw invitation sent to Ana Ribeiro"`
+	top, err := htmlquery.Parse(strings.NewReader(strings.ReplaceAll(readFixtureText(t, "20_profile_top_connect.html"),
+		`aria-label="Invite Ana Ribeiro to connect"`, pending)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one(t, top, TopCardPendingXPath)
+	if count(t, top, TopCardConnectXPath) != 0 {
+		t.Error("a pending invite still offers Connect in the top card")
+	}
+	menu, err := htmlquery.Parse(strings.NewReader(strings.ReplaceAll(readFixtureText(t, "15_profile_more_connect.html"),
+		`aria-label="Invite Ana Ribeiro to connect"`, pending)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one(t, menu, MenuPendingXPath)
+	if count(t, menu, MenuConnectXPath) != 0 {
+		t.Error("a pending invite still offers Connect on the menu")
+	}
+}
+
+// readFixtureText is a fixture's text, for a test that edits it first.
+func readFixtureText(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "fixtures", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

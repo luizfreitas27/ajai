@@ -69,14 +69,24 @@ type fakeSite struct {
 	linkFails  bool // the external application's tab does not open
 	openErr    error
 
-	hirers   map[string]hirer                            // per job id: the hiring team its page shows
-	hirerErr error                                       // HiringTeam fails
-	sends    []sendCall                                  // every SendMessage call, in order
-	sendFunc func(sendCall) (linkedin.SendResult, error) // nil: every send goes out
-	log      []string                                    // "pause" and "send", in order
-	here     []hereCall                                  // every SendHere call, in order
-	hereFunc func(hereCall) (linkedin.SendResult, error) // nil: every send here goes out
-	visited  []string                                    // every JobHiringTeam job id, in order
+	hirers      map[string]hirer                                         // per job id: the hiring team its page shows
+	hirerErr    error                                                    // HiringTeam fails
+	sends       []sendCall                                               // every SendMessage call, in order
+	sendFunc    func(sendCall) (linkedin.SendResult, error)              // nil: every send goes out
+	log         []string                                                 // "pause" and "send", in order
+	here        []hereCall                                               // every SendHere call, in order
+	hereFunc    func(hereCall) (linkedin.SendResult, error)              // nil: every send here goes out
+	visited     []string                                                 // every JobHiringTeam job id, in order
+	connects    []messages.Recipient                                     // every Connect call, in order
+	connectFunc func(messages.Recipient) (linkedin.ConnectResult, error) // nil: every invite goes out
+}
+
+func (f *fakeSite) Connect(_ context.Context, to messages.Recipient) (linkedin.ConnectResult, error) {
+	f.connects = append(f.connects, to)
+	if f.connectFunc != nil {
+		return f.connectFunc(to)
+	}
+	return linkedin.ConnectSent, nil
 }
 
 // hereCall is one SendHere: whom, what, and the card open at the time.
@@ -794,4 +804,44 @@ func (c *coveredOnce) OpenCard(ctx context.Context, card browser.Element) error 
 	}
 	c.done = true
 	return c.err
+}
+
+// stateProbe reads the state file while the applier works on a job.
+type stateProbe struct {
+	path string
+	seen []State
+	err  error
+}
+
+func (p *stateProbe) Apply(_ context.Context, _ linkedin.Card, _ browser.Element, _ apply.Options) (apply.Outcome, error) {
+	s, err := ReadState(p.path)
+	p.seen, p.err = append(p.seen, s), errors.Join(p.err, err)
+	return apply.Outcome{Kind: apply.Applied}, nil
+}
+
+func TestTheStateNamesTheJobTheApplierIsWorkingOn(t *testing.T) {
+	site := &fakeSite{jobs: map[string]fakeJob{"1": job("1", "Go Dev", "ACME", "Go"), "2": job("2", "Backend", "Initech", "Go")},
+		pages: [][]string{{"1", "2"}}}
+	r, _, _ := runner(t, site, cfg())
+	probe := &stateProbe{path: r.StatePath}
+	r.Applier = probe
+	if _, err := r.Run(context.Background(), Options{}); err != nil || probe.err != nil {
+		t.Fatalf("run: %v, reading the state: %v", err, probe.err)
+	}
+	clock := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) // runner's Now
+	want := []CurrentJob{{ID: "1", Title: "Go Dev", Company: "ACME", Location: "Remote", Step: StepApplying, Since: clock},
+		{ID: "2", Title: "Backend", Company: "Initech", Location: "Remote", Step: StepApplying, Since: clock}}
+	if len(probe.seen) != len(want) {
+		t.Fatalf("the applier ran %d times, want %d", len(probe.seen), len(want))
+	}
+	for i, w := range want {
+		got := probe.seen[i].Job
+		if got == nil || got.ID != w.ID || got.Title != w.Title || got.Company != w.Company || got.Location != w.Location ||
+			got.Step != w.Step || !got.Since.Equal(w.Since) {
+			t.Errorf("during job %s the state said %+v, want %+v", w.ID, got, w)
+		}
+	}
+	if _, err := ReadState(r.StatePath); !errors.Is(err, ErrNoState) {
+		t.Errorf("the state file should be gone once the run ends: %v", err)
+	}
 }

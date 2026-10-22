@@ -24,6 +24,7 @@ const (
 	OriginTelegram Origin = "telegram"
 	OriginTUI      Origin = "tui"      // a run the TUI started, in a process of its own
 	OriginMessages Origin = "messages" // ajai messages send: it only sends recruiter messages
+	OriginWeb      Origin = "web"      // a run the web front started (ajai serve), in a process of its own
 )
 
 // Holder is who holds the run lock.
@@ -57,6 +58,8 @@ func (h Holder) From() string {
 		return "the TUI"
 	case h.Origin == OriginMessages:
 		return "ajai messages send"
+	case h.Origin == OriginWeb:
+		return "the web front"
 	}
 	return "the " + string(h.Origin)
 }

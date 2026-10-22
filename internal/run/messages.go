@@ -9,20 +9,45 @@ import (
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
-// queueMessage queues the recruiter message for a job just applied to, or records
-// that the job had no hirer to message. A problem is logged and never fails the
-// application: the job is already recorded as applied.
-func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description string, runID int64) {
-	if !r.Cfg.Messages.Enabled {
-		return
-	}
-	template := r.templateFor(messages.DetectLanguage(c.Title + "\n" + description))
-	if strings.TrimSpace(template) == "" {
+// queueRecruiter reads the hirer of a job just applied to, then queues what the
+// settings ask for: the recruiter message (messages.enabled) and the connection
+// invite (messages.connect). A problem is logged and never fails the application:
+// the job is already recorded as applied.
+func (r *Runner) queueRecruiter(ctx context.Context, c linkedin.Card, description string, runID int64) {
+	if !r.Cfg.Messages.Enabled && !r.Cfg.Messages.Connect {
 		return
 	}
 	to, ok, err := r.Site.HiringTeam(ctx)
 	if err != nil {
 		r.Logger.Warn("could not read the hiring team", "job", c.ID, "error", err)
+		return
+	}
+	if r.Cfg.Messages.Connect && ok && to.URL != "" { // a hirer without a profile URL cannot be keyed
+		r.queueInvite(c, to, runID)
+	}
+	if r.Cfg.Messages.Enabled {
+		r.queueMessage(ctx, c, description, runID, to, ok)
+	}
+}
+
+// queueInvite queues a connection invite to the hirer of a job just applied to.
+// A recruiter is invited once, ever, so one already invited is left alone.
+func (r *Runner) queueInvite(c linkedin.Card, to messages.Recipient, runID int64) {
+	inserted, err := r.Store.QueueInvite(store.Invite{JobID: c.ID, RunID: runID, RecipientName: to.Name, RecipientURL: to.URL})
+	if err != nil {
+		r.Logger.Warn("could not queue the connection invite", "job", c.ID, "error", err)
+		return
+	}
+	if inserted {
+		r.Logger.Info("invite queued", "job", c.ID, "recipient", to.Name)
+	}
+}
+
+// queueMessage queues the recruiter message for a job just applied to, or records
+// that the job had no hirer to message. to and ok are the hirer read by queueRecruiter.
+func (r *Runner) queueMessage(ctx context.Context, c linkedin.Card, description string, runID int64, to messages.Recipient, ok bool) {
+	template := r.templateFor(messages.DetectLanguage(c.Title + "\n" + description))
+	if strings.TrimSpace(template) == "" {
 		return
 	}
 	m := store.Message{JobID: c.ID, RunID: runID, State: store.MessageNoRecipient}

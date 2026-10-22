@@ -30,6 +30,7 @@ type Session struct {
 	// ScreenshotDir receives a screenshot of a card something stays drawn over; "" disables it.
 	ScreenshotDir string
 	jobBase       string // where job pages are, JobURL when blank; tests serve their own
+	profileBase   string // where member profiles are, https://www.linkedin.com/in/ when blank; tests serve their own
 }
 
 // NewSession wires a session; br and logger may be nil.
@@ -121,6 +122,29 @@ func (s *Session) TypeHuman(ctx context.Context, el browser.Element, text string
 		}
 	}
 	return nil
+}
+
+// PasteText puts text into el as one insertion per line, as a clipboard paste
+// would, instead of typing it. A line break is Shift+Enter, which breaks the
+// line in a message box where Enter sends.
+func (s *Session) PasteText(ctx context.Context, el browser.Element, text string) error {
+	for i, line := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if i > 0 {
+			if err := s.Page.Press("Shift+Enter"); err != nil {
+				return err
+			}
+		}
+		if line == "" {
+			continue
+		}
+		if err := el.Input(line); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
 }
 
 // TextXPath matches a tag whose text contains text, ignoring ASCII case (the
@@ -581,35 +605,34 @@ func (s *Session) HiringTeam(ctx context.Context) (messages.Recipient, bool, err
 	return to, ok, err
 }
 
-// hirer is HiringTeam with the hirer's card.
+// hirer is HiringTeam with the hirer's card. The pane may draw another section
+// before the hiring team (People you can reach out to), so every section is read.
 func (s *Session) hirer() (messages.Recipient, browser.Element, bool, error) {
-	section, err := s.Page.Element(HiringTeamSectionXPath)
-	var missing *browser.ErrNotFound
-	if errors.As(err, &missing) {
-		return messages.Recipient{}, nil, false, nil
-	}
+	sections, err := s.Page.Elements(HiringTeamSectionXPath)
 	if err != nil {
 		return messages.Recipient{}, nil, false, err
 	}
-	cards, err := section.Elements(HirerCardXPath)
-	if err != nil {
-		return messages.Recipient{}, nil, false, err
-	}
-	for _, card := range cards {
-		link, err := card.Element(HirerProfileLinkXPath)
+	for _, section := range sections {
+		cards, err := section.Elements(HirerCardXPath)
 		if err != nil {
 			return messages.Recipient{}, nil, false, err
 		}
-		href, _ := link.Attr("href")
-		profile, ok := NormaliseProfileURL(href)
-		if !ok {
-			continue
+		for _, card := range cards {
+			link, err := card.Element(HirerProfileLinkXPath)
+			if err != nil {
+				return messages.Recipient{}, nil, false, err
+			}
+			href, _ := link.Attr("href")
+			profile, ok := NormaliseProfileURL(href)
+			if !ok {
+				continue
+			}
+			var name string
+			if el, err := card.Element(HirerNameXPath); err == nil {
+				name, _ = el.Text()
+			}
+			return messages.Recipient{Name: strings.TrimSpace(name), URL: profile}, card, true, nil
 		}
-		var name string
-		if el, err := card.Element(HirerNameXPath); err == nil {
-			name, _ = el.Text()
-		}
-		return messages.Recipient{Name: strings.TrimSpace(name), URL: profile}, card, true, nil
 	}
 	return messages.Recipient{}, nil, false, nil
 }
@@ -776,7 +799,7 @@ func (s *Session) composeAndSend(ctx context.Context, card browser.Element, to m
 	if err != nil {
 		return "", err
 	}
-	if err := s.TypeHuman(ctx, box, text); err != nil {
+	if err := s.PasteText(ctx, box, text); err != nil {
 		return "", err
 	}
 	if err := s.Pacer.BetweenActions(ctx); err != nil {

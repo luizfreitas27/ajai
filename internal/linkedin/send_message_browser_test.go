@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,8 @@ document.addEventListener("click", e => {
   const bubble = root.querySelector('[role="dialog"]');
   if (box && MODE === "draft") box.innerText = "Draft: ";
   if (box) box.addEventListener("input", () => { send.disabled = box.innerText.trim() === ""; });
+  // data-inputs counts the box's beforeinput events: one per insertion.
+  if (box) box.addEventListener("beforeinput", () => mark("inputs", String(Number(document.body.dataset.inputs || 0) + 1)));
   // MODE "late": the first keystroke makes the compose an InMail, as if LinkedIn
   // showed its credits only once the box was in use.
   if (box && MODE === "late") box.addEventListener("input", () => {
@@ -196,6 +199,34 @@ func TestSendMessageSendsAFreeMessage(t *testing.T) {
 		}
 		if recorded(t, s, "closed") != "yes" {
 			t.Errorf("%s: the bubble was left open", name)
+		}
+	}
+}
+
+// TestSendMessagePastesEachLineAtOnce: the approved text goes into the box in
+// one insertion per line (a line break is its own Shift+Enter), not one per
+// character, and the sent text is the approved text.
+func TestSendMessagePastesEachLineAtOnce(t *testing.T) {
+	cases := map[string]struct {
+		text     string
+		maxInput int // one insertion per line, plus one per line break
+	}{
+		"one line":  {"Olá Ana, I just applied to the Go role.", 1},
+		"two lines": {note, 3},
+	}
+	for name, c := range cases {
+		s := messagePage(t, "08_message_overlay.html", "", false)
+		got, err := s.SendMessage(context.Background(), ana, "4100000001", c.text)
+		if err != nil || got != SendSent {
+			t.Errorf("%s: SendMessage = %q, %v; want sent", name, got, err)
+			continue
+		}
+		n, err := strconv.Atoi(recorded(t, s, "inputs"))
+		if err != nil || n < 1 || n > c.maxInput {
+			t.Errorf("%s: the box got %d insertions, want 1 to %d", name, n, c.maxInput)
+		}
+		if sent := recorded(t, s, "sent-text"); strings.Join(strings.Fields(sent), " ") != strings.Join(strings.Fields(c.text), " ") {
+			t.Errorf("%s: the box held %q when sent, want %q", name, sent, c.text)
 		}
 	}
 }

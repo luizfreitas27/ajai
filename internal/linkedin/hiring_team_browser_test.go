@@ -85,6 +85,20 @@ func TestHiringTeamReadsTheSearchPane(t *testing.T) {
 	}
 }
 
+// TestHiringTeamReadsThePaneWhenItsFirstSectionIsTheConnectionsCard reads the
+// hirer of the pane's hiring team when the section before it is "People you can
+// reach out to", which holds no hirer, and the Message control is a text button.
+func TestHiringTeamReadsThePaneWhenItsFirstSectionIsTheConnectionsCard(t *testing.T) {
+	s := hiringTeamPage(t, "14_search_pane_text_message_button.html")
+	got, ok, err := s.HiringTeam(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != (messages.Recipient{Name: "Bruno Tavares", URL: "https://www.linkedin.com/in/bruno-tavares-fictional"}) {
+		t.Errorf("HiringTeam = %+v, %v", got, ok)
+	}
+}
+
 // TestHiringTeamSkipsAHirerWithoutAMessageButton never pairs a hirer with the
 // next hirer's button: the first hirer with a button of their own is read.
 func TestHiringTeamSkipsAHirerWithoutAMessageButton(t *testing.T) {
@@ -107,7 +121,8 @@ func TestHiringTeamWithoutAMessageButtonOrWithoutAHirer(t *testing.T) {
 		"a hirer with no Message control": hiringTeamPage(t, "07_hiring_team.html",
 			`aria-label="Message"`, `aria-label="Connect"`),
 		"a search pane hirer with no Message button": hiringTeamPage(t, "11_search_pane_hiring_team.html",
-			`data-test-icon="send-privately-small"`, `data-test-icon="connect-small"`),
+			`data-test-icon="send-privately-small"`, `data-test-icon="connect-small"`,
+			"    Message\n</span>", "    Connect\n</span>"),
 	} {
 		got, ok, err := s.HiringTeam(context.Background())
 		if err != nil || ok || got != (messages.Recipient{}) {

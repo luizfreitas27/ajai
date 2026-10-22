@@ -107,8 +107,9 @@ const (
 // The hiring team ("Meet the hiring team") in its two layouts: the job page's
 // slot (fixtures 07 and 10), with an aria-label="Message" link to
 // /messaging/compose/, and the search page's details pane (fixture 11), an older
-// layout with no slot id whose Message control is a button with the
-// send-privately icon and no href. HirerCardXPath, within the section, is the
+// layout with no slot id whose Message control is a button with no href, marked
+// by the send-privately icon (fixture 11) or, since 2026-10-21, by its text
+// alone (fixture 14). HirerCardXPath, within the section, is the
 // nearest element holding a Message control whose profile links all go to one
 // hirer (the pane links the photo and the name), so a profile is never paired
 // with another hirer's button. The card is also kept inside the section, so
@@ -117,8 +118,8 @@ const (
 const (
 	HiringTeamSectionXPath = `//div[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_")] | //div[contains(@class,"job-details-people-who-can-help__section")]`
 	HirerProfileLinkXPath  = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]`
-	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] | .//button[.//*[@data-test-icon="send-privately-small"]]`
-	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] or .//button[.//*[@data-test-icon="send-privately-small"]]][not(.//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href != .//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href)][ancestor-or-self::*[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_") or contains(@class,"job-details-people-who-can-help__section")]][1]`
+	HirerMessageXPath      = `.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] | .//button[.//*[@data-test-icon="send-privately-small"]] | .//button[normalize-space(.)="Message"]`
+	HirerCardXPath         = `.//a[starts-with(@href,"https://www.linkedin.com/in/")]/ancestor::*[.//a[@aria-label="Message" and starts-with(@href,"/messaging/compose/")] or .//button[.//*[@data-test-icon="send-privately-small"]] or .//button[normalize-space(.)="Message"]][not(.//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href != .//a[starts-with(@href,"https://www.linkedin.com/in/")]/@href)][ancestor-or-self::*[starts-with(@id,"JobDetailsPeopleWhoCanHelpSlot_") or contains(@class,"job-details-people-who-can-help__section")]][1]`
 	HirerNameXPath         = `(.//a[starts-with(@href,"https://www.linkedin.com/in/")]//p | .//a[starts-with(@href,"https://www.linkedin.com/in/")]//strong)[1]`
 )
 
@@ -153,6 +154,36 @@ const (
 	// yet (see testdata/fixtures/README.md): the send is confirmed by the box
 	// emptying as well.
 	SentMessageBodyXPath = `//*[contains(@class,"msg-s-event-listitem__body")]`
+)
+
+// Connecting from a profile page (connect.go). The top card is the section
+// holding the More button: LinkedIn's actions row (Message, Follow or Connect,
+// More) sits in it, and so does the degree text ("· 1st"). Connect is a button
+// in the card on some profiles, and an item of the More menu on others, where
+// the menu item's own aria-label is on a div inside it. The invite's outcome is
+// read from the aria-labels and dialog text, never from generated classes
+// (fixtures 15, 16, 17, 18, 19, 20; 17 to 19 are synthetic).
+const (
+	ProfileMoreXPath    = `//button[@aria-label="More"]`
+	ProfileTopCard      = `(//button[@aria-label="More"]/ancestor::section[1])[1]`
+	FirstDegreeText     = "· 1st"
+	ConnectLabelCond    = `starts-with(@aria-label,"Invite ") and contains(@aria-label," to connect")`
+	TopCardDegreeXPath  = ProfileTopCard + `//*[text()[contains(., "· 1st")]]`
+	TopCardConnectXPath = ProfileTopCard + `//button[` + ConnectLabelCond + `]`
+	TopCardPendingXPath = ProfileTopCard + `//*[starts-with(@aria-label,"Pending")]`
+	MenuXPath           = `//*[@role="menu"]`
+	MenuConnectXPath    = `//*[@role="menuitem"][.//*[` + ConnectLabelCond + `]]`
+	// MenuPendingXPath is the Connect item once the invite is out: LinkedIn
+	// relabels it Pending (or offers Withdraw).
+	MenuPendingXPath = `//*[@role="menuitem"][.//*[starts-with(@aria-label,"Pending") or normalize-space(.)="Pending" or normalize-space(.)="Withdraw"]]`
+	// The invite dialogs. The note dialog offers "Send without a note" (its
+	// "Add a note" is never clicked); the other two only ask to be dismissed.
+	InviteSendWithoutNoteXPath = `//*[@role="dialog"]//button[@aria-label="Send without a note"]`
+	InviteEmailDialogXPath     = `//*[@role="dialog"][contains(., "To verify this member knows you")]`
+	InviteLimitDialogXPath     = `//*[@role="dialog"][contains(., "reached the weekly invitation limit")]`
+	InviteDialogXPath          = `//*[@role="dialog"]`
+	// InviteDismissXPath, within a dialog, closes it.
+	InviteDismissXPath = `.//button[@aria-label="Dismiss" or @data-test-modal-close-btn]`
 )
 
 // PaginationClasses are tried in order to find the results pager.

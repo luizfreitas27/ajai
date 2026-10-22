@@ -28,7 +28,27 @@ type State struct {
 	Term       string    `json:"term"`
 	// NextRun is set while a non-stop session waits between runs.
 	NextRun time.Time `json:"next_run,omitempty"`
+	// Job is the job card the run is on, nil between jobs and searches.
+	Job *CurrentJob `json:"job,omitempty"`
 }
+
+// CurrentJob is the job a run is working on and the step it is in.
+type CurrentJob struct {
+	ID       string    `json:"id"`
+	Title    string    `json:"title"`
+	Company  string    `json:"company"`
+	Location string    `json:"location"`
+	Step     string    `json:"step"`
+	Since    time.Time `json:"since"` // when Step started
+}
+
+// The steps of a job, in the order the loop reaches them.
+const (
+	StepOpening   = "opening"   // the card is open and its details are read
+	StepScreening = "screening" // the skip rules decide whether to apply
+	StepApplying  = "applying"  // the Easy Apply modal is being filled in and sent
+	StepMessaging = "messaging" // the recruiter message or invite is queued
+)
 
 // StateFileName is the file's name inside the data directory.
 const StateFileName = "run.pid"
