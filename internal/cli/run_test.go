@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/luizfreitas27/ajai/internal/browser"
 	"github.com/luizfreitas27/ajai/internal/notify"
@@ -181,5 +182,19 @@ func TestRunFromTheTUIRecordsItsOriginAndLogsWhyItCouldNotStart(t *testing.T) {
 	}
 	if _, out, _ := h.run("run", "--help"); strings.Contains(out, "--origin") {
 		t.Error("--origin is not for people")
+	}
+}
+
+func TestRunAcceptsTheWebFrontsOrigin(t *testing.T) {
+	h := newHarness(t)
+	h.initValid()
+	lock, err := run.AcquireLock(h.home, run.Holder{Origin: run.OriginSchedule, Started: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	code, _, errText := h.run("run", "--unattended", "--origin", "web")
+	if code == 0 || strings.Contains(errText, "unknown --origin") || !strings.Contains(errText, "another run is in progress") {
+		t.Errorf("--origin web must be accepted and refused only by the lock: %d %s", code, errText)
 	}
 }

@@ -62,6 +62,8 @@ else on stdout.`,
 			case "":
 			case string(run.OriginTUI):
 				from = run.OriginTUI
+			case string(run.OriginWeb):
+				from = run.OriginWeb
 			default:
 				err := fmt.Errorf("unknown --origin %q", origin)
 				run.LogStartFailure(a.logger, err)
@@ -134,7 +136,7 @@ else on stdout.`,
 	f.StringVar(&terms, "terms", "", "search terms for this run, comma-separated (overrides the config)")
 	f.StringVar(&opts.Location, "location", "", "search location for this run (overrides the config)")
 	f.StringVar(&market, "market", "", "market for this run: brasil or internacional")
-	f.StringVar(&origin, "origin", "", "who starts the run: tui (the TUI's own runs)")
+	f.StringVar(&origin, "origin", "", "who starts the run: tui or web (the TUI's or the web front's own runs)")
 	_ = f.MarkHidden("origin")
 	f.BoolVar(&a.eventsAsJSON, "json", false, "print events and summaries as JSON lines (implies --unattended)")
 	return cmd
