@@ -42,6 +42,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (path: string, data: unknown) =>
   request<unknown>(path, { method: 'POST', body: JSON.stringify(data) });
 
+const put = (path: string, data: unknown) =>
+  request<unknown>(path, { method: 'PUT', body: JSON.stringify(data) });
+
 export const api = {
   runs: (limit = 20) => request<import('./types').Run[]>(`/api/runs?limit=${limit}`),
   startRun: (market: string, dryRun: boolean) =>
@@ -72,4 +75,9 @@ export const api = {
       `/api/answers/${encodeURIComponent(id)}/approve`,
       blank ? { digest, blank: true } : answer === undefined ? { digest } : { digest, answer },
     ),
+
+  config: () => request<import('./types').ConfigResponse>('/api/config'),
+  // value is in `ajai config set` form: lists comma-separated, bools "true"/"false".
+  setConfig: (key: string, value: string) =>
+    put(`/api/config/${encodeURIComponent(key)}`, { value }) as Promise<import('./types').ConfigSaved>,
 };

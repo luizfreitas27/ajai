@@ -26,14 +26,6 @@ const (
 	configDetailLines = 6
 )
 
-// readAtDaemonStart are what the daemon reads once, when it starts: changing
-// one needs a restart. It re-reads every other setting for every run.
-var readAtDaemonStart = map[string]string{
-	config.EnvTelegramBotToken: "it reads Telegram's settings when it starts",
-	config.EnvTelegramChatID:   "it reads Telegram's settings when it starts",
-	"settings.log_level":       "it sets its log level when it starts",
-}
-
 // configTab is the Config tab: the three secrets, shown only as set or not and
 // typed into a masked field that saves them in ajai's .env; then every setting
 // by section, as the config file alone has it (an override, from the
@@ -466,7 +458,7 @@ func daemonNote(d Deps, name string, n notice, setting bool) notice {
 	if _, running, _ := daemon.ReadLock(d.Paths.DataDir); !running {
 		return n
 	}
-	switch why, ok := readAtDaemonStart[name]; {
+	switch why, ok := config.ReadAtDaemonStart[name]; {
 	case ok:
 		n.level = levelWarn
 		n.text += " Restart the daemon to use it: " + why + "."

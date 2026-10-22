@@ -5,6 +5,7 @@ import { Jobs } from './pages/Jobs';
 import { Messages } from './pages/Messages';
 import { Invites } from './pages/Invites';
 import { Answers } from './pages/Answers';
+import { Config } from './pages/Config';
 import { useTheme } from './theme';
 
 const PAGES = [
@@ -13,6 +14,7 @@ const PAGES = [
   { id: 'messages', label: 'Messages' },
   { id: 'invites', label: 'Invites' },
   { id: 'answers', label: 'Answers' },
+  { id: 'config', label: 'Config' },
 ] as const;
 
 type PageId = (typeof PAGES)[number]['id'];
@@ -115,6 +117,7 @@ export default function App() {
         {page === 'messages' && <Messages busy={!!events.status?.holder} />}
         {page === 'invites' && <Invites />}
         {page === 'answers' && <Answers />}
+        {page === 'config' && <Config />}
       </main>
     </div>
   );

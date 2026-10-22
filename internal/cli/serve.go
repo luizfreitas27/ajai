@@ -31,7 +31,7 @@ processes of their own, as the TUI starts its runs.`,
 			if err != nil {
 				return err
 			}
-			h := web.New(web.Deps{DataDir: a.paths.DataDir, LogDir: a.paths.LogDir, Store: st, Logger: a.logger,
+			h := web.New(web.Deps{DataDir: a.paths.DataDir, LogDir: a.paths.LogDir, Paths: a.paths, Env: a.Env, Store: st, Logger: a.logger,
 				Launcher: launcher{executable: self, configFlag: a.configFlag, noColor: a.noColor}})
 			a.ui.KV("serving", "http://"+addr+" (Ctrl-C stops it)")
 			return web.Serve(cmd.Context(), addr, h)

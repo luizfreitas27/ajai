@@ -1081,3 +1081,130 @@ select:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* Config: a filter, a section index, then one hairline row per key with its
+   editor under the doc. Sections scroll below the sticky header. */
+
+.cfg-head {
+  align-items: baseline;
+}
+
+.cfg-path {
+  overflow-wrap: anywhere;
+}
+
+.cfg-filter {
+  max-width: 420px;
+}
+
+.cfg-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-size: 14px;
+}
+
+.cfg-index a {
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.cfg-index a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.cfg-sections {
+  display: grid;
+  gap: 32px;
+}
+
+.cfg-sections .frame {
+  scroll-margin-top: 88px;
+}
+
+.cfg-keys {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cfg-key {
+  display: grid;
+  gap: 12px;
+  padding: 20px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.cfg-key:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.cfg-key:last-child {
+  padding-bottom: 0;
+}
+
+.cfg-key__name {
+  font-family: var(--mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.cfg-key__doc {
+  font-size: 14px;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.cfg-key__edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cfg-field {
+  flex: 1 1 220px;
+  max-width: 360px;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.cfg-field--wide {
+  max-width: 480px;
+}
+
+.cfg-text {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  font: 400 15px/1.5 var(--sans);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  resize: vertical;
+}
+
+.cfg-text:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-color: var(--ink);
+}
+
+.cfg-key .check {
+  align-items: center;
+  min-height: 40px;
+}
+
+.cfg-key .check input {
+  margin: 0;
+}
+
+.cfg-key .meta {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

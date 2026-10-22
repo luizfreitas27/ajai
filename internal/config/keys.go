@@ -8,6 +8,15 @@ import (
 	"strings"
 )
 
+// ReadAtDaemonStart are what the daemon reads once, when it starts: changing
+// one needs a restart. It re-reads every other setting for every run. The TUI
+// and the web front both say so next to the key.
+var ReadAtDaemonStart = map[string]string{
+	EnvTelegramBotToken:  "it reads Telegram's settings when it starts",
+	EnvTelegramChatID:    "it reads Telegram's settings when it starts",
+	"settings.log_level": "it sets its log level when it starts",
+}
+
 // Field describes one configurable key, from the struct tags.
 type Field struct {
 	Key     string // dotted, e.g. "search.terms"

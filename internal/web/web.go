@@ -48,6 +48,15 @@
 //	POST /api/answers/{id}/approve  {"digest": string, "answer": string (optional)}
 //	     200 answer | 400 when the answer is not one of the options, or blank for a
 //	     question with no answer | 404 | 409 when the answer changed since it was read
+//	GET  /api/config
+//	     {"path": "~/…/config.yaml", "sections": [{"name", "keys": [key]}]}
+//	     key = {"key", "kind": "bool|int|float|string|list|enum|duration", "value": text as
+//	     `ajai config set` takes it, "doc", "options" (enum and list values, else []),
+//	     "env_override": an AJAI_CFG_ variable sets it, "daemon_restart": read only at daemon start}
+//	     Secrets are never listed: the config file holds none.
+//	PUT  /api/config/{key}  {"value": string}
+//	     200 {"key", "value", "applies": "next run"} | 400 {"error"} refused, naming the valid values
+//	     | 404 {"error"} unknown key | 409 when there is no config file yet
 //	GET  /api/events
 //	     text/event-stream: "event: log" with one log line per event, and
 //	     "event: status" with the /api/status body every 2 seconds
@@ -70,6 +79,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/luizfreitas27/ajai/internal/config"
+	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
@@ -86,6 +97,8 @@ type Deps struct {
 	DataDir  string // the run lock, the state file and the stop request
 	LogDir   string // the day's log file, which the event stream follows
 	Store    *store.Store
+	Paths    paths.Paths // the config file and .env, for /api/config
+	Env      config.Env  // the process environment, for AJAI_CFG_ overrides
 	Launcher Launcher
 	Logger   *slog.Logger // nil: discard
 	Now      func() time.Time
@@ -110,6 +123,9 @@ func New(d Deps) http.Handler {
 	if s.d.Now == nil {
 		s.d.Now = time.Now
 	}
+	if s.d.Env.Lookup == nil {
+		s.d.Env = config.OSEnv()
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/runs", s.runs)
@@ -123,6 +139,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/invites", s.invites)
 	mux.HandleFunc("GET /api/answers", s.answers)
 	mux.HandleFunc("POST /api/answers/{id}/approve", s.approveAnswer)
+	mux.HandleFunc("GET /api/config", s.config)
+	mux.HandleFunc("PUT /api/config/{key}", s.putConfig)
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)

@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -564,4 +567,123 @@ func kindName(k run.ActivityKind) string {
 		return "stale"
 	}
 	return "idle"
+}
+
+// configKeyView is one setting as the Config tab lists it; see GET /api/config.
+type configKeyView struct {
+	Key           string   `json:"key"`
+	Kind          string   `json:"kind"`
+	Value         string   `json:"value"`
+	Doc           string   `json:"doc"`
+	Options       []string `json:"options"`
+	EnvOverride   bool     `json:"env_override"`
+	DaemonRestart bool     `json:"daemon_restart"`
+}
+
+// configKind names a field's type for the front: enum for a string with a
+// closed set of values, list for a string list.
+func configKind(f config.Field) string {
+	switch f.Kind {
+	case reflect.Bool:
+		return "bool"
+	case reflect.Int:
+		return "int"
+	case reflect.Slice:
+		return "list"
+	case reflect.String:
+		if len(f.Options) > 0 {
+			return "enum"
+		}
+	}
+	return "string"
+}
+
+// tildePath writes the home directory in p as ~.
+func tildePath(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	if p == home || strings.HasPrefix(p, home+string(filepath.Separator)) {
+		return "~" + p[len(home):]
+	}
+	return p
+}
+
+// config lists every setting by section, as the TUI's Config tab does, with the
+// value the config file holds. Secrets live in .env and are not listed.
+func (s *server) config(w http.ResponseWriter, r *http.Request) {
+	file, err := config.LoadFile(s.d.Paths)
+	if file == nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	overridden := map[string]bool{}
+	if eff, _ := config.Load(s.d.Paths, s.d.Env, nil); eff != nil {
+		for _, key := range eff.Overrides {
+			overridden[key] = true
+		}
+	}
+	type sectionView struct {
+		Name string          `json:"name"`
+		Keys []configKeyView `json:"keys"`
+	}
+	sections := []sectionView{}
+	for _, f := range config.Fields() {
+		name, _, _ := strings.Cut(f.Key, ".")
+		if len(sections) == 0 || sections[len(sections)-1].Name != name {
+			sections = append(sections, sectionView{Name: name, Keys: []configKeyView{}})
+		}
+		value, _ := file.Config.Get(f.Key)
+		options := f.Options
+		if options == nil {
+			options = []string{}
+		}
+		_, restart := config.ReadAtDaemonStart[f.Key]
+		sec := &sections[len(sections)-1]
+		sec.Keys = append(sec.Keys, configKeyView{Key: f.Key, Kind: configKind(f), Value: value, Doc: f.Doc,
+			Options: options, EnvOverride: overridden[f.Key], DaemonRestart: restart})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"path": tildePath(s.d.Paths.ConfigFile), "sections": sections})
+}
+
+// putConfig sets one key the way `ajai config set` does: the file alone is
+// loaded, the whole file is validated, and it is written back with its comments.
+func (s *server) putConfig(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Value *string `json:"value"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.Value == nil {
+		writeErr(w, http.StatusBadRequest, `the body must be {"value": "..."}`)
+		return
+	}
+	key := r.PathValue("key")
+	file, err := config.LoadFile(s.d.Paths)
+	if file == nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !file.FileExisted {
+		writeErr(w, http.StatusConflict, "there is no config file yet; run `ajai init` first")
+		return
+	}
+	if _, err := file.Config.SetChecked(key, *body.Value); err != nil {
+		var unknown *config.UnknownKeyError
+		if errors.As(err, &unknown) {
+			writeErr(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeErr(w, http.StatusBadRequest, "refusing to write: "+err.Error())
+		return
+	}
+	if err := config.Write(s.d.Paths.ConfigFile, file.Config); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not write the config file: "+err.Error())
+		return
+	}
+	saved, _ := file.Config.Get(key)
+	s.log.Info("config set from the web front", "key", key, "value", saved)
+	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": saved, "applies": "next run"})
 }

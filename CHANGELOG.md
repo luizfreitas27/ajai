@@ -8,6 +8,9 @@ no such section the notes are the commit list.
 
 ### Added
 
+- `ajai serve` API: `GET /api/config` lists every setting by section with its value, kind, options and
+  override state, and `PUT /api/config/{key}` sets one with the same checks as `ajai config set`.
+  Secrets are never listed.
 - Recruiter messages after a submitted application. Off by default; turn them on with
   `messages.enabled: true`. When the job page shows a hirer with a free Message button, ajai
   queues one message written from the market's `message_template`. Nothing is sent until you

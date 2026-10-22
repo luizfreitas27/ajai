@@ -134,3 +134,32 @@ export type LogLine = {
   msg: string;
   fields: [string, string][];
 };
+
+// The config page: the YAML file as the API reads it, one section per block.
+export type ConfigKind = 'bool' | 'int' | 'float' | 'string' | 'list' | 'enum' | 'duration';
+
+export type ConfigKey = {
+  key: string;
+  kind: ConfigKind;
+  value: string;
+  doc: string;
+  options: string[];
+  env_override: boolean;
+  daemon_restart: boolean;
+};
+
+export type ConfigSection = {
+  name: string;
+  keys: ConfigKey[];
+};
+
+export type ConfigResponse = {
+  path: string;
+  sections: ConfigSection[];
+};
+
+export type ConfigSaved = {
+  key: string;
+  value: string;
+  applies: string;
+};

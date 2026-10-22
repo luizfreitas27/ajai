@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/luizfreitas27/ajai/internal/config"
 	"github.com/luizfreitas27/ajai/internal/logging"
 	"github.com/luizfreitas27/ajai/internal/memory"
 	"github.com/luizfreitas27/ajai/internal/messages"
+	"github.com/luizfreitas27/ajai/internal/paths"
 	"github.com/luizfreitas27/ajai/internal/run"
 	"github.com/luizfreitas27/ajai/internal/store"
 	"github.com/luizfreitas27/ajai/internal/web"
@@ -541,5 +543,143 @@ func TestMessagesReportTheUnreachedApplied(t *testing.T) {
 	got := decode(t, body)["unreached"]
 	if got != float64(want) || want != 1 {
 		t.Errorf("unreached = %v, store counts %d, want 1", got, want)
+	}
+}
+
+// newConfigFixture serves the API over a temporary config file and .env. The
+// environment is empty: only the file and the .env are read.
+func newConfigFixture(t *testing.T, yaml, dotenv string, env map[string]string) (*fixture, string) {
+	t.Helper()
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "config.yaml")
+	envFile := filepath.Join(dir, ".env")
+	if err := os.WriteFile(cfgFile, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(envFile, []byte(dotenv), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := paths.Paths{ConfigFile: cfgFile, EnvFile: envFile, DataDir: dir, LogDir: filepath.Join(dir, "logs")}
+	h := web.New(web.Deps{DataDir: dir, LogDir: p.LogDir, Paths: p, Env: config.MapEnv(env), Every: 10 * time.Millisecond})
+	f := &fixture{t: t, dataDir: dir, launcher: &fakeLauncher{}}
+	f.srv = httptest.NewServer(h)
+	t.Cleanup(f.srv.Close)
+	return f, cfgFile
+}
+
+const configYAML = `# keep me
+messages:
+  max_per_day: 25 # the daily cap
+settings:
+  window: offscreen
+`
+
+// configKey finds one key in a GET /api/config body and fails the test when it is absent.
+func configKey(t *testing.T, body, key string) map[string]any {
+	t.Helper()
+	for _, s := range decode(t, body)["sections"].([]any) {
+		for _, k := range s.(map[string]any)["keys"].([]any) {
+			if m := k.(map[string]any); m["key"] == key {
+				return m
+			}
+		}
+	}
+	t.Fatalf("key %s not in the body:\n%s", key, body)
+	return nil
+}
+
+func TestConfigGetListsTheFileValueWithItsKind(t *testing.T) {
+	f, _ := newConfigFixture(t, configYAML, "", nil)
+	code, body := f.do("GET", "/api/config", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	k := configKey(t, body, "messages.max_per_day")
+	if k["kind"] != "int" || k["value"] != "25" || k["env_override"] != false || k["daemon_restart"] != false {
+		t.Fatalf("messages.max_per_day = %v", k)
+	}
+	if k["doc"] == "" {
+		t.Fatalf("no doc text: %v", k)
+	}
+}
+
+func TestConfigGetListsAnEnumWithItsOptions(t *testing.T) {
+	f, _ := newConfigFixture(t, configYAML, "", nil)
+	_, body := f.do("GET", "/api/config", "", nil)
+	k := configKey(t, body, "settings.window")
+	opts, _ := k["options"].([]any)
+	if k["kind"] != "enum" || k["value"] != "offscreen" || len(opts) != 4 ||
+		opts[0] != "offscreen" || opts[1] != "minimized" || opts[2] != "visible" || opts[3] != "headless" {
+		t.Fatalf("settings.window = %v", k)
+	}
+	if lg := configKey(t, body, "settings.log_level"); lg["daemon_restart"] != true {
+		t.Fatalf("settings.log_level is read at daemon start: %v", lg)
+	}
+}
+
+func TestConfigGetNeverShowsASecret(t *testing.T) {
+	const secret = "sk-fake-secret-value-42"
+	f, _ := newConfigFixture(t, configYAML, "AJAI_AI_API_KEY="+secret+"\n", nil)
+	_, body := f.do("GET", "/api/config", "", nil)
+	if strings.Contains(body, secret) {
+		t.Fatalf("the body leaks the secret:\n%s", body)
+	}
+}
+
+func TestConfigGetMarksAnEnvironmentOverride(t *testing.T) {
+	f, _ := newConfigFixture(t, configYAML, "", map[string]string{"AJAI_CFG_MESSAGES_MAX_PER_DAY": "7"})
+	_, body := f.do("GET", "/api/config", "", nil)
+	k := configKey(t, body, "messages.max_per_day")
+	if k["value"] != "25" || k["env_override"] != true {
+		t.Fatalf("the file value is shown and the override marked: %v", k)
+	}
+}
+
+func TestConfigPutWritesTheFileWithTheWritersComments(t *testing.T) {
+	f, cfgFile := newConfigFixture(t, configYAML, "", nil)
+	code, body := f.do("PUT", "/api/config/messages.max_per_day", `{"value":"12"}`, nil)
+	if code != http.StatusOK {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	got := decode(t, body)
+	if got["key"] != "messages.max_per_day" || got["value"] != "12" || got["applies"] != "next run" {
+		t.Fatalf("response %v", got)
+	}
+	data, _ := os.ReadFile(cfgFile)
+	text := string(data)
+	// config.Write regenerates the file with its own comments, as config set does.
+	if !strings.Contains(text, "max_per_day: 12") || !strings.Contains(text, "# Who you are.") {
+		t.Fatalf("the file after the write:\n%s", text)
+	}
+}
+
+func TestConfigPutRefusesAnInvalidValueAndLeavesTheFile(t *testing.T) {
+	f, cfgFile := newConfigFixture(t, configYAML, "", nil)
+	before, _ := os.ReadFile(cfgFile)
+	code, body := f.do("PUT", "/api/config/settings.window", `{"value":"fullscreen"}`, nil)
+	if code != http.StatusBadRequest || !strings.Contains(body, "offscreen") {
+		t.Fatalf("status %d, want 400 naming the valid values: %s", code, body)
+	}
+	after, _ := os.ReadFile(cfgFile)
+	if string(before) != string(after) {
+		t.Fatalf("the file changed on a refused write:\n%s", after)
+	}
+}
+
+func TestConfigPutUnknownKeyIsNotFound(t *testing.T) {
+	f, _ := newConfigFixture(t, configYAML, "", nil)
+	code, body := f.do("PUT", "/api/config/messages.no_such_key", `{"value":"1"}`, nil)
+	if code != http.StatusNotFound || !strings.Contains(body, "unknown key") {
+		t.Fatalf("status %d: %s", code, body)
+	}
+}
+
+func TestConfigPutIsRefusedFromAForeignOrigin(t *testing.T) {
+	f, cfgFile := newConfigFixture(t, configYAML, "", nil)
+	before, _ := os.ReadFile(cfgFile)
+	code, _ := f.do("PUT", "/api/config/messages.max_per_day", `{"value":"12"}`, map[string]string{"Origin": "https://evil.example"})
+	after, _ := os.ReadFile(cfgFile)
+	if code != http.StatusForbidden || string(before) != string(after) {
+		t.Fatalf("status %d, file changed: %v", code, string(before) != string(after))
 	}
 }
