@@ -72,15 +72,17 @@ func (s *Store) HasInvited(url string) (bool, error) {
 }
 
 // MarkInvite ends a queued invite as state (sent, already, unavailable or
-// failed) with errText; a sent invite is stamped with the store clock. It
-// reports false, and changes nothing, unless the invite is queued.
+// failed) with errText. Every invite that leaves the queue is stamped with the
+// store clock as attempted; a sent one also gets sent_at. It reports false, and
+// changes nothing, unless the invite is queued.
 func (s *Store) MarkInvite(id int64, state, errText string) (bool, error) {
+	now := Timestamp(s.now().Local())
 	sentAt := ""
 	if state == InviteSent {
-		sentAt = Timestamp(s.now().Local())
+		sentAt = now
 	}
-	res, err := s.db.Exec(`UPDATE recruiter_invites SET state = ?, sent_at = NULLIF(?, ''), error = ? WHERE id = ? AND state = ?`,
-		state, sentAt, errText, id, InviteQueued)
+	res, err := s.db.Exec(`UPDATE recruiter_invites SET state = ?, sent_at = NULLIF(?, ''), attempted_at = ?, error = ? WHERE id = ? AND state = ?`,
+		state, sentAt, now, errText, id, InviteQueued)
 	if err != nil {
 		return false, err
 	}
@@ -93,6 +95,15 @@ func (s *Store) InvitesSentToday() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM recruiter_invites WHERE state = ? AND substr(sent_at, 1, 10) = ?`,
 		InviteSent, s.now().Local().Format("2006-01-02")).Scan(&n)
+	return n, err
+}
+
+// InvitesAttemptedToday counts the invites that left the queue today, sent or
+// not: the daily cap is on attempts, so a failure uses up an allowance too.
+func (s *Store) InvitesAttemptedToday() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM recruiter_invites WHERE attempted_at IS NOT NULL AND substr(attempted_at, 1, 10) = ?`,
+		s.now().Local().Format("2006-01-02")).Scan(&n)
 	return n, err
 }
 

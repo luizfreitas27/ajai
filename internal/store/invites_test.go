@@ -177,3 +177,30 @@ func TestListInvitesFiltersByStateNewestFirst(t *testing.T) {
 		t.Errorf("ListInvites(limit 1) = %d rows", len(one))
 	}
 }
+
+// TestAFailedAttemptCountsTowardTheDay: a failed invite used the day's attempt
+// (InvitesAttemptedToday), though it is not a sent one.
+func TestAFailedAttemptCountsTowardTheDay(t *testing.T) {
+	s := open(t)
+	seedJob(t, s, "1")
+	seedJob(t, s, "2")
+	_, err := s.QueueInvite(Invite{JobID: "1", RecipientURL: "https://www.linkedin.com/in/ana"})
+	must(t, err)
+	_, err = s.QueueInvite(Invite{JobID: "2", RecipientURL: "https://www.linkedin.com/in/bia"})
+	must(t, err)
+	queue, err := s.QueuedInvites()
+	must(t, err)
+	if ok, err := s.MarkInvite(queue[0].ID, InviteFailed, "the invite did not show as pending"); err != nil || !ok {
+		t.Fatalf("MarkInvite failed: %v %v", ok, err)
+	}
+	n, err := s.InvitesAttemptedToday()
+	must(t, err)
+	if n != 1 {
+		t.Errorf("InvitesAttemptedToday after one failure = %d, want 1", n)
+	}
+	sent, err := s.InvitesSentToday()
+	must(t, err)
+	if sent != 0 {
+		t.Errorf("InvitesSentToday after one failure = %d, want 0", sent)
+	}
+}

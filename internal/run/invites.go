@@ -8,12 +8,17 @@ import (
 	"github.com/luizfreitas27/ajai/internal/store"
 )
 
+// maxInviteFailures is how many invites may fail in a row before the run stops
+// sending them.
+const maxInviteFailures = 2
+
 // sendInvites sends the queued connection invites at the end of a live run, oldest
-// first, at most messages.max_invites_per_day per local day (what was sent today
-// counts), each after the pause a message waits. It returns how many were sent.
+// first, at most messages.max_invites_per_day per local day (what was attempted
+// today counts, failures too), each after the pause a message waits. It returns how many were sent.
 // A block ends sending for the rest of the run, as a blocked message does; the
 // weekly limit ends the invites for this run only. A cancelled context sends
-// nothing more. An invite that errors is marked failed and never retried.
+// nothing more. An invite that errors is marked failed and never retried; two
+// failures in a row end sending for the run.
 func (r *Runner) sendInvites(ctx context.Context) int {
 	if !r.Cfg.Messages.Connect || r.sendsStopped {
 		return 0
@@ -23,15 +28,15 @@ func (r *Runner) sendInvites(ctx context.Context) int {
 		r.Logger.Warn("could not read the queued invites", "error", err)
 		return 0
 	}
-	sent := 0
+	sent, failed := 0, 0
 invites:
 	for _, inv := range queued {
 		if ctx.Err() != nil {
 			break
 		}
-		today, err := r.Store.InvitesSentToday()
+		today, err := r.Store.InvitesAttemptedToday()
 		if err != nil {
-			r.Logger.Warn("could not count the invites sent today", "error", err)
+			r.Logger.Warn("could not count the invites attempted today", "error", err)
 			break
 		}
 		if today >= r.Cfg.Messages.MaxInvitesPerDay {
@@ -67,6 +72,17 @@ invites:
 		}
 		if state == store.InviteSent {
 			sent++
+		}
+		// A run of failures is a broken selector or page, not a bad invite: stop
+		// before the queue is burned through.
+		if state == store.InviteFailed {
+			failed++
+			if failed == maxInviteFailures {
+				r.Logger.Warn("two invites failed in a row; no more invites are sent in this run", "error", errText)
+				break invites
+			}
+		} else {
+			failed = 0
 		}
 	}
 	return sent

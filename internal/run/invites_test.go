@@ -232,3 +232,76 @@ func slicesEqual(a, b []string) bool {
 	}
 	return true
 }
+
+// failing makes every Connect error, as a moved Connect button does.
+func failing(site *fakeSite) {
+	site.connectFunc = func(messages.Recipient) (linkedin.ConnectResult, error) {
+		return "", errors.New("the invite did not show as pending")
+	}
+}
+
+// TestAFailedAttemptUsesUpTheDailyCap: with a cap of 1, a failed invite is the
+// day's one attempt, so the rest stay queued.
+func TestAFailedAttemptUsesUpTheDailyCap(t *testing.T) {
+	site := liveSite()
+	failing(site)
+	r, st, _ := runner(t, site, connectCfg())
+	r.Cfg.Messages.MaxInvitesPerDay = 1
+	queuedInvite(t, st, "1", ana)
+	queuedInvite(t, st, "2", bob)
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{ana.URL}; !slicesEqual(connectedTo(site), want) {
+		t.Errorf("Connect calls %v, want %v", connectedTo(site), want)
+	}
+	if invs := allInvites(t, st); len(invs) != 1 || invs[0].RecipientURL != bob.URL {
+		t.Errorf("queued %+v, want Bob still queued", invs)
+	}
+}
+
+// TestTwoFailuresInARowStopTheInvitesForTheRun: a selector problem must not burn
+// through the queue, so the third invite is never attempted.
+func TestTwoFailuresInARowStopTheInvitesForTheRun(t *testing.T) {
+	site := liveSite()
+	failing(site)
+	r, st, _ := runner(t, site, connectCfg())
+	queuedInvite(t, st, "1", ana)
+	queuedInvite(t, st, "2", bob)
+	queuedInvite(t, st, "3", carl)
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{ana.URL, bob.URL}; !slicesEqual(connectedTo(site), want) {
+		t.Errorf("Connect calls %v, want %v", connectedTo(site), want)
+	}
+	if invs := allInvites(t, st); len(invs) != 1 || invs[0].RecipientURL != carl.URL {
+		t.Errorf("queued %+v, want Carl still queued", invs)
+	}
+}
+
+// TestASuccessBetweenFailuresKeepsSending: a failure breaks the streak, so the
+// third invite is still sent.
+func TestASuccessBetweenFailuresKeepsSending(t *testing.T) {
+	site := liveSite()
+	site.connectFunc = func(to messages.Recipient) (linkedin.ConnectResult, error) {
+		if to.URL == bob.URL {
+			return "", errors.New("the invite did not show as pending")
+		}
+		return linkedin.ConnectSent, nil
+	}
+	r, st, _ := runner(t, site, connectCfg())
+	r.Cfg.Messages.MaxInvitesPerDay = 3
+	queuedInvite(t, st, "1", ana)
+	queuedInvite(t, st, "2", bob)
+	queuedInvite(t, st, "3", carl)
+	if _, err := r.Run(context.Background(), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{ana.URL, bob.URL, carl.URL}; !slicesEqual(connectedTo(site), want) {
+		t.Errorf("Connect calls %v, want %v", connectedTo(site), want)
+	}
+	if invs := allInvites(t, st); len(invs) != 0 {
+		t.Errorf("still queued: %+v, want all three attempted", invs)
+	}
+}
