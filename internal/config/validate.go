@@ -148,6 +148,9 @@ func (c *Config) Validate() error {
 			add(pair.key, fmt.Sprintf("must not be below its minimum (%d < %d)", pair.hi, pair.lo))
 		}
 	}
+	if c.Messages.Connect && c.Messages.MaxInvitesPerDay < 1 {
+		add("messages.max_invites_per_day", "must be at least 1 when messages.connect is on")
+	}
 	if c.Messages.AutoSend && !c.Messages.Enabled {
 		add("messages.auto_send", "only works with messages.enabled true")
 	}

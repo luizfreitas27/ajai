@@ -155,6 +155,7 @@ var mappings = map[string]mapping{
 	"search.about_company_bad_words":         {key: "search.about_company_bad_words"},
 	"search.about_company_good_words":        {key: "search.about_company_good_words"},
 	"search.bad_words":                       {key: "search.bad_words"},
+	"search.good_words":                      {key: "search.good_words"},
 	"search.skip_non_sponsoring_jobs":        {key: "search.skip_non_sponsoring_jobs"},
 	"search.sponsorship_offered_phrases":     {key: "search.sponsorship_offered_phrases"},
 	"search.sponsorship_unavailable_phrases": {key: "search.sponsorship_unavailable_phrases"},

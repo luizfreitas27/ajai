@@ -87,6 +87,7 @@ type Search struct {
 	AboutCompanyBadWords          []string `yaml:"about_company_bad_words" doc:"Skip the job when its 'About the company' text contains any of these."`
 	AboutCompanyGoodWords         []string `yaml:"about_company_good_words" doc:"Do not skip for a bad word when one of these is also present."`
 	BadWords                      []string `yaml:"bad_words" doc:"Skip the job when its title or description contains any of these."`
+	GoodWords                     []string `yaml:"good_words" doc:"Do not skip for a bad word when one of these is also in the title or description."`
 	SkipNonSponsoringJobs         bool     `yaml:"skip_non_sponsoring_jobs" doc:"Skip jobs whose description says they will not sponsor."`
 	SponsorshipOfferedPhrases     []string `yaml:"sponsorship_offered_phrases" doc:"Phrases meaning sponsorship is available."`
 	SponsorshipUnavailablePhrases []string `yaml:"sponsorship_unavailable_phrases" doc:"Phrases meaning sponsorship is not available."`
@@ -108,6 +109,7 @@ type Settings struct {
 	SmoothScroll      bool   `yaml:"smooth_scroll" doc:"Scroll elements into view smoothly instead of jumping, before reading or clicking them."`
 	DisableExtensions bool   `yaml:"disable_extensions" doc:"Start Chrome with extensions disabled."`
 	LogLevel          string `yaml:"log_level" doc:"Level for the log file." opts:"DEBUG|INFO|WARN|ERROR"`
+	Window            string `yaml:"window" doc:"How Chrome's window is shown during a run. offscreen (default): a normal window placed off screen. minimized: a normal window, minimized once it opens. visible: a normal window on screen. headless: no window at all; LinkedIn detects headless Chrome more easily. ajai login always shows the window." opts:"offscreen|minimized|visible|headless"`
 }
 
 // Markets mirrors config/markets.py: the active market and the two sets of values.
@@ -145,6 +147,8 @@ type Messages struct {
 	Enabled           bool             `yaml:"enabled" doc:"After each submitted application, queue a message to the hirer shown on the job page, when a free Message button is there. Nothing is sent until you approve it (ajai messages list, ajai messages approve), unless auto_send is on. Off by default."`
 	AutoSend          bool             `yaml:"auto_send" doc:"Send each message right after its application, without approval. The text is the template you configured, and nobody reads it first. Free messages only; max_per_day still holds. Needs messages.enabled. Off by default."`
 	MaxPerDay         int              `yaml:"max_per_day" doc:"Most messages sent per local day." min:"1"`
+	Connect           bool             `yaml:"connect" doc:"After each submitted application, send a connection invite, without a note, to the hirer on the job page. One invite per recruiter, ever. Sent at the end of the run. Off by default."`
+	MaxInvitesPerDay  int              `yaml:"max_invites_per_day" doc:"Most connection invites sent per local day. LinkedIn caps invites at about 100 a week."`
 	BetweenMinSeconds int              `yaml:"between_min_seconds" doc:"Shortest pause before a message is sent, seconds." min:"0"`
 	BetweenMaxSeconds int              `yaml:"between_max_seconds" doc:"Longest pause before a message is sent, seconds." min:"0"`
 	Templates         MessageTemplates `yaml:"templates" doc:"Recruiter message in the job posting's language, detected from its title and description. A blank one falls back to the active market's message_template."`
@@ -180,14 +184,14 @@ func Defaults() Config {
 			ExperienceLevel: []string{}, JobType: []string{}, OnSite: []string{}, Companies: []string{},
 			Locations: []string{}, Industry: []string{}, JobFunction: []string{}, JobTitles: []string{},
 			Benefits: []string{}, Commitments: []string{}, PauseAfterFilters: true,
-			AboutCompanyBadWords: []string{}, AboutCompanyGoodWords: []string{}, BadWords: []string{},
+			AboutCompanyBadWords: []string{}, AboutCompanyGoodWords: []string{}, BadWords: []string{}, GoodWords: []string{},
 			SponsorshipOfferedPhrases: []string{"visa sponsorship available", "sponsorship available",
 				"sponsorship is available", "we sponsor", "will sponsor", "can sponsor", "offers sponsorship"},
 			SponsorshipUnavailablePhrases: []string{"will not sponsor", "do not sponsor", "does not sponsor",
 				"cannot sponsor", "unable to sponsor", "no sponsorship", "without sponsorship", "not able to sponsor"},
 			DidMasters: false, CurrentExperience: -1,
 		},
-		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, LogLevel: "INFO"},
+		Settings: Settings{AlternateSortBy: true, CycleDatePosted: true, LogLevel: "INFO", Window: "offscreen"},
 		Markets: Markets{
 			Active: string(MarketInternacional),
 			Brasil: Market{Currency: "BRL", Location: "Brasil", Terms: []string{},
@@ -197,7 +201,7 @@ func Defaults() Config {
 		},
 		Pacing: Pacing{MaxPerHour: 15, MaxPerRun: 50, BetweenJobsMin: 30, BetweenJobsMax: 90,
 			BetweenActionsMin: 1, BetweenActionsMax: 4, TypingDelayMinMs: 40, TypingDelayMaxMs: 160},
-		Messages: Messages{MaxPerDay: 3, BetweenMinSeconds: 90, BetweenMaxSeconds: 300, Templates: MessageTemplates{
+		Messages: Messages{MaxPerDay: 3, MaxInvitesPerDay: 15, BetweenMinSeconds: 90, BetweenMaxSeconds: 300, Templates: MessageTemplates{
 			En: "Hi {first_name}, I just applied for the {title} role at {company}. I'm available for any further information and would be glad to talk whenever it suits you. Looking forward to hearing from you!",
 			Pt: "Olá {first_name}, acabei de me candidatar à vaga de {title} na {company}. Fico à disposição para mais informações e para conversarmos quando for melhor para você. No aguardo do seu contato!",
 			Es: "Hola {first_name}, acabo de postularme a la vacante de {title} en {company}. Quedo a disposición para cualquier información adicional y para conversar cuando te venga bien. ¡Quedo atento a tu respuesta!",

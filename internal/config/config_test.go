@@ -442,6 +442,12 @@ func TestMessagesAreOffByDefaultWithTheDocumentedLimitsAndTemplates(t *testing.T
 	if c.Messages.AutoSend {
 		t.Error("messages.auto_send defaults to true")
 	}
+	if c.Messages.Connect {
+		t.Error("messages.connect defaults to true")
+	}
+	if c.Messages.MaxInvitesPerDay != 15 {
+		t.Errorf("messages.max_invites_per_day defaults to %d, want 15", c.Messages.MaxInvitesPerDay)
+	}
 	if c.Messages.MaxPerDay != 3 || c.Messages.BetweenMinSeconds != 90 || c.Messages.BetweenMaxSeconds != 300 {
 		t.Errorf("messages defaults = %+v, want max_per_day 3, between 90..300", c.Messages)
 	}
@@ -487,6 +493,9 @@ func TestMessageSettingsAreValidated(t *testing.T) {
 		{"blank language templates", func(c *Config) { c.Messages.Templates = MessageTemplates{} }, ""},
 		{"auto send without messages", func(c *Config) { c.Messages.AutoSend = true }, "messages.auto_send"},
 		{"auto send with messages", func(c *Config) { c.Messages.Enabled, c.Messages.AutoSend = true, true }, ""},
+		{"connect with no invites a day", func(c *Config) { c.Messages.Connect, c.Messages.MaxInvitesPerDay = true, 0 }, "messages.max_invites_per_day"},
+		{"no invites a day while connect is off", func(c *Config) { c.Messages.MaxInvitesPerDay = 0 }, ""},
+		{"connect without messages", func(c *Config) { c.Messages.Connect = true }, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := valid()
@@ -502,5 +511,25 @@ func TestMessageSettingsAreValidated(t *testing.T) {
 				t.Errorf("error = %v, want one under %s", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestWindowDefaultsToOffscreenAndTakesFourModes(t *testing.T) {
+	if got := Defaults().Settings.Window; got != "offscreen" {
+		t.Errorf("settings.window defaults to %q, want %q", got, "offscreen")
+	}
+	for _, mode := range []string{"offscreen", "minimized", "visible", "headless"} {
+		c := valid()
+		c.Settings.Window = mode
+		if err := c.Validate(); err != nil {
+			t.Errorf("settings.window %q rejected: %v", mode, err)
+		}
+	}
+	c := valid()
+	c.Settings.Window = "moon"
+	msg := c.Validate().Error()
+	want := `settings.window: "moon" is not a valid value; valid values: "offscreen", "minimized", "visible", "headless"`
+	if !strings.Contains(msg, want) {
+		t.Errorf("message lacks %q:\n%s", want, msg)
 	}
 }
