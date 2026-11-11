@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/cdp"
 	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
@@ -182,12 +183,35 @@ type rodPage struct {
 	smooth bool
 }
 
+// navigateAttempts bounds how often Navigate waits again for a page that replaced itself.
+const navigateAttempts = 5
+
+// navigatedAway reports whether err is Chrome's answer to a call made on a page that was
+// replaced meanwhile ("Inspected target navigated or closed"). It is not a failure of the
+// page being opened: a page that redirects itself (LinkedIn's job search does) cuts the
+// wait for its load event short, and the page the redirect leads to is the one to wait for.
+func navigatedAway(err error) bool {
+	var ce *cdp.Error
+	return errors.As(err, &ce) && ce.Code == -32000 && strings.Contains(ce.Message, "navigated or closed")
+}
+
 func (p *rodPage) Navigate(ctx context.Context, url string) error {
 	page := p.p.Context(ctx)
 	if err := page.Navigate(url); err != nil {
 		return err
 	}
-	return page.WaitLoad()
+	var err error
+	for range navigateAttempts {
+		if err = page.WaitLoad(); !navigatedAway(err) {
+			return err
+		}
+		select { // let the page the redirect leads to start loading
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	return err
 }
 
 func (p *rodPage) URL() (string, error) {
