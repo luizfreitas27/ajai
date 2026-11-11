@@ -16,12 +16,11 @@
 </p>
 
 <p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#first-run">First run</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#i-want-to">I want to…</a> ·
   <a href="#the-tui">The TUI</a> ·
-  <a href="#answers-the-ai-and-the-help-pause">Answers &amp; AI</a> ·
-  <a href="#everyday-commands">Commands</a> ·
-  <a href="#schedule-windows">Schedule</a> ·
+  <a href="#command-reference">Commands</a> ·
   <a href="#troubleshooting">Troubleshooting</a>
 </p>
 
@@ -30,93 +29,781 @@
 </p>
 
 `ajai` searches LinkedIn for jobs that match your criteria and submits Easy Apply
-applications from your own machine, in a real, visible Chrome, with your own account. It
-fills each form from your configuration, remembers every answer it gives so you can review
-them, knows the difference between applying in Brazil and abroad, and tells you on Telegram
-how a run went.
+applications for you. It runs on your own machine, in a real, visible Chrome, with your own
+account. It fills each form from your configuration, remembers every answer so you can
+review it, and tells you on Telegram how a run went.
 
-## What it does
+**This manual, in order:**
 
-- **Searches and screens.** Search terms, location and LinkedIn's filters, then a screen of
-  each job: a blacklist of companies and words, required experience, security clearance and
-  sponsorship. Reposts of a job it already handled are passed over.
-- **Fills Easy Apply forms the way you would.** Name, phone, city, work authorization, visa,
-  salary (monthly, annual or hourly), notice period and years of experience come from your
-  config, in English and Portuguese. Your years per technology answer "How long have you
-  used X?". It uploads your resume, and it never guesses.
-- **Remembers.** Every answer it gives, or that you type in a help pause, goes to an answer
-  memory you review in the TUI, on the command line or from Telegram. The next form that
-  asks the same goes through.
-- **An AI for the rest, optional.** OpenAI, Gemini, DeepSeek or a local model answers what
-  nothing else can. It never sees your phone, email or address, and it is never asked about
-  visas, salary or other sensitive questions.
-- **Paced like a person.** 15 applications an hour and 50 a run by default, with jittered
-  pauses between jobs and form actions, typing a character at a time.
-- **A full-screen TUI**, plus a daemon that runs on schedule windows, Telegram commands, a
-  dry-run mode, and a job history you can export.
+1. [Quick start](#quick-start): from nothing to a first test run, in about ten minutes.
+2. [How it works](#how-it-works): the five ideas that make everything else obvious.
+3. [I want to…](#i-want-to): the everyday tasks, each with its key and its command.
+4. Guides: [the TUI](#the-tui), [answers](#answers-and-the-review-queue),
+   [the AI](#the-ai-optional), [recruiter messages](#recruiter-messages-optional),
+   [markets](#markets), [schedule](#running-on-a-schedule), [Telegram](#telegram).
+5. Reference: [commands](#command-reference), [files](#files),
+   [install details](#install-details), [troubleshooting](#troubleshooting).
 
-`ajai` is the Go successor of the Python
-[Auto_job_applier_linkedIn fork](https://github.com/luizfreitas27/Auto_job_applier_linkedIn).
-The behaviour was ported, not reinvented: same selectors, same question heuristics, same
-answer memory. See `NOTICE`.
+## Quick start
 
-## Install
+### Before you start
 
-### What you need
-
-| | |
+| You need | Details |
 |---|---|
-| **System** | Linux, amd64 or arm64, with a desktop session (Wayland or X11). Chrome opens a visible window. |
-| **Browser** | Google Chrome or Chromium. `ajai doctor` finds it. |
-| **LinkedIn** | An account, with LinkedIn's display language set to **English** (Settings → Account preferences → Language). The selectors and heuristics expect it. |
-| **Optional** | A Telegram bot for notices and remote commands, and an AI provider key. |
+| **Linux with a desktop** | amd64 or arm64, Wayland or X11. Chrome opens a visible window; ajai never runs headless. |
+| **Chrome or Chromium** | `ajai doctor` finds it. |
+| **A LinkedIn account in English** | Set LinkedIn's display language to **English** (Settings → Account preferences → Language). ajai reads the page in English. |
+| **Your resume as a PDF** | |
 
-`ajai` never runs headless and never stores your LinkedIn password: you sign in once, by
-hand, in a Chrome profile of its own.
+Optional, for later: a Telegram bot (notices and remote commands) and an AI provider key.
 
-### Download a release (recommended)
-
-The repository is private, so the release files are downloaded with the
-[GitHub CLI](https://cli.github.com/), signed in to an account with access to it
-(`gh auth login`):
+### 1. Install
 
 ```bash
-# 1. Download the archive for your machine (amd64 shown; use linux_arm64 on ARM) and the checksums
-gh release download v0.1.0 --repo luizfreitas27/ajai \
-  --pattern 'ajai_0.1.0_linux_amd64.tar.gz' --pattern 'checksums.txt'
+# Download the release for your machine (amd64 shown; use linux_arm64 on ARM) and its checksums
+curl -fsSLO https://github.com/luizfreitas27/ajai/releases/download/v0.1.0/ajai_0.1.0_linux_amd64.tar.gz
+curl -fsSLO https://github.com/luizfreitas27/ajai/releases/download/v0.1.0/checksums.txt
 
-# 2. Check it
-grep linux_amd64 checksums.txt | sha256sum -c -     # must say: OK
-
-# 3. Unpack and install it on your PATH
+# Check it, unpack it, put it on your PATH
+sha256sum -c --ignore-missing checksums.txt         # must say: OK
 tar -xzf ajai_0.1.0_linux_amd64.tar.gz
 install -m 0755 ajai ~/.local/bin/ajai
 
-# 4. Confirm
 ajai version                                        # ajai v0.1.0 (…) linux/amd64
 ```
 
 If `ajai` is not found, add `~/.local/bin` to your `PATH` (for example
-`export PATH="$HOME/.local/bin:$PATH"` in `~/.bashrc`). Every release is listed on the
-[Releases](https://github.com/luizfreitas27/ajai/releases) page.
+`export PATH="$HOME/.local/bin:$PATH"` in `~/.bashrc`). Other ways to install are under
+[Install details](#install-details).
+
+### 2. Open ajai and follow the checklist
+
+```bash
+ajai
+```
+
+With nothing set up yet, ajai opens on the **setup checklist**: every thing a run needs,
+with a mark for what is missing. Move with ↑↓ and press **Enter** on a line to fix it:
+
+| Line | What Enter does |
+|---|---|
+| No config file | Opens a short wizard: your name, phone, city, search terms, location, salary. |
+| No LinkedIn session | Opens Chrome on LinkedIn. Sign in by hand; it closes when your feed appears. |
+| Resume, AI key, Telegram | Takes you to the Config tab, to set that value. |
+
+ajai never asks for, types or stores your LinkedIn password. You sign in once, in a Chrome
+profile that belongs to ajai, so your everyday Chrome stays free while it works.
+
+### 3. Put your resume in place
+
+Copy your PDF into the resumes directory as `resume.pdf`:
+
+```bash
+cp ~/Documents/my-cv.pdf ~/.local/share/ajai/resumes/resume.pdf
+```
+
+(`ajai doctor` prints the exact directory if yours differs.)
+
+### 4. Tell ajai about yourself
+
+This is what turns "skipped: unanswered questions" into applications. In the TUI's
+**Config** tab (key `5`), or on the command line:
+
+```bash
+ajai config set questions.skill_years ".net: 4, c#: 4, python: 1, aws: 1"
+ajai config set questions.summary "Backend developer with 5 years of experience in …"
+```
+
+See [Skill years](#skill-years) and [Your profile](#your-profile).
+
+### 5. Do a dry run
+
+```bash
+ajai run --dry-run --fast
+```
+
+ajai searches, screens each job, fills every form and **discards it at the Review step**.
+Nothing is submitted. Watch the Chrome window, then look at what it answered:
+
+```bash
+ajai answers review
+```
+
+Approve what is right, correct what is not. Each correction is used on every later form.
+
+### 6. Apply for real
+
+Start small, with the Chrome window visible:
+
+```bash
+ajai run --max 2      # two applications, then stop
+ajai run              # a full run: 15 an hour and 50 a run, by default
+```
+
+From here on you can do everything from the TUI: type `ajai`, press `r` to start a run and
+`x` to stop it.
+
+<details>
+<summary><b>Setting up by hand, without the TUI</b></summary>
+
+```bash
+ajai init                  # the wizard (or: ajai init --first-name … --terms "go,backend" …)
+ajai login                 # sign in to LinkedIn once
+ajai doctor                # checks everything a run needs, and prints every path
+ajai run --dry-run --fast
+```
+
+Coming from the Python bot? `ajai import ~/path/to/Auto_job_applier_linkedIn` brings over
+its settings, answer memory, job history and resume (never its secrets).
+
+</details>
+
+## How it works
+
+Five ideas explain everything ajai does.
+
+**1. A run.** One pass over your search terms. For each term ajai applies LinkedIn's
+filters, then goes job by job:
+
+```
+search → screen the job → open Easy Apply → answer each question → submit → record it
+```
+
+A job is *screened out* by your rules (blacklisted companies and words, required experience,
+security clearance, sponsorship) or because ajai already handled it. Only one run happens on
+your machine at a time. A **dry run** does everything except submit.
+
+**2. Answers never come from a guess.** Each question on a form is answered by the first of
+these that can:
+
+1. your **configuration** (name, phone, city, visa, salary, notice period, years of experience, skill years);
+2. the **answer memory** (what you approved or typed before);
+3. the **AI**, only if you turned it on;
+4. **nobody**: the job is skipped and the question waits for you.
+
+**3. The review queue.** Questions nobody could answer, and answers the AI gave, wait in a
+queue. You answer or approve each one once, and every later form that asks it goes through.
+The first runs skip many jobs; a few minutes in the queue fixes that. This is the part of
+ajai that gets better as you use it.
+
+**4. Pacing.** 15 applications an hour and 50 a run by default, with jittered pauses and
+typing one character at a time. ajai is meant to behave like a person, not to be fast.
+
+**5. Attended or unattended.** With you at the terminal, ajai may pause and ask for help.
+Started from the TUI, the schedule or Telegram, it never pauses: it skips and queues.
+
+| Word | Meaning |
+|---|---|
+| **Run** | One pass over your search terms, ending in a summary. |
+| **Dry run** | A run that fills forms and discards them. Nothing is sent. |
+| **Answer memory** | Every answer given, pending or approved. |
+| **Review queue** | The pending part of the answer memory: what waits for you. |
+| **Market** | `brasil` or `internacional`: currency, salary period, terms and resume. |
+| **Schedule window** | Weekdays and hours in which runs start and stop by themselves. |
+| **Daemon** | The background process that acts on the windows and on Telegram commands. |
+| **ajai profile** | The Chrome profile ajai owns, where your LinkedIn session lives. |
+
+## I want to…
+
+| I want to… | In the TUI (`ajai`) | On the command line |
+|---|---|---|
+| Start a run | `r` | `ajai run` |
+| Try without submitting | `r`, dry run (the default) | `ajai run --dry-run` |
+| Stop the run | `x` | `ajai stop`, or Ctrl-C in its terminal |
+| See what is happening | `1` Dashboard | `ajai status`, `ajai logs -f` |
+| Answer the questions it could not | `2` Answers | `ajai answers review` |
+| See where I applied | `4` Jobs | `ajai jobs list --applied` |
+| See why a job failed or was skipped | `4` Jobs, ←→ to filter | `ajai jobs list --failed` / `--skipped` |
+| Change a setting | `5` Config | `ajai config set <key> <value>` |
+| Search other terms, just this once | | `ajai run --terms "go,backend" --location "Remote"` |
+| Apply in the other market, just this once | `r`, pick the market | `ajai run --market brasil` |
+| Run every weekday morning | `3` Schedule, `n`, then `i` | [Running on a schedule](#running-on-a-schedule) |
+| Control it from my phone | | [Telegram](#telegram) |
+| Check that everything is set up | `s` | `ajai doctor` |
+| Export my applications to a spreadsheet | | `ajai export --csv ./sheets` |
+
+## The TUI
+
+Type `ajai` with no command, in a terminal, and it opens a full-screen interface. Outside a
+terminal (a pipe, a script, systemd) it prints the help instead.
+
+| Tab | What it is for |
+|---|---|
+| **1 Dashboard** | The run in progress, the last runs, pending answers, the next window, the daemon, today's log |
+| **2 Answers** | The answer memory: review, approve, correct or delete what was answered |
+| **3 Schedule** | Schedule windows and the daemon that acts on them |
+| **4 Jobs** | The job history, filtered and searchable; open a job in your browser |
+| **5 Config** | Every setting, with what it does, edited one at a time; the secrets in hidden fields |
+| **s Setup** | Every check `ajai doctor` makes, with what fixes it |
+
+### Keys
+
+They mean the same on every screen. The footer shows the keys of the screen you are on, and
+`?` lists them in full.
+
+| Key | What it does |
+|---|---|
+| `1`–`5`, Tab, Shift-Tab | Switch tabs |
+| ↑↓ (`k` `j`), PgUp PgDn, `g` `G` | Move in a list |
+| ←→ (`h` `l`) | Change the list's filter |
+| Enter | The selected item's main action: edit it, or open the job |
+| `r` / `x` | Start a run / stop the run in progress, from any tab |
+| `s` | The setup checklist |
+| `n` `d` `a` Space `/` | New, delete, approve, turn on or off, search |
+| `?` | Help for this screen |
+| `q`, Ctrl-C | Quit. **Quitting never stops a run.** |
+
+<table>
+  <tr>
+    <td><img src="docs/assets/jobs.svg" alt="The Jobs tab: the job history with the selected job's details"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/answers.svg" alt="The Answers tab: the review queue with the selected answer's details"></td>
+  </tr>
+</table>
+
+The list tabs share one layout: a header with the title, the filters (the one shown in
+brackets) and a summary; the list, with a `▌` bar on the selected row; and the selected
+item's details, to the right of the list on a terminal 120 columns wide or more, under it on
+a narrower one. Flame orange marks what is active; green, amber and red mean ok, warning and
+failure. The TUI needs a terminal of at least 80×24 and honours `--no-color` and `NO_COLOR`.
+
+<details>
+<summary><b>1 Dashboard: starting and stopping runs</b></summary>
+
+The Dashboard refreshes every second. It shows:
+
+- the run in progress: who started it (the terminal, a schedule window, Telegram, the TUI),
+  the market, dry run or live, the term being searched and the counts so far;
+- the last runs and why each ended;
+- the pending answers and the next schedule window;
+- whether the daemon runs, and whether every setup check passes;
+- today's log as it grows.
+
+**`r` starts a run**, from any tab. You choose the market, dry run (the default) or live, and
+a maximum of applications. Live shows in red and asks once more, since it submits
+applications for real. The run is a process of its own (`ajai run --unattended`): closing the
+TUI never ends it, and questions nothing can answer go to the review queue. If a run is
+already in progress, ajai says which one and starts nothing; if the new run cannot start (a
+config problem, Chrome missing or in use), it says why.
+
+**`x` stops the run in progress**, whoever started it, after asking. It ends once the job in
+hand is done, recorded as "stopped from the TUI". When a run ends while the TUI is open, a
+line says how it went.
+
+</details>
+
+<details>
+<summary><b>2 Answers: the review queue</b></summary>
+
+The review queue comes first (the tab title counts the pending answers); the approved ones
+are a ←→ away. Each answer shows its question, kind, options, who gave it, how often it was
+used and the last job.
+
+- `a` approves the answer as shown. If a run answered it again meanwhile, nothing is
+  approved and the new answer is shown.
+- Enter corrects it. A select or radio is picked from its options with ↑↓, or typed (an
+  option, or the beginning of just one). Anything else is typed. A correction is yours and
+  counts as approved.
+- `d` deletes it after asking; ajai asks the question again next time.
+- A checkbox takes only `a` or `d`.
+
+</details>
+
+<details>
+<summary><b>3 Schedule: windows and the daemon</b></summary>
+
+The schedule windows (weekdays, hours, market, mode, on or off) with each one's next opening.
+
+- `n` adds one in a form: tick the weekdays with Space, type the start and end (HH:MM, local
+  time), choose the market and dry run or live. A live window asks once more: its runs submit
+  applications. A window that crosses midnight or overlaps another on the same weekday is
+  refused, with the reason.
+- Space turns the selected window off or back on; `d` deletes it after asking.
+- The selected window's details show its next three openings and what its last opening did:
+  the run it started, with its counts and why it ended, or why no run started.
+
+Windows open runs only while the daemon runs. A strip under the tab's title says whether it
+does. `i` installs (or reinstalls) its systemd unit, `u` uninstalls it, and `t` starts or
+stops the daemon, each after a question that says what it does.
+
+</details>
+
+<details>
+<summary><b>4 Jobs: the history</b></summary>
+
+The job history, newest first, with the counts per outcome. ←→ show every job or only the
+applied, external, failed or skipped ones. `/` searches titles, companies and locations,
+ignoring case and accents (Esc clears the search). The selected job shows its outcome and
+why, when it was recorded and posted, a failure's error and screenshot, its links and the
+questions answered. Enter opens it in your default browser: the company's application page
+for an external job, LinkedIn's otherwise.
+
+</details>
+
+<details>
+<summary><b>5 Config: settings and secrets</b></summary>
+
+Every setting by section, with its value in the config file and what it does. This is the
+place to learn what can be configured. Enter edits one:
+
+- a setting with fixed values is picked from a list (several, with Space, for a list such as
+  `search.on_site`);
+- anything else is typed, and refused with the reason if it is not valid;
+- a setting your environment or `.env` overrides (`AJAI_CFG_...`) is marked; an edit changes
+  the file, never the override.
+
+The three secrets (`AJAI_AI_API_KEY`, `AJAI_TELEGRAM_BOT_TOKEN`, `AJAI_TELEGRAM_CHAT_ID`) show
+only whether they are set, and where. Each one is typed into a hidden field and saved in
+ajai's `.env`, readable only by you; an empty value removes it. If the daemon runs, the TUI
+tells you when it needs a restart: it reads the Telegram settings when it starts, while
+other settings take effect on its next run.
+
+</details>
+
+<details>
+<summary><b>s Setup: the checklist</b></summary>
+
+Every check `ajai doctor` makes, with what fixes it. The TUI opens on it when something a run
+needs is missing; `s` opens it at any time. The checks run again every half minute and after
+every change. Enter fixes the selected check:
+
+- no config file: the init wizard (`ajai init`);
+- no LinkedIn session in the ajai profile: `ajai login`, which opens Chrome to sign in;
+- the AI key, Telegram or the resume: the Config tab.
+
+`i` imports from the Python bot after asking for its folder, and `r` checks again. The
+wizard, the sign-in and the import run in the same terminal while the TUI steps aside; press
+Enter at the end to come back. Without a config file only the checklist and the Config tab
+(for the secrets) open.
+
+</details>
+
+## Answers and the review queue
+
+Every question in an Easy Apply form is answered by the first of these that can (English
+and Portuguese labels alike):
+
+1. **Your configuration.** Name, phone, city, work authorization, visa, salary, notice period
+   and total years of experience. Also your [skill years](#skill-years), for questions about
+   one technology.
+2. **The answer memory.** What you approved or typed before, and what the AI answered before.
+3. **The AI**, only with `ai.enabled: true`.
+4. **Nothing.** The job is skipped and the question goes to the review queue, or, with you
+   at the terminal, to a help pause (below).
+
+Review the queue in the TUI's Answers tab, with `ajai answers review`, or from Telegram with
+`/pending`.
+
+### Skill years
+
+`questions.skill_years` lists your years with each technology or role, as "name: years" (a
+whole number, 1 or more):
+
+```bash
+ajai config set questions.skill_years ".net: 4, c#: 4, python: 1, aws: 1, computação em nuvem: 1"
+```
+
+They answer:
+
+- **"How long have you used X?", "Há quanto tempo você usa X?", "Quanto tempo de experiência
+  com X?"** with X's years; with several technologies named, the fewest.
+- **"Do you have experience with X?", "Possui experiência (conhecimento, domínio) com X?"**
+  with yes, never no.
+  - With a number of years in the question ("at least 5 years", "no mínimo 3 anos"), yes
+    only when your years reach it.
+  - Options that are ranges of years are left alone.
+
+A name matches whole, whatever its case and accents ("java" is not "JavaScript", "react" is
+not "React-Native"), and only in the question itself. List Portuguese names and roles too
+("computação em nuvem", "dev fullstack"). Keep the numbers true to your resume: recruiters
+read both.
+
+### Your profile
+
+- **`questions.summary`:** a short professional summary. It is pasted as it is into
+  "Summary", "Resumo" and "Sobre você" fields, and the AI reads it.
+- **`questions.headline`:** a one-line headline, for "headline" fields and the AI.
+- **`questions.about`:** free text only the AI reads: your jobs with dates and stack,
+  skills, education, languages, what you are looking for. Keep secrets, phone numbers and
+  links out of it: anything in it can surface in an answer. You can also steer how the AI
+  answers here (for example, to count related experience), as guidance, not a rule.
+
+The fuller these are, the less generic the AI's answers.
+
+### The help pause
+
+With you at the terminal (`ajai run`, not a run started from the TUI), a question nothing can
+answer pauses the job. ajai shows it (and sends a Telegram message), you fill it in Chrome
+and press Enter, and what you typed is remembered as approved. The pause waits up to 15
+minutes.
+
+With `--unattended`, or when stdin or stdout is not a terminal (a script, the schedule, a run
+started from the TUI), the job is skipped instead and the question waits in the review queue.
+
+## The AI (optional)
+
+The AI answers only the questions that your configuration and the answer memory could not.
+It does not choose jobs and does not read your resume file.
+
+### Turning it on
+
+```bash
+ajai config set ai.enabled true
+ajai config set ai.provider gemini        # openai, deepseek, gemini, ollama, lmstudio, vllm, custom
+ajai config set ai.model gemini-flash-lite-latest
+```
+
+Then set the key, `AJAI_AI_API_KEY`, in the TUI's Config tab (a hidden field), or in the
+`.env` file next to the config file.
+
+| Provider | Key | Notes |
+|---|---|---|
+| `gemini` | [Google AI Studio](https://aistudio.google.com/) → Get API key | Has a free tier for the Flash and Flash-Lite models, with daily limits. |
+| `openai` | [platform.openai.com](https://platform.openai.com/) → API keys | Prepaid API credits. A ChatGPT plan does **not** include them. |
+| `deepseek` | [platform.deepseek.com](https://platform.deepseek.com/) | Paid, low cost per token. |
+| `ollama`, `lmstudio`, `vllm` | none | A model on your own machine; `ai.base_url` if not the default port. |
+
+`ai.base_url` is blank for the provider's own endpoint. A key is only ever sent over HTTPS
+or to localhost. `ajai doctor` shows the provider, the model and whether the key is set; it
+does not call the model, so the first real call is your next run.
+
+**Try it on a dry run first.** Nothing is sent, and the review queue shows what the AI would
+have answered.
+
+### What the AI does, and what it never does
+
+- **What it is given:** the question; the job description; the options of a dropdown or
+  radio button; and a candidate profile built from your config (name, location, total years
+  of experience, most recent employer, `questions.headline`, desired salary, notice period,
+  work authorization and visa, `questions.summary` and `questions.about`).
+- **What it never sees:** your phone, email, street, zip, citizenship status, current salary
+  or protected characteristics.
+- **Never asked at all:** sensitive questions (visas, work authorization, citizenship,
+  salary, disability, veteran status, clearances) and the email question. Those are answered
+  from your configuration or not at all.
+- **Free text:** one sentence, or at most 350 characters for an open question. A cover-letter
+  field with no `questions.cover_letter` is an open question like any other.
+- **Dropdowns and radio buttons:** the answer counts only when it names one of the options
+  exactly. It never ticks a checkbox: only an answer you approved does.
+- **Every AI answer is remembered as pending and used right away.** On a live run the
+  application is sent with it before you have reviewed it, and the AI may answer "No" or
+  misjudge your experience. Review the queue: approving or correcting an answer fixes every
+  later form that asks it.
+
+## Recruiter messages (optional)
+
+> Not in release v0.1.0 yet: until the next release, [build from source](#build-from-source).
+
+After a submitted application, ajai can write a short note to one of the job's hirers. It is
+off by default:
+
+```bash
+ajai config set messages.enabled true
+```
+
+**How it goes, by default:**
+
+1. You apply. If the job shows a hirer under "Meet the hiring team" with a free **Message**
+   button, ajai queues a message for them.
+2. You read the queue and approve what may go out:
+
+   ```bash
+   ajai messages list                          # every message, its text and a digest of it
+   ajai messages approve <id> <digest>         # one message, if its text still has that digest
+   ajai messages approve --all <list-digest>   # the whole queue, if it is still the one listed
+   ajai messages delete <id>                   # remove one
+   ```
+
+   The digest is how ajai knows you approve the exact text you read. `list` prints the
+   ready-made `approve` lines under the queued messages.
+3. Approved messages go out at the end of the next live run, never on a dry run.
+
+**The limits, always:**
+
+- **Free messages only.** With only Premium or a paid InMail on offer, nothing is sent and
+  the job is recorded as `no_recipient` (`ajai messages list --state no_recipient`).
+- **One message per recruiter, ever.** A staffing recruiter can be the hirer on many jobs,
+  and several messages in a row look like spam. A later application to one of their jobs
+  records "already messaged this recruiter".
+- **A daily cap:** `messages.max_per_day` (3 by default) per local day, each after a pause of
+  `messages.between_min_seconds` to `messages.between_max_seconds` (90 to 300 by default). An
+  approved message a run does not reach waits for the next one.
+- **Never sent twice.** If ajai stops in the middle of a send, that message is marked
+  `failed` at the next run and is not retried.
+
+### The text
+
+ajai picks a template by the language of the job posting: `messages.templates.en`, `.pt` or
+`.es` in `config.yaml`. When it cannot tell the language (a short or mixed text), or that
+template is blank, it uses the active market's `message_template`. A blank market template
+and an unsure language queue nothing.
+
+Every template can use three placeholders:
+
+- `{first_name}`: the hirer's first name, capitalised. With no name, the greeting goes
+  without it.
+- `{title}`: the job's title.
+- `{company}`: the company.
+
+### Sending without a run
+
+```bash
+ajai messages send                                        # send what is approved, now
+ajai messages send --applied-since 2026-10-20 --dry-run   # also: what would past applications get?
+ajai messages send --applied-since 2026-10-20             # send those too
+```
+
+`ajai messages send` opens Chrome as a run does and sends the approved messages with the
+same cap, pauses and checks. It never searches or applies, so it works after LinkedIn's daily
+application limit. With `--applied-since`, it also goes back over the jobs applied to on or
+after that date that have no hirer recorded, newest first: a free **Message** button to a
+recruiter not messaged before gets a message, sent right away. Each job gets one line: sent,
+would send, no free message, already messaged, cap reached or failed.
+
+### Skipping the approval
+
+```bash
+ajai config set messages.auto_send true
+```
+
+Each message is then sent right after its application, before the next job is opened. The
+daily cap, the free-only checks and the one-per-recruiter rule still hold; a message past the
+cap stays approved and goes out at the end of a later run. A block from LinkedIn stops the
+sends for the rest of the run, not the applications.
+
+**The risk:** every message goes out unseen, with your template's text filled in. Read your
+templates before you turn it on.
+
+> Messaging carries more risk than applying. LinkedIn watches messages more closely than
+> applications, and a restriction on the account would affect the applications too. Keep
+> `max_per_day` low.
+
+## Markets
+
+`markets.active` is `internacional` (foreign currency, annual salaries) or `brasil` (BRL,
+monthly salaries). Each market may set its own currency, salaries, search location, search
+terms and resume (`ajai config set markets.brasil.resume cv-pt.pdf`); blank values fall back
+to the general settings.
+
+Salary questions get the figure in the period they ask for, and the market's own period
+when they name none. An hourly-rate question ("valor hora", "hourly rate") gets the monthly
+figure divided by the monthly hours it names, or by 168.
+
+Override the market for one run with `ajai run --market brasil`.
+
+## Running on a schedule
+
+A **schedule window** is a span of local time on chosen weekdays, optionally with its own
+market and dry run. When it opens, a run starts; when it closes, the run is stopped.
+
+```bash
+# 1. Add windows
+ajai schedule add --days mon-fri --start 09:00 --end 11:00 --market brasil
+ajai schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run
+
+# 2. Install the daemon that acts on them (a systemd user unit, started with your desktop session)
+ajai daemon install
+
+# 3. Look
+ajai schedule list        # every window, and the next opening
+ajai daemon status        # installed, running?
+ajai logs --daemon -f     # what it decides, and the runs it starts
+```
+
+`ajai schedule disable 2`, `enable 2` and `rm 2` change a window; `ajai daemon uninstall`
+stops the daemon and removes its unit. The TUI's Schedule tab does all of this too.
+
+Good to know:
+
+- Sign in once with `ajai login` before the first window: nobody is there to sign in for a
+  scheduled run.
+- Scheduled runs are unattended: they never pause, they skip and queue.
+- Windows never cross midnight: split one in two (`22:00`–`24:00` and `00:00`–`02:00` the
+  next day).
+- A run that ends early is not restarted in the same window. A window that opens while
+  another run is in progress is skipped, and Telegram says so.
+- The configuration is read afresh for every run, so `ajai config set` needs no restart.
+- After moving or upgrading ajai, run `ajai daemon install` again.
+
+<details>
+<summary><b>How the daemon and its unit behave</b></summary>
+
+`ajai daemon install` writes `~/.config/systemd/user/ajai.service` for the binary you ran it
+with (carrying your `AJAI_HOME`, XDG directories and `--config`, if you use them), enables it
+for your desktop session, starts it and checks it stays up. It warns when your session does
+not reach `graphical-session.target` or systemd does not know your display, either of which
+would keep Chrome from opening, and refuses while an `ajai daemon` you started by hand is
+running. Stopping the unit is like Ctrl-C: the run in progress ends cleanly and its window
+resumes when the daemon is back. You can also just run `ajai daemon` in a terminal you leave
+open.
+
+Every 30 seconds the daemon looks at the windows: when one opens it starts an unattended run
+with that window's market and dry run and tells you on Telegram; when the window closes, or
+you disable or remove it, the run ends cleanly with that reason. Two windows back to back
+hand over. Only one daemon runs at a time.
+
+</details>
+
+### Non-stop runs
+
+With `settings.run_non_stop: true`, a run that visited every search term (or hit the per-run
+cap) is followed, ten minutes later, by another, until LinkedIn's daily limit, the hourly
+cap, `--max`, an error or Ctrl-C. The filters can change between runs:
+`settings.cycle_date_posted` sets the date filter to "Past 24 hours" for every later run,
+and `settings.alternate_sort_by` flips the sort order before each one. Each run is recorded
+and reported on its own; `ajai status` shows when the next one starts.
+
+### Filter pauses
+
+With `search.pause_after_filters: true` (the default) and you at the terminal, ajai stops
+after applying each term's filters so you can check or adjust them in Chrome. Press Enter to
+go on, or type `off` to stop pausing for the session.
+
+## Telegram
+
+With a Telegram bot, ajai sends you one message when a run ends (the summary, or the error
+that stopped it), one when a run cannot start, and a nudge when it waits for your login or
+your help.
+
+**Setting it up:**
+
+1. Create a bot with [@BotFather](https://t.me/BotFather). It gives you the token.
+2. Send your bot any message.
+3. Open `https://api.telegram.org/bot<token>/getUpdates` and copy the number in
+   `"chat":{"id": ...}`.
+4. Save both in the TUI's Config tab (hidden fields), or in the `.env` next to the config
+   file:
+
+   ```bash
+   AJAI_TELEGRAM_BOT_TOKEN=123:ABC
+   AJAI_TELEGRAM_CHAT_ID=987654321
+   ```
+
+A failed send never affects the run, and the token never reaches the log.
+
+### Remote commands
+
+While the daemon runs (`ajai daemon install`), the same bot takes commands from that chat:
+
+| Command | What it does |
+|---|---|
+| `/status` | The run in progress (who started it, market, counts, term) or the last run, pending answers, the next window |
+| `/run [brasil\|internacional] [dry]` | Start an unattended run now, or say why not |
+| `/stop` | Stop the run in progress, wherever it was started; a second message says when it has ended |
+| `/pending` | Review the pending answers from your phone |
+| `/help` | The list |
+
+`/pending` sends one message per pending answer, the 10 newest at a time, with **Approve**
+and **Delete** buttons. To give or correct an answer, reply to its message with the text.
+
+<details>
+<summary><b>The details: replies, safety and what happens after a restart</b></summary>
+
+Each `/pending` message shows the question, its kind, the options it offered (select and
+radio), the current answer and who gave it, and the job it came from. **Approve** keeps the
+answer shown (if a run changed it meanwhile, the message is updated for you to check again),
+**Delete** forgets it; a question with no answer yet has only Delete. A reply to a select or
+radio must be one of the options, or the beginning of just one of them (case and spacing do
+not matter); otherwise it is refused with the options listed. A checkbox takes only the
+buttons: approving it ticks it from now on. Each button or reply edits the message to show
+what was done; replies keep working for 30 days, also after the daemon restarts.
+
+Messages from any other chat are ignored. The daemon asks Telegram for new messages (long
+polling), so nothing on your machine is reachable from the internet, and it remembers what
+it read, so a restart never repeats a command. A `/run` or `/stop` that waited more than 10
+minutes while the daemon was down is not acted on (send it again). If your bot has a webhook
+set, or another program reads it, Telegram hands the messages to that one: the daemon says so
+once, on Telegram too (remove the webhook with `deleteWebhook`). A revoked token stops the
+remote commands, with a line in the daemon's log. The token and chat id are read when the
+daemon starts.
+
+</details>
+
+## Command reference
+
+`ajai <command> --help` explains each one in full.
+
+| Command | What it does |
+|---|---|
+| `ajai` | The TUI |
+| **Setting up** | |
+| `ajai init` | Create the config file with a short wizard (or from flags) |
+| `ajai login` | Sign in to LinkedIn once, in the profile ajai uses |
+| `ajai doctor` | Check everything a run needs, and print every path |
+| `ajai config show` / `get` / `set` / `validate` / `path` | The configuration, secrets masked |
+| `ajai import <folder>` | Bring settings, answers and history over from the Python bot |
+| **Running** | |
+| `ajai run [--dry-run] [--max N] [--terms "a,b"] [--location X] [--market brasil]` | One run; the flags override the config for this run only |
+| `ajai run --dry-run --fast` | A dry run with short pauses (`--fast` only works with `--dry-run`) |
+| `ajai run --unattended` | Never pause for help; skip and queue instead |
+| `ajai run --json` | One JSON object per line for every event and summary, for scripts |
+| `ajai stop` | Stop the run in progress cleanly, from any terminal |
+| `ajai status` | The run in progress (live counters, who started it) and the last runs |
+| `ajai logs [-f] [--daemon]` | Today's log; `-f` follows it; `--daemon` shows the daemon's |
+| **Reviewing** | |
+| `ajai answers review` | Work through the pending answers: approve, edit, delete, skip |
+| `ajai answers list [--state pending]` | The answer memory; also `approve`, `edit`, `delete`, `clear` |
+| `ajai jobs list [--applied] [--failed] [--external] [--skipped] [--since 2026-10-01] [--json]` | The job history |
+| `ajai export --csv ./sheets` | The job history as spreadsheets |
+| `ajai messages list` / `approve` / `delete` / `send` | [Recruiter messages](#recruiter-messages-optional) |
+| **Automating** | |
+| `ajai schedule add` / `list` / `rm` / `enable` / `disable` | Schedule windows |
+| `ajai daemon install` / `status` / `uninstall` | The daemon as a systemd user unit |
+| `ajai daemon` | The daemon in this terminal, until Ctrl-C |
+| **Other** | |
+| `ajai version` | The version, commit and platform |
+| `ajai completion bash\|zsh\|fish` | Shell completion |
+
+Only one run happens on a machine at a time: a second `ajai run` refuses and says which run
+is in progress. `ajai stop` asks that run to end: the job in progress is finished or
+discarded, the run is recorded and its summary sent. A run whose process died without ending
+(killed, crashed) is shown as ended, "did not exit cleanly", the next time anything looks.
+
+Every command takes `--config <file>` and `--no-color`.
+
+## Files
+
+| What | Where |
+|---|---|
+| Configuration | `~/.config/ajai/config.yaml` |
+| Secrets | `~/.config/ajai/.env`, readable only by you |
+| History and answer memory (SQLite) | `~/.local/share/ajai/ajai.db` |
+| Logs | `~/.local/share/ajai/logs/` |
+| Screenshots of failed applications | `~/.local/share/ajai/screenshots/` |
+| Resumes | `~/.local/share/ajai/resumes/` |
+| The ajai Chrome profile | `~/.local/share/ajai/chrome-profile/` |
+
+`ajai doctor` prints every path in use. To change them:
+
+- `AJAI_HOME=<dir>` puts everything under one directory;
+- `--config <file>` relocates the config file alone;
+- `AJAI_CFG_SECTION_KEY=value` overrides one setting for one process, without touching the
+  file (for example `AJAI_CFG_SEARCH_LOCATION=Lisboa ajai run`).
+
+Secrets never live in `config.yaml`. Everything stays on your machine: ajai talks only to
+LinkedIn (through your Chrome), to the AI provider you chose and to Telegram, if you set
+them up.
+
+## Install details
 
 ### Build from source
 
-With Go 1.26 or newer and git access to the repository:
+With Go 1.26 or newer:
 
 ```bash
-git clone git@github.com:luizfreitas27/ajai.git && cd ajai
-go build ./cmd/ajai && ./ajai version
-install -m 0755 ajai ~/.local/bin/ajai
+go install github.com/luizfreitas27/ajai/cmd/ajai@latest
 ```
 
-Or in one line, with `GOPRIVATE` set because the repository is private:
+or
 
 ```bash
-GOPRIVATE=github.com/luizfreitas27 go install github.com/luizfreitas27/ajai/cmd/ajai@latest
+git clone https://github.com/luizfreitas27/ajai.git && cd ajai
+go build ./cmd/ajai && install -m 0755 ajai ~/.local/bin/ajai
 ```
 
-A build from source reports a pseudo-version (`ajai version`). Releases carry the tag.
+A build from source reports a pseudo-version (`ajai version`). Releases carry the tag. Every
+release is on the [Releases](https://github.com/luizfreitas27/ajai/releases) page.
 
 ### Upgrade
 
@@ -135,622 +822,26 @@ That leaves your data. To remove it too (configuration and secrets, the history 
 memory, logs, screenshots and the Chrome profile with its LinkedIn session):
 `rm -r ~/.config/ajai ~/.local/share/ajai`.
 
-## First run
-
-The easiest way: type `ajai`. With nothing set up yet it opens on the **setup checklist**
-(see [The TUI](#the-tui)), which walks you through the steps below, each one a key away.
-By hand:
-
-1. **Configure.** Either answer a short wizard:
-
-   ```bash
-   ajai init
-   ```
-
-   or bring everything over from the Python bot (settings, answer memory, job history,
-   resume; never secrets):
-
-   ```bash
-   ajai import ~/Projects/Automations/Auto_job_applier_linkedIn
-   ```
-
-2. **Resume.** Put it in the resumes directory that `ajai doctor` prints (`resume.pdf` by
-   default). Each market may have its own: `ajai config set markets.brasil.resume cv-pt.pdf`.
-
-3. **Secrets**, only the ones you use, in the `.env` next to the config file (the TUI's
-   Config tab writes them for you, in hidden fields):
-
-   ```bash
-   AJAI_AI_API_KEY=...              # an AI provider's key
-   AJAI_TELEGRAM_BOT_TOKEN=123:ABC  # Telegram, both lines or neither
-   AJAI_TELEGRAM_CHAT_ID=987654321
-   ```
-
-4. **Sign in to LinkedIn, once.** ajai uses a Chrome profile of its own, so your everyday
-   Chrome stays open and free while it works:
-
-   ```bash
-   ajai login
-   ```
-
-   Chrome opens on LinkedIn; sign in by hand (ajai never types your password) and it closes
-   once the feed appears. The session stays in the ajai profile.
-
-5. **Your profile.** Set `questions.summary`, `questions.about` and `questions.skill_years`
-   (see [Your profile](#your-profile) and [Skill years](#skill-years)). They answer the
-   questions about your experience, and give the AI something to work from if you turn it
-   on.
-
-6. **Check.** `ajai doctor` tests Chrome, the profile (and whether LinkedIn is signed in
-   there), the config, the secrets, the resume and the data directory, and prints every
-   path in use.
-
-7. **Dry run.**
-
-   ```bash
-   ajai run --dry-run --fast
-   ```
-
-   ajai searches, screens each job, fills every form and discards it at the Review step, so
-   you can see the answers it would send. `--fast` shortens the pauses and only works with
-   `--dry-run`.
-
-8. **For real.** Start small, keep the Chrome window visible, then let the pacing limits do
-   their job:
-
-   ```bash
-   ajai run --max 2
-   ajai run
-   ```
-
-<details>
-<summary><b>Coming from phase 1?</b></summary>
-
-Phase 1 drove your everyday Chrome profile. A blank `settings.chrome_profile_dir` now means
-the ajai profile, one of ajai's own: run `ajai login` once, or set
-`settings.chrome_profile_dir` to your everyday profile (`ajai doctor` prints its path) to
-keep the old behaviour. On the ajai profile a run closes its Chrome when it ends; on yours
-it leaves the window open, as before.
-
-</details>
-
-## The TUI
-
-Type `ajai` with no command, in a terminal, and it opens a full-screen interface. Outside a
-terminal (a pipe, a script, systemd) it prints the help instead, and every command below
-works exactly as without the TUI.
-
-<table>
-  <tr>
-    <td><img src="docs/assets/jobs.svg" alt="The Jobs tab: the job history with the selected job's details"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/assets/answers.svg" alt="The Answers tab: the review queue with the selected answer's details"></td>
-  </tr>
-</table>
-
-The list tabs (Answers, Jobs, Config and the setup checklist) share one layout: a header
-with the tab's title, every filter it has (the one shown in brackets) and a summary; the
-list, the selected row marked; and the selected item's details, in a panel to the right of
-the list on a terminal 120 columns wide or more, or directly under it on a narrower one.
-
-Flame orange marks what is active: the tab you are on (with a thick stroke under its name,
-which shows even with `--no-color`), the selected row (a `▌` bar), titles and keys. Green,
-amber and red keep meaning ok, warning and failure.
-
-| Tab | What it is for |
-|---|---|
-| **1 Dashboard** | The run in progress, the last runs, pending answers, the next window, the daemon, today's log |
-| **2 Answers** | The answer memory: review, approve, correct or delete what was answered |
-| **3 Schedule** | Schedule windows and the daemon that acts on them |
-| **4 Jobs** | The job history, filtered and searchable; open a job in your browser |
-| **5 Config** | Every setting, edited one at a time; the secrets in hidden fields |
-| **s Setup** | Every check `ajai doctor` makes, with what fixes it |
-
-<details>
-<summary><b>The Dashboard</b></summary>
-
-The Dashboard greets you with the ajai logo in a flame gradient (yellow at the base, red at
-the tips). It stands beside the summary when the terminal is wide enough for both, goes over
-the summary when the terminal is narrow but tall, and steps aside rather than cut a line or
-take the room of the runs and the log. It refreshes every second. It shows:
-
-- the run in progress: who started it (the terminal, a schedule window, Telegram), the
-  market, dry run or live, the term being searched and the counts so far;
-- the last runs and why each ended;
-- the pending answers and the next schedule window;
-- whether the daemon runs;
-- today's log as it grows. A run the daemon started is followed in the daemon's log.
-
-`r`, from any tab, starts a run on the Dashboard. You choose the market (the config's, brasil
-or internacional), dry run (the default) or live, and a maximum of applications; live shows
-in red, and Enter on it asks once more, since that run submits applications for real. It runs
-`ajai run --unattended` in a process of its own, so closing the TUI never ends it, and
-questions nothing can answer go to the review queue. If a run is already in progress, Start
-says which one and starts nothing; if the new run cannot start (a config problem, Chrome
-missing or in use), the TUI says why. `x` stops the run in progress, whoever started it
-(the terminal, the schedule, Telegram or the TUI), after asking: it ends once the job in
-hand is done, recorded as "stopped from the TUI". When a run ends while the TUI is open, a
-line says how it went.
-
-</details>
-
-<details>
-<summary><b>Answers</b></summary>
-
-The answer memory, the review queue first (the tab title counts the pending answers) and the
-approved ones a ←→ away; it keeps up as runs queue questions and Telegram answers them. Each
-answer shows its question, kind, options, who gave it, how often it was used and the last
-job. `a` approves it as shown (if a run answered it again meanwhile, nothing is approved and
-the new answer is shown). Enter corrects it: a select or radio is picked from its options with
-↑↓, or typed (an option, or the beginning of just one; the pick follows what you type),
-anything else typed; a correction is yours and approved. A checkbox takes only `a` or `d`;
-`d` deletes after asking, and ajai asks the question again next time.
-
-</details>
-
-<details>
-<summary><b>Schedule</b></summary>
-
-The schedule windows (weekdays, hours, market, mode, on or off) with each one's next opening.
-`n` adds one in a form: tick the weekdays with Space, type the start and end (HH:MM, local
-time), choose the market and dry run or live (live shows in red, and adding a live window
-asks once more: its runs submit applications). It is checked as `ajai schedule add` checks it
-(no window crossing midnight, none overlapping another on the same weekday) and refused with
-the reason. Space turns the selected window off or back on (on again only if nothing overlaps
-it now), and `d` deletes it after asking. The selected window's details show its next three
-openings and what its last opening did: the run it started, with that run's counts and why it
-ended, or why no run started.
-
-Windows open runs only while the daemon runs: a strip under the tab's title says whether it
-does and how its systemd unit stands. `i` installs (or reinstalls) the unit as
-`ajai daemon install` does, `u` uninstalls it, and `t` starts the daemon (or stops it while
-its unit runs), each after a question that says what it does. Installing warns when it could
-not start the daemon (no desktop session) or when reinstalling ends a run in progress.
-
-</details>
-
-<details>
-<summary><b>Jobs</b></summary>
-
-The job history, newest first, with the counts per outcome. ←→ show every job or only the
-applied, external, failed or skipped ones; `/` searches titles, companies and locations,
-ignoring case, in accented letters too (Esc clears the search). The selected job shows its
-outcome and why, when it was recorded and posted, a failure's error and screenshot, its
-links and the questions answered. Enter opens it in your default browser: the company's
-application page for an external job, LinkedIn's otherwise (only web links are opened). The
-list is read a page at a time as you scroll, and keeps up while a run records jobs.
-
-</details>
-
-<details>
-<summary><b>Config</b></summary>
-
-Every setting by section, with its value in the config file and what it does. Enter edits
-one:
-
-- a setting with fixed values is picked from a list (several, with Space, for a list such as
-  `search.on_site`);
-- anything else is typed, and refused with the reason if it is not valid;
-- a setting your environment or `.env` overrides (`AJAI_CFG_...`) is marked, and an edit
-  changes the file, never saving the override.
-
-The three secrets (`AJAI_AI_API_KEY`, `AJAI_TELEGRAM_BOT_TOKEN`, `AJAI_TELEGRAM_CHAT_ID`) show
-only whether they are set, and where (your environment or `.env`). Each one is typed into a
-hidden field and saved in ajai's `.env`, readable only by you; an empty value removes it. If
-the daemon runs, the TUI tells you when it needs a restart: it reads the Telegram settings
-when it starts, while settings take effect on its next run.
-
-</details>
-
-<details>
-<summary><b>The setup checklist</b></summary>
-
-Every check `ajai doctor` makes, with what fixes it. The TUI opens on it when something a run
-needs is missing (a check failed, or LinkedIn is not signed in in the ajai profile); `s`
-opens it at any time, from any tab, and the Dashboard says whether every check passes (they
-run again every half minute and after every change). Enter fixes the selected check:
-
-- no config file: the init wizard (`ajai init`);
-- no LinkedIn session in the ajai profile: `ajai login`, which opens Chrome to sign in;
-- the AI key, Telegram or the resume: the Config tab.
-
-`i` imports from the Python bot after asking for its folder (`ajai import`), and `r` checks
-again. The wizard, the sign-in and the import run in the same terminal while the TUI steps
-aside (with the same `--config` and `--no-color`); press Enter at the end to come back, and
-the checks run again. Without a config file only the checklist and the Config tab (for the
-secrets) open.
-
-</details>
-
-**Keys mean the same everywhere.** The number keys, Tab and Shift-Tab switch tabs; ↑↓ (k j),
-PgUp PgDn and g G move in a list; ←→ (h l) change its filter; Enter does the selected item's
-main thing (edit it, or open the job); `r` starts a run, `x` stops it and `s` opens the setup
-checklist from any tab; each letter means one thing (`n` new, `d` delete, `a` approve, Space
-on or off, `/` search). The footer shows the keys of the screen shown and `?` lists them in
-full; `q` or Ctrl-C quits. Quitting never stops a run. The TUI needs a terminal of at least
-80×24, honours `--no-color` and `NO_COLOR`, and writes paths under your home as `~/…`.
-
-## Everyday commands
-
-| Command | What it does |
-|---|---|
-| `ajai` | The TUI |
-| `ajai run [--dry-run] [--max N] [--terms "a,b"] [--location X] [--market brasil]` | One run (or a non-stop session); flags override the config for this run only |
-| `ajai run --json` | The same, with one JSON object per line for every event and summary, for scripts |
-| `ajai stop` | Stop the run in progress cleanly, from any terminal (as Ctrl-C in its own would) |
-| `ajai status` | The run in progress (live counters, who started it) and the last runs |
-| `ajai logs -f` | Follow today's log (`--daemon`: the daemon's) |
-| `ajai answers review` | Work through the pending answers: approve, edit, delete, skip |
-| `ajai answers list --state pending` | The review queue; `approve`, `edit`, `delete`, `clear` per id or state |
-| `ajai jobs list --applied --since 2026-10-01` | The job history; `--failed`, `--external`, `--skipped`, `--json` |
-| `ajai export --csv ./sheets` | The Python bot's two spreadsheets, from the database |
-| `ajai config show` / `get` / `set` / `validate` | The configuration, secrets masked |
-| `ajai doctor` | Everything a run needs, and every path |
-| `ajai login` | Sign in to LinkedIn once in the profile ajai uses |
-| `ajai schedule add/list/rm/enable/disable` | Schedule windows (see below) |
-| `ajai daemon` | Start and stop runs on the schedule windows, until Ctrl-C |
-| `ajai daemon install` / `status` / `uninstall` | The daemon from a systemd user unit |
-| `ajai version` | The version, commit and platform |
-
-Only one run happens on a machine at a time: a second `ajai run` refuses and says which run
-is in progress. `ajai stop` asks that run to end: the job in progress is finished or
-discarded, the run is recorded with "stopped with ajai stop" and its summary sent. A run
-whose process died without ending (killed, crashed) is shown as ended, "did not exit
-cleanly", by the next `ajai status`, the TUI, Telegram's /status or the next run.
-
-## Answers, the AI and the help pause
-
-Every question in an Easy Apply form is answered by the first of these that can (English
-and Portuguese labels alike):
-
-1. **Your configuration.** Name, phone, city, work authorization, visa, salary, notice period
-   and total years of experience. Also your [skill years](#skill-years), for questions about
-   one technology.
-2. **The answer memory.** What you approved or typed before, and what the AI answered before.
-3. **The AI**, only with `ai.enabled: true`.
-4. **Nothing.** The job is skipped and the question goes to the review queue, or, with you
-   at the terminal, to a help pause (below).
-
-### What the AI does, and what it never does
-
-The AI answers only the questions nothing above could. It does not choose jobs or read your
-resume file. A cover-letter field with no `questions.cover_letter` is just another open
-question to it.
-
-- **What it is given:**
-  - the question;
-  - the job description;
-  - the options of a dropdown or radio button;
-  - a candidate profile built from your config: name, location, total years of experience,
-    most recent employer, `questions.headline`, desired salary, notice period, work
-    authorization and visa, plus `questions.summary` and `questions.about`.
-- **What it never sees:** your phone, email, street, zip, citizenship status, current salary
-  or protected characteristics.
-- **Never asked at all:** sensitive questions (visas, work authorization, citizenship,
-  salary, disability, veteran status, clearances) and the email question. Those are answered
-  from your configuration or not at all.
-- **Free text:** one sentence, or at most 350 characters for an open question.
-- **Dropdowns and radio buttons:** the answer counts only when it names one of the options
-  exactly; anything else is dropped. It never ticks a checkbox: only an answer you approved
-  does.
-- **Every AI answer is remembered as pending and used right away.** On a live run the
-  application is sent with it before you have reviewed it. Unlike skill years, it may also
-  answer "No" or misjudge your experience.
-
-  Review the queue with `ajai answers review` or the TUI's Answers tab. Approving or
-  correcting an answer fixes every later form that asks it. The safe way to try the AI is a
-  dry run first: nothing is sent, and the queue shows what it would have answered.
-
-### Turning it on
-
-The settings live in `config.yaml` (`ajai doctor` prints its path) and the key in the `.env`
-next to it:
-
-```bash
-ajai config set ai.enabled true
-ajai config set ai.provider gemini        # openai, deepseek, gemini, ollama, lmstudio, vllm, custom
-ajai config set ai.model gemini-flash-lite-latest
-# AJAI_AI_API_KEY=... in the .env (the TUI's Config tab writes it for you)
-```
-
-| Provider | Key | Notes |
-|---|---|---|
-| `gemini` | [Google AI Studio](https://aistudio.google.com/) → Get API key | Has a free tier for the Flash and Flash-Lite models, with daily limits. |
-| `openai` | [platform.openai.com](https://platform.openai.com/) → API keys | Prepaid API credits. A ChatGPT plan does **not** include them. |
-| `deepseek` | [platform.deepseek.com](https://platform.deepseek.com/) | Paid, low cost per token. |
-| `ollama`, `lmstudio`, `vllm` | none | A model on your own machine; `ai.base_url` if not the default port. |
-
-`ai.base_url` is blank for the provider's own endpoint. A key is only ever sent over HTTPS
-or to localhost. `ajai doctor` shows the provider, the model and whether the key is set; it
-does not call the model, so the first real call is your next run.
-
-### Your profile
-
-- **`questions.summary`:** a short professional summary. It is pasted as it is into
-  "Summary", "Resumo" and "Sobre você" fields, and the AI reads it.
-- **`questions.about`:** free text only the AI reads: your jobs with dates and stack,
-  skills, education, languages, what you are looking for. Keep secrets, phone numbers and
-  links out of it. Anything in it can surface in an answer. You can also steer how the AI
-  answers here (for example, to count related experience), as guidance it follows, not a
-  rule.
-- **`questions.headline`:** a one-line headline, for "headline" fields and the AI.
-
-The fuller these are, the less generic the AI's answers.
-
-### Skill years
-
-`questions.skill_years` lists your years with each technology or role, as "name: years" (a
-whole number, 1 or more):
-
-```bash
-ajai config set questions.skill_years ".net: 4, c#: 4, python: 1, aws: 1, computação em nuvem: 1"
-```
-
-They answer, as configured answers:
-
-- **"How long have you used X?", "Há quanto tempo você usa X?", "Quanto tempo de experiência
-  com X?"** get X's years; with several technologies named, the fewest.
-- **"Do you have experience with X?", "Possui experiência (conhecimento, domínio) com X?"**
-  get yes, never no.
-  - With a number of years in the question ("at least 5 years", "no mínimo 3 anos"), yes
-    only when your years reach it.
-  - Options that are ranges of years are left alone.
-
-A name matches whole, whatever its case and accents ("java" is not "JavaScript", "react" is
-not "React-Native"), and only in the question itself, not its context or links. List
-Portuguese names and roles too ("computação em nuvem", "dev fullstack"). A technology you
-did not list, notice periods, totals and sensitive questions go on as before. Keep the
-numbers true to your resume: recruiters read both.
-
-### The help pause
-
-With you at the terminal, a question nothing can answer pauses the job: ajai shows it (and
-sends a Telegram message), you fill it in Chrome and press Enter, and what you typed is
-remembered as approved, so the next form that asks goes through. The pause waits up to 15
-minutes. With `--unattended`, or when stdin or stdout is not a terminal (a script, a
-scheduler, a run started from the TUI), the job is skipped instead and the question waits for
-your answer in `ajai answers review`.
-
-## Recruiter messages
-
-After a submitted application, ajai can write to one of the job's hirers. It is off by
-default:
-
-```bash
-ajai config set messages.enabled true
-```
-
-When the job page shows a hirer under "Meet the hiring team" with a free **Message** button,
-ajai queues a message in the language of the job posting. It reads the job's title and
-description and picks one of three templates under `messages.templates` in `config.yaml`:
-
-- `messages.templates.en` for English postings.
-- `messages.templates.pt` for Portuguese postings.
-- `messages.templates.es` for Spanish postings.
-
-The default templates are written in those languages. ajai decides the language from common
-function words ("the", "você", "com"). When it is not sure, for a short or mixed text, it uses
-the active market's `message_template` (`markets.brasil` or `markets.internacional`), as it did
-before the language templates existed. A language template left blank also falls back to the
-market's. Every template can use three placeholders:
-
-- `{first_name}`: the hirer's first name, written with a capital first letter and the rest in lower case, whatever casing the profile uses. With no name, the greeting goes without it.
-- `{title}`: the job's title.
-- `{company}`: the company.
-
-A blank market template and an unsure language queue nothing.
-
-Nothing is sent until you approve it. `ajai messages list` prints every message with its id,
-state, job, company, the hirer's name and profile URL, and the full text, followed by a digest
-of that text. The queued ones end with the commands to approve them: one `approve --all` line
-with the digest of the whole list, and one `approve <id> <digest>` line per message.
-
-- `ajai messages approve <id> <digest>` approves one message, if its text still has that digest.
-- `ajai messages approve --all <list-digest>` approves every queued message, if the queue is
-  still the one that list showed. Any change to the queue refuses it, so run `list` again.
-- `ajai messages delete <id>` removes a message. A message being sent cannot be deleted.
-
-Approved messages go out at the end of a live run, never on a dry run. At most
-`messages.max_per_day` (3 by default) are sent per local day, each after a pause of
-`messages.between_min_seconds` to `messages.between_max_seconds` (90 to 300 by default). An
-approved message that a run does not reach waits for the next one.
-
-To send them without a run, for example after LinkedIn's daily application limit, use
-`ajai messages send`. It opens Chrome and LinkedIn as `ajai run` does, under the same run lock,
-and sends the approved messages with the same cap, pauses and checks. It never searches or
-applies.
-
-```bash
-ajai messages send --applied-since 2026-10-20 --dry-run
-ajai messages send --applied-since 2026-10-20
-```
-
-With `--applied-since`, it also backfills the jobs applied to on or after that date that have
-no hirer recorded, newest first. For each one it opens the job page and reads the hirer. A free
-**Message** button to a recruiter not messaged before gets a message in the job's language,
-sent right away. Otherwise the job is recorded as `no_recipient`. The daily cap counts both
-steps: when it is reached, ajai stops and prints how many are left for another day.
-`--dry-run` reads the hirers and prints what would be sent, and sends and records nothing. Each
-job gets one line: sent, would send, no free message, already messaged, cap reached or failed.
-
-To skip the approval step, turn on `messages.auto_send` (it needs `messages.enabled`):
-
-```bash
-ajai config set messages.auto_send true
-```
-
-Each message is then recorded as approved and sent right after its application, from the
-search page, before the next card is opened. There is no 90 to 300 second pause: the pacing
-between applications already spaces the messages. The daily cap still holds; a message past it
-stays approved and goes out at the end of a later run. The free-only checks still hold, and a
-recruiter still gets one message at most. A block from LinkedIn stops the sends for the rest
-of the run, not the applications. The risk is that every message goes out unseen, with your
-template's text filled in. Read your templates before you turn it on. It is off by default.
-
-Some hirers cannot be messaged for free. When the job page shows no hirer with a free
-**Message** button, ajai records the job as `no_recipient` and sends nothing. The same happens
-when the hirer has changed by the time of sending, or when LinkedIn offers only Premium or a
-paid InMail. These rows stay in `ajai messages list --state no_recipient`.
-
-Each recruiter gets one message, ever. A staffing recruiter can be the hirer on many jobs, and
-several messages from you in a row look like spam. When the hirer's profile already has a
-message approved, being sent, sent or failed, for any job on any day, a new application to one of
-their jobs is recorded as `no_recipient` with the reason "already messaged this recruiter", and
-nothing is sent. A failed message counts too, since a send that failed after its click may still
-have reached them. Of two approved messages to the same recruiter, only the older one goes out.
-
-Messaging carries more risk than applying. LinkedIn watches messages more closely than
-applications, and a restriction on the account would affect the applications too. Keep
-`max_per_day` low and read each text before you approve it. A message is never sent twice: if
-ajai stops in the middle of a send, that message is marked `failed` at the next run.
-
-## Markets
-
-`markets.active` is `internacional` (foreign currency, annual salaries) or `brasil` (BRL,
-monthly salaries). Each market may set its own currency, salaries, search location, search
-terms and resume; blank values fall back to the general settings (a blank currency to BRL or
-USD). Salary questions get the figure in the period they ask for, and the market's own period
-when they name none. An hourly-rate question ("valor hora", "hourly rate") gets the monthly
-figure divided by the monthly hours it names, or by 168. Override the market per run with
-`ajai run --market brasil`.
-
-## Non-stop runs and filter pauses
-
-With `settings.run_non_stop: true`, a run that visited every search term (or hit the
-per-run cap) is followed, ten minutes later, by another, until LinkedIn's daily limit, the
-hourly cap, `--max`, an error or Ctrl-C. The filters change between runs the way the
-Python bot changed them: `settings.cycle_date_posted` sets the date filter to "Past 24
-hours" for every later run, and `settings.alternate_sort_by` flips the sort order before
-each one (a blank sort becomes "Most relevant", then "Most recent", and so on). Each run is
-recorded and reported on its own; `ajai status` shows when the next one starts.
-
-With `search.pause_after_filters: true` (the default) and you at the terminal, ajai stops
-after applying each term's filters so you can check or adjust them in Chrome; press Enter
-to go on, or type `off` to stop pausing for the session.
-
-## Schedule windows
-
-A schedule window is a span of local time on chosen weekdays, optionally with its own market
-and dry run:
-
-```bash
-ajai schedule add --days mon-fri --start 09:00 --end 11:00 --market brasil
-ajai schedule add --days sat --start 10:00 --end 12:00 --market internacional --dry-run
-ajai schedule list            # every window, and the next opening
-ajai schedule disable 2       # enable, rm work the same way
-```
-
-When a window opens, one unattended run starts (a non-stop session with
-`settings.run_non_stop`); when it closes, the run is stopped. A run that ends early is not
-restarted in the same window, and a window that opens while another run is in progress is
-skipped. Windows never cross midnight: split one in two (`22:00`-`24:00` and `00:00`-`02:00`
-the next day). `ajai status` shows the next opening.
-
-### The daemon
-
-Windows are acted on by `ajai daemon`, which runs until Ctrl-C:
-
-```bash
-ajai daemon install       # a systemd user unit that starts with your desktop session
-ajai daemon status        # installed, running?
-ajai logs --daemon -f     # what it decides, and the runs it starts
-ajai daemon uninstall     # stop it and remove the unit
-```
-
-<details>
-<summary><b>How the daemon and its unit behave</b></summary>
-
-`ajai daemon install` writes `~/.config/systemd/user/ajai.service` for the binary you ran it
-with (carrying your `AJAI_HOME`, XDG directories and `--config`, if you use them), enables it
-for your desktop session, starts it and checks it stays up; run it again after moving or
-upgrading ajai. It warns when your session does not reach `graphical-session.target` or
-systemd does not know your display, either of which would keep Chrome from opening, and
-refuses while an `ajai daemon` you started by hand is running. Stopping the unit is Ctrl-C:
-the run in progress ends cleanly and its window resumes when the daemon is back. On your own
-Chrome profile (`settings.chrome_profile_dir`), the window a daemon run opened closes with
-the unit. You can also just run `ajai daemon` in a terminal you leave open.
-
-Every 30 seconds it looks at the windows: when one opens it starts an unattended run with
-that window's market and dry run (a non-stop session if `settings.run_non_stop` is on) and
-tells you on Telegram; when the window closes, or you disable or remove it, the run ends
-cleanly with that reason. A run that ends early is not restarted in the same window. A
-window that opens while another run is in progress (one you started in a terminal, say) is
-skipped, and Telegram says so; two windows back to back hand over instead. The
-configuration is read afresh for every run, so `ajai config set` needs no restart. Only one
-daemon runs at a time, and Ctrl-C lets the run in progress end cleanly first. Its runs use
-the ajai profile, so sign in once with `ajai login` before the first window.
-
-</details>
-
-## Telegram
-
-With `AJAI_TELEGRAM_BOT_TOKEN` and `AJAI_TELEGRAM_CHAT_ID` set, ajai sends one message when a
-run ends (the summary, or the error that stopped it with what was done until then), one when
-a run cannot start (configuration, Chrome, AI settings; not a mistyped flag), and a nudge
-when it waits for your login or your help. A failed send never affects the run, and the token
-never reaches the log.
-
-To get the two values: create a bot with [@BotFather](https://t.me/BotFather) (it gives the
-token), send your bot any message, then open
-`https://api.telegram.org/bot<token>/getUpdates` and copy `"chat":{"id": ...}`.
-
-### Remote commands
-
-While `ajai daemon` runs, the same bot takes commands from that chat:
-
-| Command | What it does |
-|---|---|
-| `/status` | The run in progress (who started it, market, counts, term) or the last run, pending answers, the next window |
-| `/stop` | Stop the run in progress, wherever it was started; a second message says when it has ended |
-| `/run [brasil\|internacional] [dry]` | Start an unattended run now, or say why not (a run in progress, a config error, the Chrome profile in use) |
-| `/pending` | Review the answer memory's pending answers from your phone (below) |
-| `/help` | The list |
-
-<details>
-<summary><b>Reviewing answers from your phone, and how the bot is read</b></summary>
-
-`/pending` sends one message per pending answer, the 10 newest at a time: the question, its
-kind, the options it offered (select and radio), the current answer and who gave it, and the
-job it came from. **Approve** keeps the answer shown (if a run changed it meanwhile, the
-message is updated for you to check again), **Delete** forgets it; a question with no answer
-yet has only Delete. To give or correct an answer, reply to its message with the text: for a
-select or radio it must be one of the options, or the beginning of just one of them (case and
-spacing do not matter; the option's own text is saved), otherwise the reply is refused with
-the options listed. A checkbox takes only the buttons: approving it ticks it from now on. Each
-button or reply edits the message to show what was done; replies keep working for 30 days,
-also after the daemon restarts. Questions remembered before this version have no options
-saved, so any reply is taken for them.
-
-Messages from any other chat are ignored. The daemon asks Telegram for new messages (long
-polling), so nothing on your machine is reachable from the internet, and it remembers what
-it read, so a restart never repeats a command. A `/run` or `/stop` that waited more than 10
-minutes while the daemon was down is not acted on (send it again), and a waiting `/stop`
-never stops a run that started after it; `/status` and `/help` are always answered. If your
-bot has a webhook set, or another program reads it, Telegram hands the messages to that
-one: the daemon says so once, on Telegram too (remove the webhook with `deleteWebhook`). A
-revoked token stops the remote commands, with a line in the daemon's log. The token and chat
-id are read when the daemon starts.
-
-</details>
-
-## Files
-
-| What | Where (Linux) |
-|---|---|
-| Configuration | `~/.config/ajai/config.yaml` |
-| Secrets | `~/.config/ajai/.env`, readable only by you |
-| History and answer memory (SQLite) | `~/.local/share/ajai/ajai.db` |
-| Logs | `~/.local/share/ajai/logs/` |
-| Screenshots of failed applications | `~/.local/share/ajai/screenshots/` |
-| Resumes | `~/.local/share/ajai/resumes/` |
-| The ajai Chrome profile | `~/.local/share/ajai/chrome-profile/` |
-
-`AJAI_HOME=<dir>` puts everything under one directory; `--config <file>` relocates the config
-file alone; `AJAI_CFG_SECTION_KEY=value` overrides one key for one process without touching
-the file. `ajai doctor` prints every path in use.
+### Using your everyday Chrome profile
+
+By default ajai uses a Chrome profile of its own and closes its Chrome when a run ends. To
+drive your everyday profile instead, set `settings.chrome_profile_dir` to its path (`ajai
+doctor` prints it). Chrome must not be open on that profile when a run starts, and ajai
+leaves the window open when the run ends.
 
 ## Troubleshooting
+
+Start with `ajai doctor`: it checks everything a run needs and says what is wrong.
+
+<details>
+<summary><b>Almost every job is skipped for "unanswered questions"</b></summary>
+
+This is normal on the first runs. Those questions wait in the review queue: answer them once
+in the TUI's Answers tab or with `ajai answers review`, and every later form that asks them
+goes through. Fill `questions.skill_years` for the "how long have you used X" questions, and
+consider turning the AI on. Check that LinkedIn's display language is English.
+
+</details>
 
 <details>
 <summary><b>"Failed to connect to Wayland display" when a run starts</b></summary>
@@ -773,22 +864,20 @@ stop` ends a run cleanly from any terminal.
 </details>
 
 <details>
+<summary><b>ajai waits for me to sign in on every run</b></summary>
+
+The LinkedIn session is not in the profile ajai uses. Run `ajai login` once and sign in
+there; `ajai doctor` then shows the session as found.
+
+</details>
+
+<details>
 <summary><b>The AI never answers: "429 insufficient_quota" in the log</b></summary>
 
 The provider refused the key for lack of credits. On OpenAI the API is billed apart from a
 ChatGPT plan: add credits at platform.openai.com, or switch to a provider with a free tier
 (`ajai config set ai.provider gemini` and a Google AI Studio key). A "503 high demand" from
 Gemini is temporary; the Flash-Lite models are the least loaded.
-
-</details>
-
-<details>
-<summary><b>Almost every job is skipped for "unanswered questions"</b></summary>
-
-Those questions wait in the review queue: answer them once in the TUI's Answers tab or with
-`ajai answers review`, and every later form that asks them goes through. Fill
-`questions.skill_years` for the "how long have you used X" questions, and consider turning
-the AI on. Check that LinkedIn's display language is English.
 
 </details>
 
@@ -801,25 +890,19 @@ normally.
 
 </details>
 
-## Releasing
+<details>
+<summary><b>The scheduled runs never start</b></summary>
 
-Releases are built by GitHub Actions from a tag:
+`ajai daemon status` must say the daemon is installed and running, and `ajai schedule list`
+must show the window as on, with a next opening. `ajai logs --daemon` says what the daemon
+decided at each opening, and why it skipped one.
 
-```bash
-# 1. In CHANGELOG.md, rename "Unreleased" to the new tag (for example "## v0.2.0"), and
-#    update the release badge at the top of this README; merge that change.
-# 2. Tag the merge commit and push the tag:
-git tag -a v0.2.0 -m "ajai v0.2.0" && git push origin v0.2.0
-```
-
-`.goreleaser.yaml` builds the two Linux binaries (amd64, arm64) with the tag as the version
-(`ajai version`), and publishes them with `checksums.txt` and the CHANGELOG section as the
-release notes. Every pull request already builds them without publishing, so a broken build
-shows up before a tag does.
-
-The screenshots in `docs/assets/` are SVGs drawn from the TUI's own coloured screens.
+</details>
 
 ## Honest note on detection
+
+Automating a LinkedIn account goes against LinkedIn's terms of use, and the account is
+yours: use ajai at your own risk.
 
 There is no mature anti-detection browser library in Go. `ajai` relies instead on driving
 your genuine Chrome (so every network request is Chrome's own) and on conservative pacing:
@@ -827,6 +910,41 @@ your genuine Chrome (so every network request is Chrome's own) and on conservati
 between form actions, including after a resume upload and before Submit. The residual risk
 and the reasoning are in `docs/adr/0001-go-rod-on-the-users-chrome.md`. Use it as a person
 would: a few dozen applications a day, not hundreds.
+
+## Development
+
+`ajai` is the Go successor of the Python
+[Auto_job_applier_linkedIn fork](https://github.com/luizfreitas27/Auto_job_applier_linkedIn).
+The behaviour was ported, not reinvented: same selectors, same question heuristics, same
+answer memory. See `NOTICE`.
+
+```bash
+go build ./cmd/ajai
+go test ./...                 # unit tests
+go test -tags browser ./...   # also the end-to-end tests, in a headless Chrome
+go vet ./... && gofmt -l .
+```
+
+`CONTEXT.md` holds the project's vocabulary and `docs/adr/` its decisions. The screenshots
+in `docs/assets/` are SVGs drawn from the TUI's own coloured screens.
+
+<details>
+<summary><b>Releasing</b></summary>
+
+Releases are built by GitHub Actions from a tag:
+
+```bash
+# 1. In CHANGELOG.md, rename "Unreleased" to the new tag (for example "## v0.2.0"), and
+#    update the release badge and the download links at the top of this README; merge that.
+# 2. Tag the merge commit and push the tag:
+git tag -a v0.2.0 -m "ajai v0.2.0" && git push origin v0.2.0
+```
+
+`.goreleaser.yaml` builds the two Linux binaries (amd64, arm64) with the tag as the version,
+and publishes them with `checksums.txt` and the CHANGELOG section as the release notes. Every
+pull request already builds them without publishing.
+
+</details>
 
 ## License
 
