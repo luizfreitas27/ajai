@@ -33,6 +33,11 @@ no such section the notes are the commit list.
 
 ### Fixed
 
+- A run no longer ends with `Inspected target navigated or closed` before its first job.
+  LinkedIn's job search can replace the page while ajai waits for it to load; `Navigate` now
+  waits again for the page the redirect leads to (at most five times) and still fails on any
+  other error.
+
 - ajai's files are now readable only by you. They used to be 0755 and 0644, so other users
   on the machine could read your job history, answer memory and resume.
   - The config and data directories, with the logs, screenshots and resumes, are 0700.
